@@ -56,6 +56,7 @@ void ASeveredChunkActor::ActivateFromSlice(
 	AnalyticalMassKg = FMath::Max(0.001f, InAnalyticalMassKg);
 	bVolatileContaminated = bInIsContaminated;
 	ActiveWatchdogSeconds = (InWatchdogSeconds > 0.0f) ? InWatchdogSeconds : DefaultWatchdogSeconds;
+	RoutingState = EChunkRoutingState::InFlight;
 
 	SetActorTransform(InSpawnWorldTransform, false, nullptr, ETeleportType::TeleportPhysics);
 	SetActorHiddenInGame(false);
@@ -86,6 +87,8 @@ void ASeveredChunkActor::ActivateFromSlice(
 		}
 
 		ChunkMeshComponent->SetCollisionProfileName(UCollisionProfile::PhysicsActor_ProfileName);
+		ChunkMeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		ChunkMeshComponent->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
 		ChunkMeshComponent->SetGenerateOverlapEvents(true);
 		ChunkMeshComponent->SetComplexAsSimpleCollisionEnabled(false, true);
 		ChunkMeshComponent->SetMassOverrideInKg(NAME_None, AnalyticalMassKg, true);
@@ -95,7 +98,6 @@ void ASeveredChunkActor::ActivateFromSlice(
 		ChunkMeshComponent->SetPhysicsAngularVelocityInRadians(FVector::ZeroVector, false);
 	}
 
-	RoutingState = EChunkRoutingState::InFlight;
 	StartInFlightWatchdog(ActiveWatchdogSeconds);
 }
 
@@ -109,6 +111,8 @@ void ASeveredChunkActor::DeactivateToPool()
 
 	if (IsValid(ChunkMeshComponent))
 	{
+		ChunkMeshComponent->SetGenerateOverlapEvents(false);
+
 		if (ChunkMeshComponent->IsSimulatingPhysics())
 		{
 			ChunkMeshComponent->SetPhysicsLinearVelocity(FVector::ZeroVector, false);
@@ -117,7 +121,6 @@ void ASeveredChunkActor::DeactivateToPool()
 		}
 
 		ChunkMeshComponent->SetSimulatePhysics(false);
-		ChunkMeshComponent->SetGenerateOverlapEvents(false);
 		ChunkMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
 		UGeometryScriptLibrary_CollisionFunctions::ResetDynamicMeshCollision(ChunkMeshComponent, false, nullptr);
