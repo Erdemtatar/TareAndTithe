@@ -82,10 +82,6 @@ protected:
 
 private:
 	bool EnsureRemainderMeshComponent();
-	static bool DoesLocalPlaneDetonateAnyVein(
-		const FVector3d& LocalPlaneOrigin,
-		const FVector3d& LocalPlaneNormal,
-		const TArray<FVolatileVeinDefinition>& ActiveVeins);
 
 	UPROPERTY(Transient)
 	TObjectPtr<UDynamicMeshComponent> RemainderMeshComponent;

@@ -22,6 +22,7 @@
 
 #include "TareAndTithe.h"
 #include "Actors/SeveredChunkActor.h"
+#include "Components/VeinScannerComponent.h"
 #include "Data/MonolithContractDataAsset.h"
 #include "Data/ShiftProgressionDataAsset.h"
 #include "Subsystems/ChunkPoolSubsystem.h"
@@ -563,8 +564,13 @@ FSliceResultSummary UMonolithSliceComponent::ExecuteSlice(
 		return Summary;
 	}
 
-	// Step 1: Pre-Cut Volatile Vein Detonation Gate (abort before running mesh booleans).
-	if (DoesLocalPlaneDetonateAnyVein(LocalOrigin, LocalNormal, InOutActiveVeins))
+	// Step 1: Pre-Cut Volatile Vein Detonation Gate (shared canonical evaluator with UVeinScannerComponent).
+	const FSlicePreviewTelemetry PreCutVeinTelemetry = UVeinScannerComponent::EvaluateVeinsAgainstLocalPlane(
+		static_cast<FVector>(LocalOrigin),
+		static_cast<FVector>(LocalNormal),
+		true,
+		InOutActiveVeins);
+	if (PreCutVeinTelemetry.bWillDetonate)
 	{
 		Summary.Outcome = ECommitSliceOutcome::DetonatedVein;
 		OnSliceExecuted.Broadcast(Summary);
@@ -973,31 +979,6 @@ bool UMonolithSliceComponent::EnsureRemainderMeshComponent()
 		if (UDynamicMeshComponent* FoundComp = OwnerActor->FindComponentByClass<UDynamicMeshComponent>())
 		{
 			SetRemainderMeshComponent(FoundComp);
-			return true;
-		}
-	}
-
-	return false;
-}
-
-bool UMonolithSliceComponent::DoesLocalPlaneDetonateAnyVein(
-	const FVector3d& LocalPlaneOrigin,
-	const FVector3d& LocalPlaneNormal,
-	const TArray<FVolatileVeinDefinition>& ActiveVeins)
-{
-	const double PlaneD = LocalPlaneNormal.Dot(LocalPlaneOrigin);
-
-	for (const FVolatileVeinDefinition& Vein : ActiveVeins)
-	{
-		const FVector3d StartA = static_cast<FVector3d>(Vein.LocalStartCm);
-		const FVector3d EndB = static_cast<FVector3d>(Vein.LocalEndCm);
-		const double Radius = static_cast<double>(Vein.RadiusCm);
-
-		const double SignedA = LocalPlaneNormal.Dot(StartA) - PlaneD;
-		const double SignedB = LocalPlaneNormal.Dot(EndB) - PlaneD;
-
-		if ((SignedA * SignedB <= 0.0) || (FMath::Min(FMath::Abs(SignedA), FMath::Abs(SignedB)) <= Radius))
-		{
 			return true;
 		}
 	}
