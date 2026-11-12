@@ -168,10 +168,10 @@ protected:
 	FVector DiverterPlateBoxExtentCm = FVector(42.0, 1.5, 45.5);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Colliders")
-	FVector LeftHopperGuideOffsetCm = FVector(0.0, -32.5, 78.0);
+	FVector LeftHopperGuideOffsetCm = FVector(0.0, -32.5, 28.5);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Colliders")
-	FVector LeftHopperGuideBoxExtentCm = FVector(42.0, 1.5, 40.0);
+	FVector LeftHopperGuideBoxExtentCm = FVector(38.0, 1.5, 16.5);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Trigger", meta = (ClampMin = "2.0", ClampMax = "40.0"))
 	float FlapperFilterEngagementAngleDegrees = 15.0f;
@@ -181,6 +181,9 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Colors")
 	FLinearColor ConsoleBezelLinearColor = FLinearColor(0.005f, 0.006f, 0.008f, 1.0f);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Colors")
+	FLinearColor DarkGunmetalLinearColor = FLinearColor(0.022f, 0.025f, 0.030f, 1.0f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Colors")
 	FColor ReadoutHeaderCyanColor = FColor(0, 230, 255, 255);
@@ -229,6 +232,7 @@ private:
 	void RefreshRouteReadout();
 	static FString FormatFaultReasonBanner(EContractFaultReason FaultReason);
 	void InitializeGreyboxVisualMaterials();
+	void ApplyDarkGunmetalMaterial(UStaticMeshComponent* TargetMesh);
 	FVector QueryScaleWorldLocation() const;
 
 	void HandleChildTelemetryStream(ETelemetryStreamId StreamId, float NormalizedValue);
@@ -248,6 +252,9 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<UMaterialInterface> UnlitReadoutTextMaterial;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> AutoResolvedDarkGunmetalMaterial;
 
 	UPROPERTY(Transient)
 	TObjectPtr<const UTareTithePresentationDataAsset> PresentationData;

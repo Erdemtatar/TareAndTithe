@@ -651,6 +651,7 @@ UShiftProgressionDataAsset* UInspectionShiftSubsystem::BuildFallbackGreyboxProgr
 	{
 		UMonolithContractDataAsset* C01 = NewObject<UMonolithContractDataAsset>(this, TEXT("DA_Fallback_Contract01_Box"));
 		C01->ContractCode = FText::FromString(TEXT("ACT I-A // CTR-01: STANDARD SLAG BILLET"));
+		C01->ContractDirectiveText = GetDefaultDirectiveForContractIndex(0);
 		C01->BaseShape = EMonolithBaseShape::Box;
 		C01->DimensionsCm = FVector(24.0f, 24.0f, 75.0f);
 		C01->DensityGramsPerCm3 = 0.80f;
@@ -666,6 +667,7 @@ UShiftProgressionDataAsset* UInspectionShiftSubsystem::BuildFallbackGreyboxProgr
 	{
 		UMonolithContractDataAsset* C02 = NewObject<UMonolithContractDataAsset>(this, TEXT("DA_Fallback_Contract02_LBlock"));
 		C02->ContractCode = FText::FromString(TEXT("ACT I-B // CTR-02: ECCENTRIC L-CASTING"));
+		C02->ContractDirectiveText = GetDefaultDirectiveForContractIndex(1);
 		C02->BaseShape = EMonolithBaseShape::AsymmetricLBlock;
 		C02->DimensionsCm = FVector(24.0f, 32.0f, 80.0f);
 		C02->DensityGramsPerCm3 = 0.85f;
@@ -681,6 +683,7 @@ UShiftProgressionDataAsset* UInspectionShiftSubsystem::BuildFallbackGreyboxProgr
 	{
 		UMonolithContractDataAsset* C03 = NewObject<UMonolithContractDataAsset>(this, TEXT("DA_Fallback_Contract03_Octagon1Vein"));
 		C03->ContractCode = FText::FromString(TEXT("ACT II-A // CTR-03: SINGLE-VEIN OCTAGON CORE"));
+		C03->ContractDirectiveText = GetDefaultDirectiveForContractIndex(2);
 		C03->BaseShape = EMonolithBaseShape::OctagonalPrism;
 		C03->DimensionsCm = FVector(30.0f, 30.0f, 84.0f);
 		C03->DensityGramsPerCm3 = 0.95f;
@@ -697,6 +700,7 @@ UShiftProgressionDataAsset* UInspectionShiftSubsystem::BuildFallbackGreyboxProgr
 	{
 		UMonolithContractDataAsset* C04 = NewObject<UMonolithContractDataAsset>(this, TEXT("DA_Fallback_Contract04_CrossedLattice"));
 		C04->ContractCode = FText::FromString(TEXT("ACT II-B // CTR-04: CROSSED ISOTOPE LATTICE"));
+		C04->ContractDirectiveText = GetDefaultDirectiveForContractIndex(3);
 		C04->BaseShape = EMonolithBaseShape::Box;
 		C04->DimensionsCm = FVector(30.0f, 28.0f, 88.0f);
 		C04->DensityGramsPerCm3 = 0.90f;
@@ -714,6 +718,7 @@ UShiftProgressionDataAsset* UInspectionShiftSubsystem::BuildFallbackGreyboxProgr
 	{
 		UMonolithContractDataAsset* C05 = NewObject<UMonolithContractDataAsset>(this, TEXT("DA_Fallback_Contract05_BismuthTorque"));
 		C05->ContractCode = FText::FromString(TEXT("ACT III-A // CTR-05: DENSE BISMUTH COUNTER-TORQUE"));
+		C05->ContractDirectiveText = GetDefaultDirectiveForContractIndex(4);
 		C05->BaseShape = EMonolithBaseShape::AsymmetricLBlock;
 		C05->DimensionsCm = FVector(22.0f, 28.0f, 76.0f);
 		C05->DensityGramsPerCm3 = 1.95f;
@@ -736,6 +741,7 @@ UShiftProgressionDataAsset* UInspectionShiftSubsystem::BuildFallbackGreyboxProgr
 	{
 		UMonolithContractDataAsset* C06 = NewObject<UMonolithContractDataAsset>(this, TEXT("DA_Fallback_Contract06_SteppedFinale"));
 		C06->ContractCode = FText::FromString(TEXT("ACT III-B // CTR-06: DIRECTORATE STEPPED CORE"));
+		C06->ContractDirectiveText = GetDefaultDirectiveForContractIndex(5);
 		C06->BaseShape = EMonolithBaseShape::SteppedCore;
 		C06->DimensionsCm = FVector(24.0f, 34.0f, 84.0f);
 		C06->DensityGramsPerCm3 = 1.75f;
@@ -907,12 +913,14 @@ void UInspectionShiftSubsystem::RefreshAndBroadcastSnapshot()
 	float SettledPanMassKg = 0.0f;
 	bool bReceiverSettled = false;
 	bool bReceiverContaminated = false;
+	EDiverterRoute ActiveRoute = EDiverterRoute::TitheScale;
 
 	if (UObject* ReceiverObj = ReceiverBinding.QuotaReceiver.GetObject())
 	{
 		SettledPanMassKg = FMath::Max(0.0f, IQuotaReceiverInterface::Execute_GetSettledMassKg(ReceiverObj));
 		bReceiverSettled = IQuotaReceiverInterface::Execute_IsReceiverSettled(ReceiverObj);
 		bReceiverContaminated = IQuotaReceiverInterface::Execute_HasContaminationFault(ReceiverObj);
+		ActiveRoute = IQuotaReceiverInterface::Execute_GetActiveDiverterRoute(ReceiverObj);
 	}
 
 	const float TargetMassKg = IsValid(ActiveContract) ? ActiveContract->TargetTitheMassKg : 10.0f;
@@ -935,9 +943,12 @@ void UInspectionShiftSubsystem::RefreshAndBroadcastSnapshot()
 	CachedSnapshot.QuotaToleranceKg = ToleranceKg;
 	CachedSnapshot.SettledScaleMassKg = SettledPanMassKg;
 	CachedSnapshot.RemainderMassKg = RemainderMassKg;
+	CachedSnapshot.RemainingMonolithMassKg = RemainderMassKg;
 	CachedSnapshot.InFlightMassKg = InFlightMassKg;
 	CachedSnapshot.AccumulatedTareWasteKg = AccumulatedTareWasteKg;
 	CachedSnapshot.MaxAllowedTareWasteKg = MaxTareKg;
+	CachedSnapshot.ContractDirectiveText = ResolveActiveContractDirectiveText();
+	CachedSnapshot.ActiveDiverterRoute = ActiveRoute;
 	CachedSnapshot.bIsWithinQuotaWindow = bWithinWindow;
 	CachedSnapshot.bScaleSettledForStamp = bReadyForStamp;
 
@@ -1081,6 +1092,36 @@ float UInspectionShiftSubsystem::QueryLiveRemainderMassKg() const
 		return FMath::Max(0.0f, RigBinding.OnQueryRemainderMassKg.Execute());
 	}
 	return RemainderMassKg;
+}
+
+FString UInspectionShiftSubsystem::ResolveActiveContractDirectiveText() const
+{
+	if (IsValid(ActiveContract) && !ActiveContract->ContractDirectiveText.IsEmpty())
+	{
+		return ActiveContract->ContractDirectiveText;
+	}
+	return GetDefaultDirectiveForContractIndex(CurrentContractIndex);
+}
+
+FString UInspectionShiftSubsystem::GetDefaultDirectiveForContractIndex(int32 ContractIndex)
+{
+	switch (ContractIndex)
+	{
+	case 0:
+		return TEXT("CUT 12.0 KG TO TITHE | STAMP [E]");
+	case 1:
+		return TEXT("L-BLOCK: DUMP EXCESS TO TARE [SPACE]");
+	case 2:
+		return TEXT("HIDDEN VEIN: AUDIO SCAN & BEVEL [RMB]");
+	case 3:
+		return TEXT("SLAG COLUMN: DODGE VEIN | WATCH TARE");
+	case 4:
+		return TEXT("TORQUE LIMIT: KEEP CUTS BALANCED");
+	case 5:
+		return TEXT("DIRECTOR'S INGOT: DUAL VEINS + TORQUE");
+	default:
+		return TEXT("SLICE TO QUOTA | STAMP [E]");
+	}
 }
 
 FVector UInspectionShiftSubsystem::QueryRigLocationOrZero() const

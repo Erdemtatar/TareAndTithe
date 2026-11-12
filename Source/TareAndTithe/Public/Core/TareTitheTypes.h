@@ -177,6 +177,9 @@ struct FContractRuntimeSnapshot
 	float RemainderMassKg = 0.0f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Shift")
+	float RemainingMonolithMassKg = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Shift")
 	float InFlightMassKg = 0.0f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Shift")
@@ -186,11 +189,19 @@ struct FContractRuntimeSnapshot
 	float MaxAllowedTareWasteKg = 15.0f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Shift")
+	FString ContractDirectiveText;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Shift")
+	EDiverterRoute ActiveDiverterRoute = EDiverterRoute::TitheScale;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Shift")
 	bool bIsWithinQuotaWindow = false;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Shift")
 	bool bScaleSettledForStamp = false;
 };
+
+using FShiftHudSnapshot = FContractRuntimeSnapshot;
 
 // Native C++ Telemetry Signatures (Zero UHT overhead, zero concrete coupling)
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnTelemetryStreamSignature, ETelemetryStreamId /*StreamId*/, float /*NormalizedValue*/);

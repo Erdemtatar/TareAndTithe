@@ -14,6 +14,7 @@
 #include "Engine/World.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
+#include "Misc/PackageName.h"
 #include "Subsystems/InspectionShiftSubsystem.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -93,7 +94,7 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 	LeftHopperGuideVisual->SetupAttachment(ScaleRoot);
 	ConfigureVisualOnlyMesh(LeftHopperGuideVisual);
 	LeftHopperGuideVisual->SetRelativeLocation(LeftHopperGuideOffsetCm);
-	LeftHopperGuideVisual->SetRelativeScale3D(FVector(0.84, 0.03, 0.80));
+	LeftHopperGuideVisual->SetRelativeScale3D((2.0 * LeftHopperGuideBoxExtentCm) / 100.0);
 
 	LeftHopperGuideCollider = CreateDefaultSubobject<UBoxComponent>(TEXT("LeftHopperGuideCollider"));
 	ConfigureAuthoritativeBlockingBox(LeftHopperGuideCollider, ScaleRoot, LeftHopperGuideOffsetCm, LeftHopperGuideBoxExtentCm);
@@ -524,6 +525,15 @@ void AScaleAssemblyActor::ApplyPresentationData(const UTareTithePresentationData
 	InPresentationData->ScalePanMeshSlot.ApplyToVisualComponent(PanPlatformVisual);
 	InPresentationData->DiverterFlapperMeshSlot.ApplyToVisualComponent(DiverterFlapperVisual);
 	InPresentationData->TareChuteMeshSlot.ApplyToVisualComponent(TareChuteVisual);
+
+	const bool bHasExplicitFlapperOverride =
+		(InPresentationData->DiverterFlapperMeshSlot.MaterialOverrides.Num() > 0) &&
+		IsValid(InPresentationData->DiverterFlapperMeshSlot.MaterialOverrides[0]);
+	if (!bHasExplicitFlapperOverride)
+	{
+		ApplyDarkGunmetalMaterial(DiverterFlapperVisual);
+	}
+	ApplyDarkGunmetalMaterial(LeftHopperGuideVisual);
 }
 
 void AScaleAssemblyActor::HandleContractSnapshotUpdated(const FContractRuntimeSnapshot& Snapshot)
@@ -741,6 +751,12 @@ void AScaleAssemblyActor::EnforcePanTriggerGeometryAndCollision()
 	if (IsValid(DiverterFlapperPivot))
 	{
 		DiverterFlapperPivot->SetRelativeScale3D(FVector::OneVector);
+	}
+
+	if (IsValid(LeftHopperGuideVisual))
+	{
+		LeftHopperGuideVisual->SetRelativeLocation(LeftHopperGuideOffsetCm);
+		LeftHopperGuideVisual->SetRelativeScale3D((2.0 * LeftHopperGuideBoxExtentCm) / 100.0);
 	}
 
 	EnforceAuthoritativeCollider(
@@ -985,10 +1001,55 @@ void AScaleAssemblyActor::InitializeGreyboxVisualMaterials()
 
 	ApplyTintedGreyboxMaterial(ReadoutBackingPlate, ConsoleBezelLinearColor, 0.96f, 0.02f);
 	ApplyTintedGreyboxMaterial(ScaleBaseVisual, FLinearColor(0.055f, 0.062f, 0.072f, 1.0f), 0.76f, 0.35f);
-	ApplyTintedGreyboxMaterial(LeftHopperGuideVisual, FLinearColor(0.082f, 0.090f, 0.105f, 1.0f), 0.70f, 0.40f);
 	ApplyTintedGreyboxMaterial(PanPlatformVisual, FLinearColor(0.095f, 0.086f, 0.074f, 1.0f), 0.66f, 0.45f);
-	ApplyTintedGreyboxMaterial(DiverterFlapperVisual, FLinearColor(0.18f, 0.095f, 0.024f, 1.0f), 0.54f, 0.48f);
 	ApplyTintedGreyboxMaterial(TareChuteVisual, FLinearColor(0.068f, 0.032f, 0.028f, 1.0f), 0.80f, 0.28f);
+
+	ApplyDarkGunmetalMaterial(LeftHopperGuideVisual);
+	ApplyDarkGunmetalMaterial(DiverterFlapperVisual);
+}
+
+void AScaleAssemblyActor::ApplyDarkGunmetalMaterial(UStaticMeshComponent* TargetMesh)
+{
+	if (!IsValid(TargetMesh))
+	{
+		return;
+	}
+
+	if (!IsValid(AutoResolvedDarkGunmetalMaterial) &&
+		FPackageName::DoesPackageExist(TEXT("/Game/Presentation/Materials/M_DarkGunmetal_Master")))
+	{
+		AutoResolvedDarkGunmetalMaterial = LoadObject<UMaterialInterface>(
+			nullptr,
+			TEXT("/Game/Presentation/Materials/M_DarkGunmetal_Master.M_DarkGunmetal_Master"));
+	}
+
+	if (IsValid(AutoResolvedDarkGunmetalMaterial))
+	{
+		const int32 NumSlots = FMath::Max(1, TargetMesh->GetNumMaterials());
+		for (int32 SlotIdx = 0; SlotIdx < NumSlots; ++SlotIdx)
+		{
+			TargetMesh->SetMaterial(SlotIdx, AutoResolvedDarkGunmetalMaterial);
+		}
+		return;
+	}
+
+	if (IsValid(BaseGreyboxShapeMaterial))
+	{
+		if (UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(BaseGreyboxShapeMaterial, this))
+		{
+			MID->SetVectorParameterValue(TEXT("BaseColorConst"), DarkGunmetalLinearColor);
+			MID->SetVectorParameterValue(TEXT("Color"), DarkGunmetalLinearColor);
+			MID->SetVectorParameterValue(TEXT("EmissiveColorConst"), FLinearColor::Black);
+			MID->SetScalarParameterValue(TEXT("EmissiveScale"), 0.0f);
+			MID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.42f);
+			MID->SetScalarParameterValue(TEXT("MetallicConst"), 0.85f);
+			const int32 NumSlots = FMath::Max(1, TargetMesh->GetNumMaterials());
+			for (int32 SlotIdx = 0; SlotIdx < NumSlots; ++SlotIdx)
+			{
+				TargetMesh->SetMaterial(SlotIdx, MID);
+			}
+		}
+	}
 }
 
 FVector AScaleAssemblyActor::QueryScaleWorldLocation() const

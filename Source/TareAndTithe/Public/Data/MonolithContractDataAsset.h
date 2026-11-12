@@ -19,6 +19,9 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Identity")
 	FText ContractCode;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Identity")
+	FString ContractDirectiveText;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Geometry")
 	EMonolithBaseShape BaseShape = EMonolithBaseShape::Box;
 

@@ -27,6 +27,7 @@ class USoundBase;
 class UStaticMesh;
 class UStaticMeshComponent;
 class UTareTithePresentationDataAsset;
+class UTextRenderComponent;
 
 UCLASS()
 class TAREANDTITHE_API AInspectorPawn : public APawn, public ITelemetryPublisherInterface
@@ -86,6 +87,15 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inspector|Laser")
 	TObjectPtr<UStaticMeshComponent> LaserSheetUndersideVisual;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry")
+	TObjectPtr<UTextRenderComponent> LaserReticleReadout;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry")
+	TObjectPtr<UTextRenderComponent> LaserReticleLoadReadout;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry")
+	TObjectPtr<UTextRenderComponent> LaserReticleHazardReadout;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inspector|Laser")
 	TObjectPtr<ULaserPlaneAimComponent> LaserPlaneAimComponent;
 
@@ -117,16 +127,58 @@ protected:
 	TObjectPtr<UMaterialInterface> LaserSheetOverrideMaterial;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser", meta = (ClampMin = "20.0", ClampMax = "120.0"))
-	float LaserFrameDepthCm = 54.0f;
+	float LaserFrameDepthCm = 88.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser", meta = (ClampMin = "20.0", ClampMax = "120.0"))
-	float LaserFrameWidthCm = 58.0f;
+	float LaserFrameWidthCm = 88.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser", meta = (ClampMin = "0.2", ClampMax = "3.0"))
 	float LaserFrameBarWidthCm = 0.8f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser", meta = (ClampMin = "0.2", ClampMax = "2.0"))
 	float LaserFrameBarThicknessCm = 0.5f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry", meta = (ClampMin = "20.0", ClampMax = "80.0"))
+	float LaserReticleLateralOffsetCm = 34.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry", meta = (ClampMin = "20.0", ClampMax = "80.0"))
+	float LaserReticleFrontOffsetCm = 46.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry", meta = (ClampMin = "2.0", ClampMax = "10.0"))
+	float LaserReticlePrimaryWorldSize = 4.2f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry", meta = (ClampMin = "2.0", ClampMax = "10.0"))
+	float LaserReticleLoadWorldSize = 3.6f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry", meta = (ClampMin = "2.0", ClampMax = "10.0"))
+	float LaserReticleHazardWorldSize = 3.8f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry", meta = (ClampMin = "2.0", ClampMax = "10.0"))
+	float LaserReticleLineSpacingCm = 4.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry", meta = (ClampMin = "0.01", ClampMax = "0.5"))
+	float LaserReticleVeinWarningThreshold = 0.05f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry", meta = (ClampMin = "0.1", ClampMax = "0.95"))
+	float LaserReticleClampTorqueWarningThreshold = 0.50f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry", meta = (ClampMin = "0.5", ClampMax = "1.0"))
+	float LaserReticleClampTorqueCriticalThreshold = 0.85f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry")
+	FColor ReticleCyanColor = FColor(0, 232, 255, 255);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry")
+	FColor ReticleEmeraldColor = FColor(0, 255, 95, 255);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry")
+	FColor ReticleCrimsonColor = FColor(255, 45, 45, 255);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry")
+	FColor ReticleAmberColor = FColor(255, 175, 20, 255);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry")
+	FColor ReticleLoadCellColor = FColor(210, 242, 255, 255);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Camera")
 	FVector BaselineCameraRelativeLocation = FVector(-34.0, 0.0, 8.0);
@@ -214,7 +266,14 @@ private:
 	void InitializeLaserSheetDynamicMaterial();
 	void UpdateLaserSheetMaterialVisuals();
 	void UpdateCameraParallaxFromAim();
+	void UpdateLaserReticleTransform();
+	void UpdateLaserReticleReadoutText();
 	void ApplyNativeScalabilityPreset(int32 QualityLevel, float TsrResolutionScalePercent);
+
+	UFUNCTION()
+	void HandleContractSnapshotUpdated(const FContractRuntimeSnapshot& Snapshot);
+
+	void HandleFilteredTelemetryStream(ETelemetryStreamId StreamId, float NormalizedValue);
 
 	bool HandleQueryLaserSliceTarget(
 		UObject*& OutSliceableTarget,
@@ -258,6 +317,9 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<UMaterialInterface> BaseGreyboxPlaneMaterial;
+
+	UPROPERTY()
+	TObjectPtr<UMaterialInterface> UnlitReticleTextMaterial;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInterface> AutoResolvedLaserSheetMasterMaterial;
@@ -311,7 +373,9 @@ private:
 	TObjectPtr<UInputAction> ActiveScalabilityEpicAction;
 
 	FTimerHandle ManualResetHoldTimerHandle;
+	FShiftHudSnapshot CachedHudSnapshot;
 	float CachedVeinProximityNormalized = 0.0f;
+	float CachedClampStrainNormalized = 0.0f;
 	float CachedLaserChargeNormalized = 0.0f;
 	bool bCachedIntersectsMonolith = false;
 	bool bIsFastRollSnapHeld = false;

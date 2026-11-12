@@ -1,9 +1,20 @@
-import sys
+from typing import Dict, List, Tuple
 import unreal
 
 
 MATERIALS_DIR = "/Game/Presentation/Materials"
+CONTRACTS_DIR = "/Game/Presentation/Contracts"
+MESHES_DIR = "/Game/Presentation/Meshes"
 DA_PRESENTATION_PATH = "/Game/Presentation/DA_Presentation"
+
+CONTRACT_DIRECTIVES: List[Tuple[str, str]] = [
+    ("DA_Contract_01", "CUT 12.0 KG TO TITHE | STAMP [E]"),
+    ("DA_Contract_02", "L-BLOCK: DUMP EXCESS TO TARE [SPACE]"),
+    ("DA_Contract_03", "HIDDEN VEIN: AUDIO SCAN & BEVEL [RMB]"),
+    ("DA_Contract_04", "SLAG COLUMN: DODGE VEIN | WATCH TARE"),
+    ("DA_Contract_05", "TORQUE LIMIT: KEEP CUTS BALANCED"),
+    ("DA_Contract_06", "DIRECTOR'S INGOT: DUAL VEINS + TORQUE"),
+]
 
 
 def log_info(msg: str) -> None:
@@ -45,12 +56,16 @@ def create_expr(mat: unreal.Material, expr_cls, pos_x: int = 0, pos_y: int = 0):
 def connect_expr(from_expr, from_pin: str, to_expr, to_pin: str) -> None:
     ok = unreal.MaterialEditingLibrary.connect_material_expressions(from_expr, from_pin, to_expr, to_pin)
     if not ok:
-        out_names = unreal.MaterialEditingLibrary.get_material_expression_output_names(from_expr)
-        in_names = unreal.MaterialEditingLibrary.get_material_expression_input_names(to_expr)
-        raise RuntimeError(
-            f"Failed connecting {from_expr.get_class().get_name()}[{from_pin!r}] (avail={out_names}) -> "
-            f"{to_expr.get_class().get_name()}[{to_pin!r}] (avail={in_names})"
-        )
+        out_names = list(unreal.MaterialEditingLibrary.get_material_expression_output_names(from_expr) or [])
+        in_names = list(unreal.MaterialEditingLibrary.get_material_expression_input_names(to_expr) or [])
+        # Fallback if single-input expression names its pin "Input" vs ""
+        if to_pin == "" and len(in_names) == 1:
+            ok = unreal.MaterialEditingLibrary.connect_material_expressions(from_expr, from_pin, to_expr, str(in_names[0]))
+        if not ok:
+            raise RuntimeError(
+                f"Failed connecting {from_expr.get_class().get_name()}[{from_pin!r}] (avail={out_names}) -> "
+                f"{to_expr.get_class().get_name()}[{to_pin!r}] (avail={in_names})"
+            )
 
 
 def connect_prop(from_expr, from_pin: str, mat_prop: unreal.MaterialProperty) -> None:
@@ -91,6 +106,74 @@ def make_local_noise_01(mat: unreal.Material, scale: float, pos_x: int = -900, p
     clamp_node.set_editor_property("max_default", 1.0)
     connect_expr(noise, "", clamp_node, "")
     return clamp_node
+
+
+def make_uv0_pos3(
+    mat: unreal.Material,
+    tiling_uv: float = 100.0,
+    z_slice: float = 0.0,
+    pos_x: int = -1600,
+    pos_y: int = 0,
+):
+    tex_coord = create_expr(mat, unreal.MaterialExpressionTextureCoordinate, pos_x, pos_y)
+    tex_coord.set_editor_property("coordinate_index", 0)
+    tex_coord.set_editor_property("u_tiling", float(tiling_uv))
+    tex_coord.set_editor_property("v_tiling", float(tiling_uv))
+
+    z_const = make_const_scalar(mat, z_slice, pos_x, pos_y + 110)
+    uv3 = create_expr(mat, unreal.MaterialExpressionAppendVector, pos_x + 220, pos_y + 30)
+    connect_expr(tex_coord, "", uv3, "A")
+    connect_expr(z_const, "", uv3, "B")
+    return tex_coord, uv3
+
+
+def make_noise_from_pos3(
+    mat: unreal.Material,
+    pos3_expr,
+    scale: float,
+    out_min: float,
+    out_max: float,
+    levels: int = 3,
+    pos_x: int = -1100,
+    pos_y: int = 0,
+):
+    noise = create_expr(mat, unreal.MaterialExpressionNoise, pos_x, pos_y)
+    noise.set_editor_property("scale", float(scale))
+    noise.set_editor_property("noise_function", unreal.NoiseFunction.NOISEFUNCTION_GRADIENT_ALU)
+    noise.set_editor_property("quality", 1)
+    noise.set_editor_property("levels", int(levels))
+    noise.set_editor_property("turbulence", False)
+    noise.set_editor_property("output_min", float(out_min))
+    noise.set_editor_property("output_max", float(out_max))
+    connect_expr(pos3_expr, "", noise, "")
+    return noise
+
+
+def make_ridged_vein_mask(
+    mat: unreal.Material,
+    pos3_expr,
+    scale: float,
+    sharpness_exp: float,
+    pos_x: int = -960,
+    pos_y: int = 0,
+):
+    # Signed gradient noise [-1, +1] -> 1 - clamp(|n|, 0, 1) -> sharp ridge seam along zero-crossings
+    signed_noise = make_noise_from_pos3(mat, pos3_expr, scale=scale, out_min=-1.0, out_max=1.0, levels=3, pos_x=pos_x, pos_y=pos_y)
+    abs_node = create_expr(mat, unreal.MaterialExpressionAbs, pos_x + 210, pos_y)
+    connect_expr(signed_noise, "", abs_node, "")
+
+    clamp_node = create_expr(mat, unreal.MaterialExpressionClamp, pos_x + 360, pos_y)
+    clamp_node.set_editor_property("min_default", 0.0)
+    clamp_node.set_editor_property("max_default", 1.0)
+    connect_expr(abs_node, "", clamp_node, "")
+
+    ridge_node = create_expr(mat, unreal.MaterialExpressionOneMinus, pos_x + 520, pos_y)
+    connect_expr(clamp_node, "", ridge_node, "")
+
+    pow_node = create_expr(mat, unreal.MaterialExpressionPower, pos_x + 680, pos_y)
+    pow_node.set_editor_property("const_exponent", float(sharpness_exp))
+    connect_expr(ridge_node, "", pow_node, "Base")
+    return ridge_node, pow_node
 
 
 def finalize_and_save_material(mat: unreal.Material, is_opaque_nanite_compatible: bool) -> None:
@@ -182,28 +265,179 @@ def build_molten_cut_cap_master() -> unreal.Material:
 
 
 def build_slag_outer_master() -> unreal.Material:
+    """
+    Phase 9.4 Seamless UV0 Crimson-Oxide Ore Shader:
+    Uses ONLY baked mesh TexCoord[0] (UV0) — NEVER LocalPosition — so severed chunks
+    re-centering their pivot on cut NEVER jump, slide, or pop procedural veins.
+    """
     mat = get_or_create_material("M_SlagOuter_Master")
     mat.set_editor_property("blend_mode", unreal.BlendMode.BLEND_OPAQUE)
     mat.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_DEFAULT_LIT)
     mat.set_editor_property("two_sided", False)
 
-    noise_alpha = make_local_noise_01(mat, 0.11, -980, 0)
-    color_a = make_const_color3(mat, 0.032, 0.036, 0.044, -520, -180)
-    color_b = make_const_color3(mat, 0.095, 0.105, 0.122, -520, -40)
+    # 1) Baked UV0 scaled into 100-cm box-projected space (1 unit = 1 cm on monolith faces)
+    tex_uv_cm, uv_pos3 = make_uv0_pos3(mat, tiling_uv=100.0, z_slice=11.3, pos_x=-2100, pos_y=0)
 
-    base_lerp = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, -240, -100)
-    connect_expr(color_a, "", base_lerp, "A")
-    connect_expr(color_b, "", base_lerp, "B")
-    connect_expr(noise_alpha, "", base_lerp, "Alpha")
-    connect_prop(base_lerp, "", unreal.MaterialProperty.MP_BASE_COLOR)
+    # 2) Organic domain warp in UV0 space so crimson-iron veins meander naturally across -X/+X/+-Y faces
+    warp_offset_b = make_const_color3(mat, 37.0, 91.0, 19.0, -1840, 220)
+    uv_pos3_b = create_expr(mat, unreal.MaterialExpressionAdd, -1640, 180)
+    connect_expr(uv_pos3, "", uv_pos3_b, "A")
+    connect_expr(warp_offset_b, "", uv_pos3_b, "B")
 
-    rough_lerp = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, -240, 120)
-    rough_lerp.set_editor_property("const_a", 0.64)
-    rough_lerp.set_editor_property("const_b", 0.88)
-    connect_expr(noise_alpha, "", rough_lerp, "Alpha")
+    warp_u = make_noise_from_pos3(mat, uv_pos3, scale=0.055, out_min=-14.0, out_max=14.0, levels=3, pos_x=-1440, pos_y=80)
+    warp_v = make_noise_from_pos3(mat, uv_pos3_b, scale=0.062, out_min=-14.0, out_max=14.0, levels=3, pos_x=-1440, pos_y=240)
+    warp_uv2 = create_expr(mat, unreal.MaterialExpressionAppendVector, -1200, 150)
+    connect_expr(warp_u, "", warp_uv2, "A")
+    connect_expr(warp_v, "", warp_uv2, "B")
+
+    zero_z = make_const_scalar(mat, 0.0, -1200, 280)
+    warp_vec3 = create_expr(mat, unreal.MaterialExpressionAppendVector, -1020, 180)
+    connect_expr(warp_uv2, "", warp_vec3, "A")
+    connect_expr(zero_z, "", warp_vec3, "B")
+
+    warped_pos3 = create_expr(mat, unreal.MaterialExpressionAdd, -840, 80)
+    connect_expr(uv_pos3, "", warped_pos3, "A")
+    connect_expr(warp_vec3, "", warped_pos3, "B")
+
+    # 3) Horizontal sedimentary strata along V (G channel of UV0) + fine basalt mineral grain
+    v_coord = create_expr(mat, unreal.MaterialExpressionComponentMask, -1640, -340)
+    v_coord.set_editor_property("r", False)
+    v_coord.set_editor_property("g", True)
+    v_coord.set_editor_property("b", False)
+    v_coord.set_editor_property("a", False)
+    connect_expr(tex_uv_cm, "", v_coord, "")
+
+    strata_warp = create_expr(mat, unreal.MaterialExpressionMultiply, -1420, -240)
+    strata_warp.set_editor_property("const_b", 0.32)
+    connect_expr(warp_u, "", strata_warp, "A")
+
+    v_warped = create_expr(mat, unreal.MaterialExpressionAdd, -1220, -320)
+    connect_expr(v_coord, "", v_warped, "A")
+    connect_expr(strata_warp, "", v_warped, "B")
+
+    strata_sine = create_expr(mat, unreal.MaterialExpressionSine, -1040, -320)
+    strata_sine.set_editor_property("period", 14.5)
+    connect_expr(v_warped, "", strata_sine, "")
+
+    strata_half = create_expr(mat, unreal.MaterialExpressionMultiply, -860, -320)
+    strata_half.set_editor_property("const_b", 0.5)
+    connect_expr(strata_sine, "", strata_half, "A")
+
+    strata_01 = create_expr(mat, unreal.MaterialExpressionAdd, -700, -320)
+    strata_01.set_editor_property("const_b", 0.5)
+    connect_expr(strata_half, "", strata_01, "A")
+
+    fine_grain = make_noise_from_pos3(mat, uv_pos3, scale=0.24, out_min=0.0, out_max=1.0, levels=2, pos_x=-1040, pos_y=-160)
+    rock_blend = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, -520, -260)
+    rock_blend.set_editor_property("const_alpha", 0.42)
+    connect_expr(strata_01, "", rock_blend, "A")
+    connect_expr(fine_grain, "", rock_blend, "B")
+
+    rock_clamp = create_expr(mat, unreal.MaterialExpressionClamp, -360, -260)
+    rock_clamp.set_editor_property("min_default", 0.0)
+    rock_clamp.set_editor_property("max_default", 1.0)
+    connect_expr(rock_blend, "", rock_clamp, "")
+
+    basalt_dark = make_const_color3(mat, 0.030, 0.033, 0.040, -560, -480)
+    basalt_strata = make_const_color3(mat, 0.048, 0.052, 0.062, -560, -380)
+    basalt_albedo = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, -180, -380)
+    connect_expr(basalt_dark, "", basalt_albedo, "A")
+    connect_expr(basalt_strata, "", basalt_albedo, "B")
+    connect_expr(rock_clamp, "", basalt_albedo, "Alpha")
+
+    # 4) Primary + tributary sharp oxidized crimson-iron ore veins
+    primary_ridge, primary_vein = make_ridged_vein_mask(
+        mat, warped_pos3, scale=0.078, sharpness_exp=6.5, pos_x=-660, pos_y=40
+    )
+
+    trib_offset = make_const_color3(mat, 53.0, 29.0, 7.0, -840, 280)
+    trib_pos3 = create_expr(mat, unreal.MaterialExpressionAdd, -680, 260)
+    connect_expr(warped_pos3, "", trib_pos3, "A")
+    connect_expr(trib_offset, "", trib_pos3, "B")
+
+    _, trib_vein_raw = make_ridged_vein_mask(
+        mat, trib_pos3, scale=0.145, sharpness_exp=9.0, pos_x=-520, pos_y=260
+    )
+    trib_vein = create_expr(mat, unreal.MaterialExpressionMultiply, 260, 260)
+    trib_vein.set_editor_property("const_b", 0.68)
+    connect_expr(trib_vein_raw, "", trib_vein, "A")
+
+    combined_vein = create_expr(mat, unreal.MaterialExpressionMax, 420, 120)
+    connect_expr(primary_vein, "", combined_vein, "A")
+    connect_expr(trib_vein, "", combined_vein, "B")
+
+    vein_mask = create_expr(mat, unreal.MaterialExpressionClamp, 580, 120)
+    vein_mask.set_editor_property("min_default", 0.0)
+    vein_mask.set_editor_property("max_default", 1.0)
+    connect_expr(combined_vein, "", vein_mask, "")
+
+    crimson_oxide = make_const_color3(mat, 0.46, 0.045, 0.015, 380, -160)
+    final_base_color = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, 760, -180)
+    connect_expr(basalt_albedo, "", final_base_color, "A")
+    connect_expr(crimson_oxide, "", final_base_color, "B")
+    connect_expr(vein_mask, "", final_base_color, "Alpha")
+    connect_prop(final_base_color, "", unreal.MaterialProperty.MP_BASE_COLOR)
+
+    # 5) Subtle deep-red mineral seam glow (0.22, 0.018, 0.004) strictly along inner vein fissure core
+    seam_core = create_expr(mat, unreal.MaterialExpressionPower, 380, 420)
+    seam_core.set_editor_property("const_exponent", 11.5)
+    connect_expr(primary_ridge, "", seam_core, "Base")
+
+    seam_glow_color = make_const_color3(mat, 0.22, 0.018, 0.004, 380, 560)
+    seam_emissive = create_expr(mat, unreal.MaterialExpressionMultiply, 700, 480)
+    connect_expr(seam_glow_color, "", seam_emissive, "A")
+    connect_expr(seam_core, "", seam_emissive, "B")
+    connect_prop(seam_emissive, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+
+    # 6) Basalt vs metallic-oxide roughness & metallic contrast
+    rough_lerp = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, 760, 40)
+    rough_lerp.set_editor_property("const_a", 0.82)
+    rough_lerp.set_editor_property("const_b", 0.40)
+    connect_expr(vein_mask, "", rough_lerp, "Alpha")
     connect_prop(rough_lerp, "", unreal.MaterialProperty.MP_ROUGHNESS)
 
-    metal_const = make_const_scalar(mat, 0.38, -240, 260)
+    metal_lerp = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, 760, 200)
+    metal_lerp.set_editor_property("const_a", 0.22)
+    metal_lerp.set_editor_property("const_b", 0.64)
+    connect_expr(vein_mask, "", metal_lerp, "Alpha")
+    connect_prop(metal_lerp, "", unreal.MaterialProperty.MP_METALLIC)
+
+    finalize_and_save_material(mat, is_opaque_nanite_compatible=True)
+    return mat
+
+
+def build_dark_gunmetal_master() -> unreal.Material:
+    """
+    Dark industrial gunmetal PBR material (Nanite-compatible, UV0-driven) for
+    SM_DiverterFlapper and chute splash guards so they never render pale flat grey.
+    """
+    mat = get_or_create_material("M_DarkGunmetal_Master")
+    mat.set_editor_property("blend_mode", unreal.BlendMode.BLEND_OPAQUE)
+    mat.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_DEFAULT_LIT)
+    mat.set_editor_property("two_sided", False)
+
+    _, uv_pos3 = make_uv0_pos3(mat, tiling_uv=40.0, z_slice=3.7, pos_x=-1100, pos_y=0)
+    grain = make_noise_from_pos3(mat, uv_pos3, scale=0.35, out_min=0.0, out_max=1.0, levels=2, pos_x=-760, pos_y=0)
+    grain_clamped = create_expr(mat, unreal.MaterialExpressionClamp, -540, 0)
+    grain_clamped.set_editor_property("min_default", 0.0)
+    grain_clamped.set_editor_property("max_default", 1.0)
+    connect_expr(grain, "", grain_clamped, "")
+
+    steel_dark = make_const_color3(mat, 0.018, 0.021, 0.026, -540, -220)
+    steel_mid = make_const_color3(mat, 0.036, 0.041, 0.049, -540, -100)
+    albedo_lerp = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, -240, -140)
+    connect_expr(steel_dark, "", albedo_lerp, "A")
+    connect_expr(steel_mid, "", albedo_lerp, "B")
+    connect_expr(grain_clamped, "", albedo_lerp, "Alpha")
+    connect_prop(albedo_lerp, "", unreal.MaterialProperty.MP_BASE_COLOR)
+
+    rough_lerp = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, -240, 60)
+    rough_lerp.set_editor_property("const_a", 0.38)
+    rough_lerp.set_editor_property("const_b", 0.54)
+    connect_expr(grain_clamped, "", rough_lerp, "Alpha")
+    connect_prop(rough_lerp, "", unreal.MaterialProperty.MP_ROUGHNESS)
+
+    metal_const = make_const_scalar(mat, 0.85, -240, 200)
     connect_prop(metal_const, "", unreal.MaterialProperty.MP_METALLIC)
 
     finalize_and_save_material(mat, is_opaque_nanite_compatible=True)
@@ -266,6 +500,7 @@ def bind_materials_to_presentation(
     m_molten: unreal.Material,
     m_wall: unreal.Material,
     m_floor: unreal.Material,
+    m_gunmetal: unreal.Material,
 ) -> None:
     da_pres = unreal.EditorAssetLibrary.load_asset(DA_PRESENTATION_PATH)
     if da_pres is None:
@@ -299,17 +534,73 @@ def bind_materials_to_presentation(
     da_pres.set_editor_property("cell_wall_material", m_wall)
     da_pres.set_editor_property("cell_floor_material", m_floor)
 
+    flapper_slot = da_pres.get_editor_property("diverter_flapper_mesh_slot")
+    flapper_slot.set_editor_property("material_overrides", [m_gunmetal])
+    da_pres.set_editor_property("diverter_flapper_mesh_slot", flapper_slot)
+
+    flapper_mesh_path = f"{MESHES_DIR}/SM_DiverterFlapper"
+    if unreal.EditorAssetLibrary.does_asset_exist(flapper_mesh_path):
+        flapper_sm = unreal.EditorAssetLibrary.load_asset(flapper_mesh_path)
+        if isinstance(flapper_sm, unreal.StaticMesh):
+            flapper_sm.set_material(0, m_gunmetal)
+            unreal.EditorAssetLibrary.save_loaded_asset(flapper_sm, only_if_is_dirty=False)
+            log_info(f"Bound M_DarkGunmetal_Master to {flapper_mesh_path} Slot 0")
+
     if not unreal.EditorAssetLibrary.save_loaded_asset(da_pres, only_if_is_dirty=False):
         raise RuntimeError(f"Failed saving {DA_PRESENTATION_PATH}")
 
-    log_info(f"Bound all 5 master materials and saved {DA_PRESENTATION_PATH}")
+    log_info(f"Bound all master materials + flapper dark gunmetal override and saved {DA_PRESENTATION_PATH}")
+
+
+def update_contracts_and_monoliths(
+    m_slag: unreal.Material,
+    m_molten: unreal.Material,
+) -> None:
+    for contract_name, directive_str in CONTRACT_DIRECTIVES:
+        contract_path = f"{CONTRACTS_DIR}/{contract_name}"
+        if not unreal.EditorAssetLibrary.does_asset_exist(contract_path):
+            raise RuntimeError(f"Missing contract DataAsset at {contract_path}")
+
+        contract_asset = unreal.EditorAssetLibrary.load_asset(contract_path)
+        if contract_asset is None:
+            raise RuntimeError(f"Failed to load contract DataAsset at {contract_path}")
+
+        contract_asset.set_editor_property("outer_shell_material", m_slag)
+        contract_asset.set_editor_property("molten_cut_cap_material", m_molten)
+        contract_asset.set_editor_property("contract_directive_text", directive_str)
+
+        if not unreal.EditorAssetLibrary.save_loaded_asset(contract_asset, only_if_is_dirty=False):
+            raise RuntimeError(f"Failed saving contract DataAsset {contract_path}")
+
+        base_shape = contract_asset.get_editor_property("base_shape")
+        custom_mesh = contract_asset.get_editor_property("custom_monolith_mesh")
+        log_info(
+            f"Updated & saved {contract_path}: shape={base_shape.name}, "
+            f"custom_mesh={None if custom_mesh is None else custom_mesh.get_name()}, "
+            f"directive={directive_str!r}"
+        )
+
+    for custom_mesh_name in ("SM_Monolith_Contract04", "SM_Monolith_Contract06"):
+        mesh_path = f"{MESHES_DIR}/{custom_mesh_name}"
+        if unreal.EditorAssetLibrary.does_asset_exist(mesh_path):
+            sm = unreal.EditorAssetLibrary.load_asset(mesh_path)
+            if isinstance(sm, unreal.StaticMesh):
+                static_mats = [
+                    unreal.StaticMaterial(m_slag, "OuterShell"),
+                    unreal.StaticMaterial(m_molten, "MoltenCutCap"),
+                ]
+                sm.set_editor_property("static_materials", static_mats)
+                if not unreal.EditorAssetLibrary.save_loaded_asset(sm, only_if_is_dirty=False):
+                    raise RuntimeError(f"Failed saving {mesh_path}")
+                log_info(f"Verified Slot 0 (M_SlagOuter_Master) & Slot 1 (M_MoltenCutCap_Master) on {mesh_path}")
 
 
 def main() -> None:
-    log_info("Starting headless master material generation and DA_Presentation binding...")
+    log_info("Starting Phase 9.4 master material generation, contract directives & DA_Presentation binding...")
     m_laser = build_laser_sheet_master()
     m_molten = build_molten_cut_cap_master()
     m_slag = build_slag_outer_master()
+    m_gunmetal = build_dark_gunmetal_master()
     m_wall = build_cell_wall_master()
     m_floor = build_cell_floor_master()
     bind_materials_to_presentation(
@@ -318,8 +609,10 @@ def main() -> None:
         m_molten=m_molten,
         m_wall=m_wall,
         m_floor=m_floor,
+        m_gunmetal=m_gunmetal,
     )
-    log_info("Completed BuildMaterialsAndBind successfully.")
+    update_contracts_and_monoliths(m_slag=m_slag, m_molten=m_molten)
+    log_info("Completed Phase 9.4 BuildMaterialsAndBind successfully.")
 
 
 if __name__ == "__main__":

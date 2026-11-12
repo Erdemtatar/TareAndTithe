@@ -9,6 +9,7 @@
 #include "Components/LaserPlaneAimComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/TextRenderComponent.h"
 #include "Data/MonolithContractDataAsset.h"
 #include "Data/ShiftProgressionDataAsset.h"
 #include "Data/TareTithePresentationDataAsset.h"
@@ -26,6 +27,7 @@
 #include "Interfaces/SliceableTargetInterface.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
+#include "Math/RotationMatrix.h"
 #include "Misc/PackageName.h"
 #include "Sound/SoundBase.h"
 #include "TimerManager.h"
@@ -86,6 +88,13 @@ AInspectorPawn::AInspectorPawn()
 		BaseGreyboxPlaneMaterial = FlattenMatFinder.Object;
 	}
 
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> UnlitTextMatFinder(
+		TEXT("/Engine/EngineMaterials/UnlitText.UnlitText"));
+	if (UnlitTextMatFinder.Succeeded())
+	{
+		UnlitReticleTextMaterial = UnlitTextMatFinder.Object;
+	}
+
 	auto ConfigureLaserVisualMesh = [this](UStaticMeshComponent* MeshComp, UStaticMesh* AssignedMesh)
 	{
 		MeshComp->PrimaryComponentTick.bCanEverTick = false;
@@ -129,6 +138,67 @@ AInspectorPawn::AInspectorPawn()
 	LaserSheetUndersideVisual->SetupAttachment(LaserPlaneVisualPivot);
 	ConfigureLaserVisualMesh(LaserSheetUndersideVisual, FallbackPlaneMesh);
 	LaserSheetUndersideVisual->SetRelativeRotation(FRotator(180.0f, 0.0f, 0.0f));
+
+	auto ConfigureReticleTextLine = [this](
+		UTextRenderComponent* TextComp,
+		USceneComponent* ParentComp,
+		const FVector& RelLocation,
+		const FRotator& RelRotation,
+		float WorldSize,
+		const FColor& Color,
+		const TCHAR* InitialText)
+	{
+		TextComp->SetupAttachment(ParentComp);
+		TextComp->PrimaryComponentTick.bCanEverTick = false;
+		TextComp->SetSimulatePhysics(false);
+		TextComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		TextComp->SetGenerateOverlapEvents(false);
+		TextComp->SetCastShadow(false);
+		TextComp->bReceivesDecals = false;
+		TextComp->SetRelativeLocation(RelLocation);
+		TextComp->SetRelativeRotation(RelRotation);
+		TextComp->SetRelativeScale3D(FVector::OneVector);
+		TextComp->SetHorizontalAlignment(EHTA_Left);
+		TextComp->SetVerticalAlignment(EVRTA_TextCenter);
+		TextComp->SetWorldSize(WorldSize);
+		if (IsValid(UnlitReticleTextMaterial))
+		{
+			TextComp->SetTextMaterial(UnlitReticleTextMaterial);
+		}
+		TextComp->SetTextRenderColor(Color);
+		TextComp->SetText(FText::FromString(InitialText));
+	};
+
+	// Roll-stabilized reticle readout attached to PawnRoot (strictly isolated from CameraShakeOffsetComponent and LaserPlaneVisualPivot).
+	LaserReticleReadout = CreateDefaultSubobject<UTextRenderComponent>(TEXT("LaserReticleReadout"));
+	ConfigureReticleTextLine(
+		LaserReticleReadout,
+		PawnRoot,
+		FVector(214.0, static_cast<double>(LaserReticleLateralOffsetCm), 172.0),
+		FRotator(0.0f, 180.0f, 0.0f),
+		LaserReticlePrimaryWorldSize,
+		ReticleCyanColor,
+		TEXT("TITHE | NEED +12.00 KG"));
+
+	LaserReticleLoadReadout = CreateDefaultSubobject<UTextRenderComponent>(TEXT("LaserReticleLoadReadout"));
+	ConfigureReticleTextLine(
+		LaserReticleLoadReadout,
+		LaserReticleReadout,
+		FVector(0.0, 0.0, -static_cast<double>(LaserReticleLineSpacingCm)),
+		FRotator::ZeroRotator,
+		LaserReticleLoadWorldSize,
+		ReticleLoadCellColor,
+		TEXT("CLAMP LOAD: 0.0 KG"));
+
+	LaserReticleHazardReadout = CreateDefaultSubobject<UTextRenderComponent>(TEXT("LaserReticleHazardReadout"));
+	ConfigureReticleTextLine(
+		LaserReticleHazardReadout,
+		LaserReticleReadout,
+		FVector(0.0, 0.0, -2.0 * static_cast<double>(LaserReticleLineSpacingCm)),
+		FRotator::ZeroRotator,
+		LaserReticleHazardWorldSize,
+		ReticleCrimsonColor,
+		TEXT(""));
 
 	ConfigureLaserFrameGeometry();
 
@@ -214,6 +284,24 @@ void AInspectorPawn::BeginPlay()
 		AudioTelemetryBridgeComponent->SetContinuousLoopsAudioComponent(ContinuousMetaSoundAudioComponent);
 		AudioTelemetryBridgeComponent->SetDiscreteImpulsesAudioComponent(ImpulseMetaSoundAudioComponent);
 		AudioTelemetryBridgeComponent->SetAmbientBedAudioComponent(AmbientBedAudioComponent);
+		AudioTelemetryBridgeComponent->OnFilteredTelemetryStream.AddUObject(this, &AInspectorPawn::HandleFilteredTelemetryStream);
+	}
+
+	if (IsValid(UnlitReticleTextMaterial))
+	{
+		UTextRenderComponent* const ReticleLines[3] = {
+			LaserReticleReadout,
+			LaserReticleLoadReadout,
+			LaserReticleHazardReadout
+		};
+		for (UTextRenderComponent* LineComp : ReticleLines)
+		{
+			if (IsValid(LineComp))
+			{
+				LineComp->SetTextMaterial(UnlitReticleTextMaterial);
+				LineComp->SetCastShadow(false);
+			}
+		}
 	}
 
 	if (IsValid(InspectorKinestheticsComponent))
@@ -244,6 +332,7 @@ void AInspectorPawn::BeginPlay()
 		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
 		{
 			ShiftSubsystem->RegisterTelemetryPublisher(this, this);
+			ShiftSubsystem->OnContractSnapshotUpdated.AddUniqueDynamic(this, &AInspectorPawn::HandleContractSnapshotUpdated);
 			ShiftSubsystem->OnShiftPhaseChanged.AddUObject(this, &AInspectorPawn::HandleShiftPhaseChanged);
 			ShiftSubsystem->OnActiveContractLoaded.AddUObject(this, &AInspectorPawn::HandleActiveContractLoaded);
 			ShiftSubsystem->OnPresentationAssetChanged.AddUObject(this, &AInspectorPawn::ApplyPresentationData);
@@ -258,12 +347,23 @@ void AInspectorPawn::BeginPlay()
 				}
 			}
 
+			CachedHudSnapshot = ShiftSubsystem->GetCurrentSnapshot();
+			if (IsValid(AudioTelemetryBridgeComponent))
+			{
+				CachedClampStrainNormalized = FMath::Clamp(
+					AudioTelemetryBridgeComponent->GetLastFlushedStreamValue(ETelemetryStreamId::ClampStrain),
+					0.0f,
+					1.0f);
+			}
+
 			RefreshAimTargetAndFrameFromShift();
 			HandleShiftPhaseChanged(ShiftSubsystem->GetCurrentPhase());
 		}
 	}
 
 	UpdateLaserSheetMaterialVisuals();
+	UpdateLaserReticleTransform();
+	UpdateLaserReticleReadoutText();
 }
 
 void AInspectorPawn::PawnClientRestart()
@@ -359,11 +459,17 @@ void AInspectorPawn::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
 		{
+			ShiftSubsystem->OnContractSnapshotUpdated.RemoveDynamic(this, &AInspectorPawn::HandleContractSnapshotUpdated);
 			ShiftSubsystem->OnShiftPhaseChanged.RemoveAll(this);
 			ShiftSubsystem->OnActiveContractLoaded.RemoveAll(this);
 			ShiftSubsystem->OnPresentationAssetChanged.RemoveAll(this);
 			ShiftSubsystem->UnregisterTelemetryPublisher(this);
 		}
+	}
+
+	if (IsValid(AudioTelemetryBridgeComponent))
+	{
+		AudioTelemetryBridgeComponent->OnFilteredTelemetryStream.RemoveAll(this);
 	}
 
 	if (IsValid(LaserPlaneAimComponent))
@@ -423,6 +529,7 @@ void AInspectorPawn::RefreshAimTargetAndFrameFromShift()
 	}
 
 	LaserPlaneAimComponent->SetFrameBasis(AnchorWorld, GetActorForwardVector());
+	UpdateLaserReticleTransform();
 }
 
 void AInspectorPawn::ApplyLockedCameraExposureSettings()
@@ -611,7 +718,13 @@ void AInspectorPawn::InitializeLaserSheetDynamicMaterial()
 
 	if (!IsValid(LaserSheetOverrideMaterial) && !IsValid(PresentationSheetMat) && !IsValid(AutoResolvedLaserSheetMasterMaterial))
 	{
-		if (FPackageName::DoesPackageExist(TEXT("/Game/Materials/M_LaserSheet_Master")))
+		if (FPackageName::DoesPackageExist(TEXT("/Game/Presentation/Materials/M_LaserSheet_Master")))
+		{
+			AutoResolvedLaserSheetMasterMaterial = LoadObject<UMaterialInterface>(
+				nullptr,
+				TEXT("/Game/Presentation/Materials/M_LaserSheet_Master.M_LaserSheet_Master"));
+		}
+		else if (FPackageName::DoesPackageExist(TEXT("/Game/Materials/M_LaserSheet_Master")))
 		{
 			AutoResolvedLaserSheetMasterMaterial = LoadObject<UMaterialInterface>(
 				nullptr,
@@ -747,6 +860,114 @@ void AInspectorPawn::UpdateCameraParallaxFromAim()
 	CameraViewPivot->SetRelativeRotation(FRotator(FinalPitchDeg, TargetYawDeg, 0.0f));
 }
 
+void AInspectorPawn::UpdateLaserReticleTransform()
+{
+	if (!IsValid(LaserReticleReadout) || !IsValid(LaserPlaneAimComponent))
+	{
+		return;
+	}
+
+	const FVector FrameAnchor = LaserPlaneAimComponent->GetFrameAnchorWorld();
+	const FVector FrameForward = LaserPlaneAimComponent->GetFrameForwardUnit();
+	const FVector FrameRight = LaserPlaneAimComponent->GetFrameRightUnit();
+	const double LaserPlaneWorldZ = LaserPlaneAimComponent->GetCurrentPlaneOriginWorld().Z;
+
+	FVector ReticleWorldLocation =
+		FrameAnchor
+		- (FrameForward * static_cast<double>(LaserReticleFrontOffsetCm))
+		+ (FrameRight * static_cast<double>(LaserReticleLateralOffsetCm));
+	ReticleWorldLocation.Z = LaserPlaneWorldZ;
+
+	FRotator ReticleWorldRotation = FRotationMatrix::MakeFromX(-FrameForward).Rotator();
+	ReticleWorldRotation.Pitch = 0.0f;
+	ReticleWorldRotation.Roll = 0.0f;
+
+	LaserReticleReadout->SetWorldLocationAndRotation(ReticleWorldLocation, ReticleWorldRotation);
+	LaserReticleReadout->SetWorldScale3D(FVector::OneVector);
+}
+
+void AInspectorPawn::UpdateLaserReticleReadoutText()
+{
+	if (IsValid(LaserReticleReadout))
+	{
+		constexpr float QuotaFloatEpsilonKg = 1.0e-3f;
+		const float SettledKg = FMath::Max(0.0f, CachedHudSnapshot.SettledScaleMassKg);
+		const float TargetKg = FMath::Max(0.0f, CachedHudSnapshot.TargetTitheMassKg);
+		const float ToleranceKg = FMath::Max(0.0f, CachedHudSnapshot.QuotaToleranceKg);
+
+		if (CachedHudSnapshot.ActiveDiverterRoute == EDiverterRoute::TareChute)
+		{
+			LaserReticleReadout->SetTextRenderColor(ReticleAmberColor);
+			LaserReticleReadout->SetText(FText::FromString(TEXT("ROUTE: TARE SCRAP [SPACE]")));
+		}
+		else if (SettledKg > (TargetKg + ToleranceKg + QuotaFloatEpsilonKg))
+		{
+			LaserReticleReadout->SetTextRenderColor(ReticleCrimsonColor);
+			LaserReticleReadout->SetText(FText::FromString(TEXT("OVER QUOTA!")));
+		}
+		else if (CachedHudSnapshot.bIsWithinQuotaWindow ||
+			SettledKg >= (TargetKg - ToleranceKg - QuotaFloatEpsilonKg))
+		{
+			LaserReticleReadout->SetTextRenderColor(ReticleEmeraldColor);
+			LaserReticleReadout->SetText(
+				FText::FromString(FString::Printf(TEXT("STAMP READY [E] (%.2f KG)"), SettledKg)));
+		}
+		else
+		{
+			const float NeededDeltaKg = FMath::Max(0.01f, TargetKg - SettledKg);
+			LaserReticleReadout->SetTextRenderColor(ReticleCyanColor);
+			LaserReticleReadout->SetText(
+				FText::FromString(FString::Printf(TEXT("TITHE | NEED +%.2f KG"), NeededDeltaKg)));
+		}
+	}
+
+	if (IsValid(LaserReticleLoadReadout))
+	{
+		const float ClampLoadKg = FMath::Max(0.0f, CachedHudSnapshot.RemainingMonolithMassKg);
+		LaserReticleLoadReadout->SetTextRenderColor(ReticleLoadCellColor);
+		LaserReticleLoadReadout->SetText(
+			FText::FromString(FString::Printf(TEXT("CLAMP LOAD: %.1f KG"), ClampLoadKg)));
+	}
+
+	if (IsValid(LaserReticleHazardReadout))
+	{
+		if (CachedVeinProximityNormalized > LaserReticleVeinWarningThreshold)
+		{
+			LaserReticleHazardReadout->SetTextRenderColor(ReticleCrimsonColor);
+			LaserReticleHazardReadout->SetText(FText::FromString(TEXT("!! VOLATILE VEIN !!")));
+		}
+		else if (CachedClampStrainNormalized >= LaserReticleClampTorqueWarningThreshold)
+		{
+			const FColor TorqueAlertColor = (CachedClampStrainNormalized >= LaserReticleClampTorqueCriticalThreshold)
+				? ReticleCrimsonColor
+				: ReticleAmberColor;
+			const int32 TorquePercent = FMath::Clamp(FMath::RoundToInt(CachedClampStrainNormalized * 100.0f), 0, 999);
+			LaserReticleHazardReadout->SetTextRenderColor(TorqueAlertColor);
+			LaserReticleHazardReadout->SetText(
+				FText::FromString(FString::Printf(TEXT("!! CLAMP TORQUE %d%% !!"), TorquePercent)));
+		}
+		else
+		{
+			LaserReticleHazardReadout->SetText(FText::GetEmpty());
+		}
+	}
+}
+
+void AInspectorPawn::HandleContractSnapshotUpdated(const FContractRuntimeSnapshot& Snapshot)
+{
+	CachedHudSnapshot = Snapshot;
+	UpdateLaserReticleReadoutText();
+}
+
+void AInspectorPawn::HandleFilteredTelemetryStream(ETelemetryStreamId StreamId, float NormalizedValue)
+{
+	if (StreamId == ETelemetryStreamId::ClampStrain)
+	{
+		CachedClampStrainNormalized = FMath::Clamp(NormalizedValue, 0.0f, 1.0f);
+		UpdateLaserReticleReadoutText();
+	}
+}
+
 void AInspectorPawn::ApplyNativeScalabilityPreset(int32 QualityLevel, float TsrResolutionScalePercent)
 {
 	if (UGameUserSettings* Settings = UGameUserSettings::GetGameUserSettings())
@@ -780,6 +1001,8 @@ void AInspectorPawn::HandlePreviewTelemetryUpdated(const FSlicePreviewTelemetry&
 	CachedVeinProximityNormalized = PreviewTelemetry.VeinProximityNormalized;
 	UpdateCameraParallaxFromAim();
 	UpdateLaserSheetMaterialVisuals();
+	UpdateLaserReticleTransform();
+	UpdateLaserReticleReadoutText();
 }
 
 void AInspectorPawn::HandleCapacitorChargeStateChanged(bool bIsNowCharging)
@@ -830,6 +1053,16 @@ void AInspectorPawn::HandleShiftPhaseChanged(EShiftPhase NewPhase)
 		}
 		LaserPlaneAimComponent->SetAimingEnabled(bActiveInspection);
 	}
+
+	if (IsValid(LaserReticleReadout))
+	{
+		LaserReticleReadout->SetVisibility(bActiveInspection, true);
+	}
+	if (bActiveInspection)
+	{
+		UpdateLaserReticleTransform();
+		UpdateLaserReticleReadoutText();
+	}
 }
 
 void AInspectorPawn::HandleActiveContractLoaded(
@@ -853,9 +1086,23 @@ void AInspectorPawn::HandleActiveContractLoaded(
 		InspectorKinestheticsComponent->ResetKinestheticsImmediate();
 	}
 
+	if (IsValid(AudioTelemetryBridgeComponent))
+	{
+		CachedClampStrainNormalized = FMath::Clamp(
+			AudioTelemetryBridgeComponent->GetLastFlushedStreamValue(ETelemetryStreamId::ClampStrain),
+			0.0f,
+			1.0f);
+	}
+	else
+	{
+		CachedClampStrainNormalized = 0.0f;
+	}
+
 	RefreshAimTargetAndFrameFromShift();
 	UpdateCameraParallaxFromAim();
 	UpdateLaserSheetMaterialVisuals();
+	UpdateLaserReticleTransform();
+	UpdateLaserReticleReadoutText();
 }
 
 void AInspectorPawn::HandleManualResetHoldElapsed()

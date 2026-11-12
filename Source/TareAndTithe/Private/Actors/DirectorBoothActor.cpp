@@ -5,6 +5,8 @@
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
+#include "Data/MonolithContractDataAsset.h"
+#include "Data/ShiftProgressionDataAsset.h"
 #include "Data/TareTithePresentationDataAsset.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
@@ -103,64 +105,101 @@ ADirectorBoothActor::ADirectorBoothActor()
 		PlateComp->SetRelativeScale3D(Scale3D);
 	};
 
-	// Unscaled (1,1,1) root grouping header + verdict boards so BoothSignLocalOffset moves sign + text without squashing scale.
+	// Unscaled (1,1,1) root grouping left + right wing boards so BoothSignLocalOffset moves signage without squashing scale.
 	BoothSignRoot = CreateDefaultSubobject<USceneComponent>(TEXT("BoothSignRoot"));
 	BoothSignRoot->SetupAttachment(BoothRoot);
 	BoothSignRoot->PrimaryComponentTick.bCanEverTick = false;
 	BoothSignRoot->SetRelativeTransform(FTransform::Identity);
 
-	// Tilted +10 deg downward toward the lower inspector eye line and away from overhead spotlight glare.
+	auto ConfigureWingText = [this](
+		UTextRenderComponent* TextComp,
+		USceneComponent* ParentPivot,
+		const FVector& RelLocation,
+		float WorldSize,
+		const FColor& Color,
+		const TCHAR* DefaultText)
+	{
+		TextComp->SetupAttachment(ParentPivot);
+		TextComp->PrimaryComponentTick.bCanEverTick = false;
+		TextComp->SetRelativeLocation(RelLocation);
+		TextComp->SetRelativeRotation(FRotator(0.0f, 180.0f, 0.0f));
+		TextComp->SetRelativeScale3D(FVector::OneVector);
+		TextComp->SetHorizontalAlignment(EHTA_Center);
+		TextComp->SetVerticalAlignment(EVRTA_TextCenter);
+		TextComp->SetWorldSize(WorldSize);
+		TextComp->SetCastShadow(false);
+		if (IsValid(UnlitSignboardTextMaterial))
+		{
+			TextComp->SetTextMaterial(UnlitSignboardTextMaterial);
+		}
+		TextComp->SetTextRenderColor(Color);
+		TextComp->SetText(FText::FromString(DefaultText));
+	};
+
+	const double LeftOutwardY = -static_cast<double>(WingSignboardOutwardOffsetCm);
+	const double RightOutwardY = +static_cast<double>(WingSignboardOutwardOffsetCm);
+
+	// Left Wing (Y = -66 cm pivot, plate & text shifted outward to clear central clamp & hanging monolith 100%).
 	BoothHeaderPivot = CreateDefaultSubobject<USceneComponent>(TEXT("BoothHeaderPivot"));
 	BoothHeaderPivot->SetupAttachment(BoothSignRoot);
 	BoothHeaderPivot->PrimaryComponentTick.bCanEverTick = false;
-	BoothHeaderPivot->SetRelativeLocation(FVector(-15.5, 0.0, 52.0));
+	BoothHeaderPivot->SetRelativeLocation(LeftWingPivotRelativeLocation);
 	BoothHeaderPivot->SetRelativeRotation(FRotator(10.0f, 0.0f, 0.0f));
+	BoothHeaderPivot->SetRelativeScale3D(FVector::OneVector);
 
 	BoothHeaderBackingPlate = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BoothHeaderBackingPlate"));
 	BoothHeaderBackingPlate->SetupAttachment(BoothHeaderPivot);
-	ConfigureSignboardPlate(BoothHeaderBackingPlate, FVector(0.016, 2.38, 0.16));
+	ConfigureSignboardPlate(BoothHeaderBackingPlate, WingSignboardPlateScale3D);
+	BoothHeaderBackingPlate->SetRelativeLocation(FVector(0.0, LeftOutwardY, 0.0));
 
 	BoothStencilText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("BoothStencilText"));
-	BoothStencilText->SetupAttachment(BoothHeaderPivot);
-	BoothStencilText->PrimaryComponentTick.bCanEverTick = false;
-	BoothStencilText->SetRelativeLocation(FVector(-2.0, 0.0, 0.0));
-	BoothStencilText->SetRelativeRotation(FRotator(0.0f, 180.0f, 0.0f));
-	BoothStencilText->SetHorizontalAlignment(EHTA_Center);
-	BoothStencilText->SetVerticalAlignment(EVRTA_TextCenter);
-	BoothStencilText->SetWorldSize(10.8f);
-	BoothStencilText->SetCastShadow(false);
-	if (IsValid(UnlitSignboardTextMaterial))
-	{
-		BoothStencilText->SetTextMaterial(UnlitSignboardTextMaterial);
-	}
-	BoothStencilText->SetTextRenderColor(BoothHeaderCyanColor);
-	BoothStencilText->SetText(FText::FromString(TEXT("OFFICE OF THE DIRECTOR")));
+	ConfigureWingText(
+		BoothStencilText,
+		BoothHeaderPivot,
+		FVector(-2.0, LeftOutwardY, 5.2),
+		WingHeaderWorldSize,
+		BoothHeaderCyanColor,
+		TEXT("CONTRACT 01/06 // DIRECTIVE"));
 
+	ContractDirectiveReadoutText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("ContractDirectiveReadoutText"));
+	ConfigureWingText(
+		ContractDirectiveReadoutText,
+		BoothHeaderPivot,
+		FVector(-2.0, LeftOutwardY, -4.4),
+		WingDirectiveWorldSize,
+		BoothDirectiveGoldColor,
+		TEXT("CUT 12.0 KG TO TITHE | STAMP [E]"));
+
+	// Right Wing (Y = +66 cm pivot, plate & text shifted outward symmetrically to clear central clamp & hanging monolith 100%).
 	BoothVerdictPivot = CreateDefaultSubobject<USceneComponent>(TEXT("BoothVerdictPivot"));
 	BoothVerdictPivot->SetupAttachment(BoothSignRoot);
 	BoothVerdictPivot->PrimaryComponentTick.bCanEverTick = false;
-	BoothVerdictPivot->SetRelativeLocation(FVector(-15.5, 0.0, -50.0));
+	BoothVerdictPivot->SetRelativeLocation(RightWingPivotRelativeLocation);
 	BoothVerdictPivot->SetRelativeRotation(FRotator(10.0f, 0.0f, 0.0f));
+	BoothVerdictPivot->SetRelativeScale3D(FVector::OneVector);
 
 	BoothVerdictBackingPlate = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BoothVerdictBackingPlate"));
 	BoothVerdictBackingPlate->SetupAttachment(BoothVerdictPivot);
-	ConfigureSignboardPlate(BoothVerdictBackingPlate, FVector(0.016, 2.68, 0.15));
+	ConfigureSignboardPlate(BoothVerdictBackingPlate, WingSignboardPlateScale3D);
+	BoothVerdictBackingPlate->SetRelativeLocation(FVector(0.0, RightOutwardY, 0.0));
+
+	BoothRightHeaderText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("BoothRightHeaderText"));
+	ConfigureWingText(
+		BoothRightHeaderText,
+		BoothVerdictPivot,
+		FVector(-2.0, RightOutwardY, 5.2),
+		WingHeaderWorldSize,
+		BoothHeaderCyanColor,
+		TEXT("OFFICE OF THE DIRECTOR"));
 
 	VerdictBannerText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("VerdictBannerText"));
-	VerdictBannerText->SetupAttachment(BoothVerdictPivot);
-	VerdictBannerText->PrimaryComponentTick.bCanEverTick = false;
-	VerdictBannerText->SetRelativeLocation(FVector(-2.0, 0.0, 0.0));
-	VerdictBannerText->SetRelativeRotation(FRotator(0.0f, 180.0f, 0.0f));
-	VerdictBannerText->SetHorizontalAlignment(EHTA_Center);
-	VerdictBannerText->SetVerticalAlignment(EVRTA_TextCenter);
-	VerdictBannerText->SetWorldSize(7.8f);
-	VerdictBannerText->SetCastShadow(false);
-	if (IsValid(UnlitSignboardTextMaterial))
-	{
-		VerdictBannerText->SetTextMaterial(UnlitSignboardTextMaterial);
-	}
-	VerdictBannerText->SetTextRenderColor(BoothNormalSkyBlueColor);
-	VerdictBannerText->SetText(FText::FromString(TEXT("CELL STANDBY")));
+	ConfigureWingText(
+		VerdictBannerText,
+		BoothVerdictPivot,
+		FVector(-2.0, RightOutwardY, -4.4),
+		WingVerdictWorldSize,
+		BoothNormalSkyBlueColor,
+		TEXT("CELL STANDBY"));
 
 	StatusPointLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("StatusPointLight"));
 	StatusPointLight->SetupAttachment(BoothRoot);
@@ -183,15 +222,19 @@ void ADirectorBoothActor::BeginPlay()
 
 	if (IsValid(UnlitSignboardTextMaterial))
 	{
-		if (IsValid(BoothStencilText))
+		UTextRenderComponent* const WingTexts[4] = {
+			BoothStencilText,
+			ContractDirectiveReadoutText,
+			BoothRightHeaderText,
+			VerdictBannerText
+		};
+		for (UTextRenderComponent* TextComp : WingTexts)
 		{
-			BoothStencilText->SetTextMaterial(UnlitSignboardTextMaterial);
-			BoothStencilText->SetCastShadow(false);
-		}
-		if (IsValid(VerdictBannerText))
-		{
-			VerdictBannerText->SetTextMaterial(UnlitSignboardTextMaterial);
-			VerdictBannerText->SetCastShadow(false);
+			if (IsValid(TextComp))
+			{
+				TextComp->SetTextMaterial(UnlitSignboardTextMaterial);
+				TextComp->SetCastShadow(false);
+			}
 		}
 	}
 
@@ -236,8 +279,17 @@ void ADirectorBoothActor::BeginPlay()
 			{
 				ApplyPresentationData(ExistingPresentation);
 			}
+			ShiftSubsystem->OnContractSnapshotUpdated.AddUniqueDynamic(this, &ADirectorBoothActor::HandleContractSnapshotUpdated);
 			ShiftSubsystem->OnShiftVerdict.AddUniqueDynamic(this, &ADirectorBoothActor::HandleShiftVerdict);
 			ShiftSubsystem->OnShiftPhaseChanged.AddUObject(this, &ADirectorBoothActor::HandleShiftPhaseChanged);
+			ShiftSubsystem->OnActiveContractLoaded.AddUObject(this, &ADirectorBoothActor::HandleActiveContractLoaded);
+
+			CachedContractIndex = ShiftSubsystem->GetCurrentContractIndex();
+			CachedTotalContracts = FMath::Max(1, ShiftSubsystem->GetTotalContractCount());
+			const FContractRuntimeSnapshot InitialSnapshot = ShiftSubsystem->GetCurrentSnapshot();
+			CachedDirectiveText = InitialSnapshot.ContractDirectiveText;
+			RefreshContractDirectiveWingReadout();
+
 			HandleShiftPhaseChanged(ShiftSubsystem->GetCurrentPhase());
 		}
 	}
@@ -250,8 +302,10 @@ void ADirectorBoothActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
 		{
 			ShiftSubsystem->OnPresentationAssetChanged.RemoveAll(this);
+			ShiftSubsystem->OnContractSnapshotUpdated.RemoveDynamic(this, &ADirectorBoothActor::HandleContractSnapshotUpdated);
 			ShiftSubsystem->OnShiftVerdict.RemoveDynamic(this, &ADirectorBoothActor::HandleShiftVerdict);
 			ShiftSubsystem->OnShiftPhaseChanged.RemoveAll(this);
+			ShiftSubsystem->OnActiveContractLoaded.RemoveAll(this);
 			ShiftSubsystem->UnregisterDirectorBoothStation(this);
 		}
 	}
@@ -275,7 +329,9 @@ void ADirectorBoothActor::ApplyPresentationData(const UTareTithePresentationData
 
 	if (IsValid(BoothSignRoot))
 	{
-		BoothSignRoot->SetRelativeTransform(InPresentationData->BoothSignLocalOffset);
+		FTransform UnscaledSignTransform = InPresentationData->BoothSignLocalOffset;
+		UnscaledSignTransform.SetScale3D(FVector::OneVector);
+		BoothSignRoot->SetRelativeTransform(UnscaledSignTransform);
 	}
 }
 
@@ -353,13 +409,32 @@ void ADirectorBoothActor::HandleShiftVerdict(EShiftVerdictType Verdict, EContrac
 		if (IsValid(VerdictBannerText))
 		{
 			VerdictBannerText->SetTextRenderColor(BoothApprovedEmeraldColor);
-			VerdictBannerText->SetText(FText::FromString(TEXT("SHIFT QUOTA COMPLETE // HOLD [R] TO REPLAY")));
+			VerdictBannerText->SetText(FText::FromString(TEXT("SHIFT COMPLETE // HOLD [R] TO REPLAY")));
 		}
 		break;
 	}
 	default:
 		break;
 	}
+}
+
+void ADirectorBoothActor::HandleContractSnapshotUpdated(const FContractRuntimeSnapshot& Snapshot)
+{
+	CachedContractIndex = Snapshot.ContractIndex;
+	if (!Snapshot.ContractDirectiveText.IsEmpty())
+	{
+		CachedDirectiveText = Snapshot.ContractDirectiveText;
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		if (const UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
+		{
+			CachedTotalContracts = FMath::Max(1, ShiftSubsystem->GetTotalContractCount());
+		}
+	}
+
+	RefreshContractDirectiveWingReadout();
 }
 
 void ADirectorBoothActor::HandleShiftPhaseChanged(EShiftPhase NewPhase)
@@ -376,6 +451,46 @@ void ADirectorBoothActor::HandleShiftPhaseChanged(EShiftPhase NewPhase)
 			VerdictBannerText->SetTextRenderColor(BoothNormalSkyBlueColor);
 			VerdictBannerText->SetText(FText::FromString(TEXT("INSPECTION IN PROGRESS")));
 		}
+	}
+}
+
+void ADirectorBoothActor::HandleActiveContractLoaded(
+	const UMonolithContractDataAsset* Contract,
+	const UShiftProgressionDataAsset* ShiftConfig,
+	int32 ContractIndex)
+{
+	CachedContractIndex = ContractIndex;
+	if (IsValid(ShiftConfig))
+	{
+		CachedTotalContracts = FMath::Max(1, ShiftConfig->OrderedContracts.Num());
+	}
+	if (IsValid(Contract) && !Contract->ContractDirectiveText.IsEmpty())
+	{
+		CachedDirectiveText = Contract->ContractDirectiveText;
+	}
+
+	RefreshContractDirectiveWingReadout();
+}
+
+void ADirectorBoothActor::RefreshContractDirectiveWingReadout()
+{
+	const int32 DisplayContractNum = FMath::Clamp(CachedContractIndex + 1, 1, FMath::Max(1, CachedTotalContracts));
+	const int32 DisplayTotalCount = FMath::Max(1, CachedTotalContracts);
+
+	if (IsValid(BoothStencilText))
+	{
+		BoothStencilText->SetTextRenderColor(BoothHeaderCyanColor);
+		BoothStencilText->SetText(
+			FText::FromString(FString::Printf(TEXT("CONTRACT %02d/%02d // DIRECTIVE"), DisplayContractNum, DisplayTotalCount)));
+	}
+
+	if (IsValid(ContractDirectiveReadoutText))
+	{
+		const FString EffectiveDirective = CachedDirectiveText.IsEmpty()
+			? TEXT("CUT TO QUOTA | STAMP [E]")
+			: CachedDirectiveText;
+		ContractDirectiveReadoutText->SetTextRenderColor(BoothDirectiveGoldColor);
+		ContractDirectiveReadoutText->SetText(FText::FromString(EffectiveDirective));
 	}
 }
 
@@ -415,13 +530,13 @@ FString ADirectorBoothActor::DescribeFaultReason(EContractFaultReason FaultReaso
 	case EContractFaultReason::ClampStructuralSnap:
 		return TEXT("FAULT: CLAMP TORQUE SNAP");
 	case EContractFaultReason::ScaleContaminated:
-		return TEXT("FAULT: CONTAMINATED CHUNK - ROUTE TO [SPACE] TARE");
+		return TEXT("FAULT: CONTAMINATED | TARE [SPACE]");
 	case EContractFaultReason::QuotaOvershoot:
-		return TEXT("FAULT: OVERWEIGHT - EXCEEDED MAX QUOTA");
+		return TEXT("FAULT: OVERWEIGHT | MAX QUOTA");
 	case EContractFaultReason::TareAllowanceExceeded:
 		return TEXT("FAULT: MAX TARE WASTE EXCEEDED");
 	case EContractFaultReason::MathematicallyUnreachable:
-		return TEXT("FAULT: INSUFFICIENT MASS REMAINING");
+		return TEXT("FAULT: INSUFFICIENT MASS LEFT");
 	case EContractFaultReason::ManualOperatorReset:
 		return TEXT("MANUAL RESET [R]");
 	default:

@@ -9,8 +9,10 @@
 #include "DirectorBoothActor.generated.h"
 
 class UMaterialInterface;
+class UMonolithContractDataAsset;
 class UPointLightComponent;
 class USceneComponent;
+class UShiftProgressionDataAsset;
 class UStaticMeshComponent;
 class UTareTithePresentationDataAsset;
 class UTextRenderComponent;
@@ -56,10 +58,16 @@ protected:
 	TObjectPtr<UTextRenderComponent> BoothStencilText;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "DirectorBooth|Readout")
+	TObjectPtr<UTextRenderComponent> ContractDirectiveReadoutText;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "DirectorBooth|Readout")
 	TObjectPtr<USceneComponent> BoothVerdictPivot;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "DirectorBooth|Readout")
 	TObjectPtr<UStaticMeshComponent> BoothVerdictBackingPlate;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "DirectorBooth|Readout")
+	TObjectPtr<UTextRenderComponent> BoothRightHeaderText;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "DirectorBooth|Readout")
 	TObjectPtr<UTextRenderComponent> VerdictBannerText;
@@ -80,10 +88,34 @@ protected:
 	float StatusLightIntensity = 1100.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Readout")
+	FVector LeftWingPivotRelativeLocation = FVector(-15.5, -66.0, 44.0);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Readout")
+	FVector RightWingPivotRelativeLocation = FVector(-15.5, 66.0, 44.0);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Readout", meta = (ClampMin = "0.0", ClampMax = "90.0"))
+	float WingSignboardOutwardOffsetCm = 52.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Readout")
+	FVector WingSignboardPlateScale3D = FVector(0.016, 1.44, 0.23);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Readout", meta = (ClampMin = "3.0", ClampMax = "12.0"))
+	float WingHeaderWorldSize = 5.4f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Readout", meta = (ClampMin = "3.0", ClampMax = "12.0"))
+	float WingDirectiveWorldSize = 5.9f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Readout", meta = (ClampMin = "3.0", ClampMax = "12.0"))
+	float WingVerdictWorldSize = 5.7f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Readout")
 	FLinearColor SignboardBackingColor = FLinearColor(0.005f, 0.006f, 0.008f, 1.0f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Readout")
 	FColor BoothHeaderCyanColor = FColor(0, 230, 255, 255);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Readout")
+	FColor BoothDirectiveGoldColor = FColor(255, 210, 45, 255);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Readout")
 	FColor BoothNormalSkyBlueColor = FColor(90, 210, 255, 255);
@@ -105,9 +137,17 @@ protected:
 
 private:
 	UFUNCTION()
+	void HandleContractSnapshotUpdated(const FContractRuntimeSnapshot& Snapshot);
+
+	UFUNCTION()
 	void HandleShiftVerdict(EShiftVerdictType Verdict, EContractFaultReason FaultReason);
 
 	void HandleShiftPhaseChanged(EShiftPhase NewPhase);
+	void HandleActiveContractLoaded(
+		const UMonolithContractDataAsset* Contract,
+		const UShiftProgressionDataAsset* ShiftConfig,
+		int32 ContractIndex);
+	void RefreshContractDirectiveWingReadout();
 	void SetShutterTargetOpenAlpha(float InTargetOpenAlpha, bool bInstant = false);
 	void ApplyShutterPositionFromAlpha();
 	static FString DescribeFaultReason(EContractFaultReason FaultReason);
@@ -118,6 +158,9 @@ private:
 	UPROPERTY()
 	TObjectPtr<UMaterialInterface> UnlitSignboardTextMaterial;
 
+	FString CachedDirectiveText;
+	int32 CachedContractIndex = 0;
+	int32 CachedTotalContracts = 6;
 	float CurrentShutterOpenAlpha = 0.0f;
 	float TargetShutterOpenAlpha = 0.0f;
 };

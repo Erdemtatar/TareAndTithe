@@ -169,6 +169,7 @@ BASELINE_CONTRACT_SPECS = [
     {
         "name": "DA_Contract_01",
         "code": "ACT I-A // CTR-01: STANDARD SLAG BILLET",
+        "directive": "CUT 12.0 KG TO TITHE | STAMP [E]",
         "shape": "BOX",
         "dims": (24.0, 24.0, 75.0),
         "density": 0.80,
@@ -186,6 +187,7 @@ BASELINE_CONTRACT_SPECS = [
     {
         "name": "DA_Contract_02",
         "code": "ACT I-B // CTR-02: ECCENTRIC L-CASTING",
+        "directive": "L-BLOCK: DUMP EXCESS TO TARE [SPACE]",
         "shape": "ASYMMETRIC_L_BLOCK",
         "dims": (24.0, 32.0, 80.0),
         "density": 0.85,
@@ -203,6 +205,7 @@ BASELINE_CONTRACT_SPECS = [
     {
         "name": "DA_Contract_03",
         "code": "ACT II-A // CTR-03: SINGLE-VEIN OCTAGON CORE",
+        "directive": "HIDDEN VEIN: AUDIO SCAN & BEVEL [RMB]",
         "shape": "OCTAGONAL_PRISM",
         "dims": (30.0, 30.0, 84.0),
         "density": 0.95,
@@ -220,6 +223,7 @@ BASELINE_CONTRACT_SPECS = [
     {
         "name": "DA_Contract_04",
         "code": "ACT II-B // CTR-04: CROSSED ISOTOPE LATTICE",
+        "directive": "SLAG COLUMN: DODGE VEIN | WATCH TARE",
         "shape": "BOX",
         "dims": (30.0, 28.0, 88.0),
         "density": 0.90,
@@ -240,6 +244,7 @@ BASELINE_CONTRACT_SPECS = [
     {
         "name": "DA_Contract_05",
         "code": "ACT III-A // CTR-05: DENSE BISMUTH COUNTER-TORQUE",
+        "directive": "TORQUE LIMIT: KEEP CUTS BALANCED",
         "shape": "ASYMMETRIC_L_BLOCK",
         "dims": (22.0, 28.0, 76.0),
         "density": 1.95,
@@ -260,6 +265,7 @@ BASELINE_CONTRACT_SPECS = [
     {
         "name": "DA_Contract_06",
         "code": "ACT III-B // CTR-06: DIRECTORATE STEPPED CORE",
+        "directive": "DIRECTOR'S INGOT: DUAL VEINS + TORQUE",
         "shape": "STEPPED_CORE",
         "dims": (24.0, 34.0, 84.0),
         "density": 1.75,
@@ -1199,6 +1205,7 @@ def ensure_shift_progression_and_contracts(da_pres: unreal.Object) -> Tuple[unre
         c_path = f"{CONTRACTS_DIR}/{entry['name']}"
         c_asset, _ = get_or_create_data_asset(c_path, unreal.MonolithContractDataAsset)
         c_asset.set_editor_property("contract_code", unreal.Text(entry["code"]))
+        c_asset.set_editor_property("contract_directive_text", entry["directive"])
         c_asset.set_editor_property("base_shape", shape_map[entry["shape"]])
         c_asset.set_editor_property("custom_monolith_mesh", None)
         c_asset.set_editor_property(

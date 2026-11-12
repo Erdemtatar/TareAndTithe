@@ -186,6 +186,8 @@ private:
 	void SetShiftPhase(EShiftPhase NewPhase);
 
 	float QueryLiveRemainderMassKg() const;
+	FString ResolveActiveContractDirectiveText() const;
+	static FString GetDefaultDirectiveForContractIndex(int32 ContractIndex);
 	FVector QueryRigLocationOrZero() const;
 	FVector QueryReceiverLocationOrZero() const;
 
