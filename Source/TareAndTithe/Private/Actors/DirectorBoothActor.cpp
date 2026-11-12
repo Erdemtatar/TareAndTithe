@@ -5,6 +5,7 @@
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
+#include "Data/TareTithePresentationDataAsset.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -59,9 +60,16 @@ ADirectorBoothActor::ADirectorBoothActor()
 	BoothFrameVisual->SetRelativeLocation(FVector::ZeroVector);
 	BoothFrameVisual->SetRelativeScale3D(FVector(0.24, 1.90, 0.85));
 
+	BlastShutterMotionPivot = CreateDefaultSubobject<USceneComponent>(TEXT("BlastShutterMotionPivot"));
+	BlastShutterMotionPivot->SetupAttachment(BoothRoot);
+	BlastShutterMotionPivot->PrimaryComponentTick.bCanEverTick = false;
+	BlastShutterMotionPivot->SetRelativeLocation(ClosedShutterRelativeLocation);
+	BlastShutterMotionPivot->SetRelativeScale3D(FVector::OneVector);
+
 	BlastShutterVisual = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BlastShutterVisual"));
-	BlastShutterVisual->SetupAttachment(BoothRoot);
+	BlastShutterVisual->SetupAttachment(BlastShutterMotionPivot);
 	BlastShutterVisual->PrimaryComponentTick.bCanEverTick = false;
+	BlastShutterVisual->SetSimulatePhysics(false);
 	BlastShutterVisual->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	BlastShutterVisual->SetGenerateOverlapEvents(false);
 	if (IsValid(CubeMesh))
@@ -72,7 +80,7 @@ ADirectorBoothActor::ADirectorBoothActor()
 	{
 		BlastShutterVisual->SetMaterial(0, BaseGreyboxShapeMaterial);
 	}
-	BlastShutterVisual->SetRelativeLocation(ClosedShutterRelativeLocation);
+	BlastShutterVisual->SetRelativeLocation(FVector::ZeroVector);
 	BlastShutterVisual->SetRelativeScale3D(FVector(0.06, 1.65, 0.62));
 
 	auto ConfigureSignboardPlate = [this, CubeMesh](UStaticMeshComponent* PlateComp, const FVector& Scale3D)
@@ -95,9 +103,15 @@ ADirectorBoothActor::ADirectorBoothActor()
 		PlateComp->SetRelativeScale3D(Scale3D);
 	};
 
+	// Unscaled (1,1,1) root grouping header + verdict boards so BoothSignLocalOffset moves sign + text without squashing scale.
+	BoothSignRoot = CreateDefaultSubobject<USceneComponent>(TEXT("BoothSignRoot"));
+	BoothSignRoot->SetupAttachment(BoothRoot);
+	BoothSignRoot->PrimaryComponentTick.bCanEverTick = false;
+	BoothSignRoot->SetRelativeTransform(FTransform::Identity);
+
 	// Tilted +10 deg downward toward the lower inspector eye line and away from overhead spotlight glare.
 	BoothHeaderPivot = CreateDefaultSubobject<USceneComponent>(TEXT("BoothHeaderPivot"));
-	BoothHeaderPivot->SetupAttachment(BoothRoot);
+	BoothHeaderPivot->SetupAttachment(BoothSignRoot);
 	BoothHeaderPivot->PrimaryComponentTick.bCanEverTick = false;
 	BoothHeaderPivot->SetRelativeLocation(FVector(-15.5, 0.0, 52.0));
 	BoothHeaderPivot->SetRelativeRotation(FRotator(10.0f, 0.0f, 0.0f));
@@ -123,7 +137,7 @@ ADirectorBoothActor::ADirectorBoothActor()
 	BoothStencilText->SetText(FText::FromString(TEXT("OFFICE OF THE DIRECTOR")));
 
 	BoothVerdictPivot = CreateDefaultSubobject<USceneComponent>(TEXT("BoothVerdictPivot"));
-	BoothVerdictPivot->SetupAttachment(BoothRoot);
+	BoothVerdictPivot->SetupAttachment(BoothSignRoot);
 	BoothVerdictPivot->PrimaryComponentTick.bCanEverTick = false;
 	BoothVerdictPivot->SetRelativeLocation(FVector(-15.5, 0.0, -50.0));
 	BoothVerdictPivot->SetRelativeRotation(FRotator(10.0f, 0.0f, 0.0f));
@@ -217,6 +231,11 @@ void ADirectorBoothActor::BeginPlay()
 		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
 		{
 			ShiftSubsystem->RegisterDirectorBoothStation(this);
+			ShiftSubsystem->OnPresentationAssetChanged.AddUObject(this, &ADirectorBoothActor::ApplyPresentationData);
+			if (const UTareTithePresentationDataAsset* ExistingPresentation = ShiftSubsystem->GetActivePresentationAsset())
+			{
+				ApplyPresentationData(ExistingPresentation);
+			}
 			ShiftSubsystem->OnShiftVerdict.AddUniqueDynamic(this, &ADirectorBoothActor::HandleShiftVerdict);
 			ShiftSubsystem->OnShiftPhaseChanged.AddUObject(this, &ADirectorBoothActor::HandleShiftPhaseChanged);
 			HandleShiftPhaseChanged(ShiftSubsystem->GetCurrentPhase());
@@ -230,6 +249,7 @@ void ADirectorBoothActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	{
 		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
 		{
+			ShiftSubsystem->OnPresentationAssetChanged.RemoveAll(this);
 			ShiftSubsystem->OnShiftVerdict.RemoveDynamic(this, &ADirectorBoothActor::HandleShiftVerdict);
 			ShiftSubsystem->OnShiftPhaseChanged.RemoveAll(this);
 			ShiftSubsystem->UnregisterDirectorBoothStation(this);
@@ -237,6 +257,26 @@ void ADirectorBoothActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 
 	Super::EndPlay(EndPlayReason);
+}
+
+void ADirectorBoothActor::ApplyPresentationData(const UTareTithePresentationDataAsset* InPresentationData)
+{
+	if (!IsValid(InPresentationData))
+	{
+		if (IsValid(BoothSignRoot))
+		{
+			BoothSignRoot->SetRelativeTransform(FTransform::Identity);
+		}
+		return;
+	}
+
+	InPresentationData->DirectorBoothFrameMeshSlot.ApplyToVisualComponent(BoothFrameVisual);
+	InPresentationData->DirectorShutterMeshSlot.ApplyToVisualComponent(BlastShutterVisual);
+
+	if (IsValid(BoothSignRoot))
+	{
+		BoothSignRoot->SetRelativeTransform(InPresentationData->BoothSignLocalOffset);
+	}
 }
 
 void ADirectorBoothActor::Tick(float DeltaSeconds)
@@ -359,10 +399,10 @@ void ADirectorBoothActor::SetShutterTargetOpenAlpha(float InTargetOpenAlpha, boo
 
 void ADirectorBoothActor::ApplyShutterPositionFromAlpha()
 {
-	if (IsValid(BlastShutterVisual))
+	if (IsValid(BlastShutterMotionPivot))
 	{
 		const FVector NewRelativePos = FMath::Lerp(ClosedShutterRelativeLocation, OpenShutterRelativeLocation, CurrentShutterOpenAlpha);
-		BlastShutterVisual->SetRelativeLocation(NewRelativePos);
+		BlastShutterMotionPivot->SetRelativeLocation(NewRelativePos);
 	}
 }
 

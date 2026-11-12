@@ -53,9 +53,14 @@ void ULaserCapacitorComponent::ConfigureFromShiftProgression(const UShiftProgres
 
 void ULaserCapacitorComponent::ResetCapacitorState()
 {
+	const bool bWasCharging = bIsCharging;
 	bIsCharging = false;
 	ChargeNormalized = 0.0f;
 	CooldownRemainingSeconds = 0.0f;
+	if (bWasCharging)
+	{
+		OnChargeStateChanged.Broadcast(false);
+	}
 	EmitChargeTelemetry(0.0f, true);
 	UpdateTickEnablement();
 }
@@ -69,6 +74,7 @@ void ULaserCapacitorComponent::BeginCharge()
 
 	bIsCharging = true;
 	ChargeNormalized = 0.0f;
+	OnChargeStateChanged.Broadcast(true);
 	EmitChargeTelemetry(0.0f, true);
 	UpdateTickEnablement();
 }
@@ -83,6 +89,10 @@ bool ULaserCapacitorComponent::CancelCharge()
 	const bool bWasActivelyCharging = bIsCharging;
 	bIsCharging = false;
 	ChargeNormalized = 0.0f;
+	if (bWasActivelyCharging)
+	{
+		OnChargeStateChanged.Broadcast(false);
+	}
 	EmitChargeTelemetry(0.0f, true);
 	UpdateTickEnablement();
 
@@ -107,6 +117,7 @@ void ULaserCapacitorComponent::CommitFullChargeSlice()
 	FVector PlaneOriginWorld = FVector::ZeroVector;
 	FVector PlaneNormalWorld = FVector::UpVector;
 
+	// Query and commit BEFORE unlocking the capacitor plane so the executed cut matches the locked preview plane bitwise.
 	if (OnQuerySliceTarget.IsBound() &&
 		OnQuerySliceTarget.Execute(TargetObj, PlaneOriginWorld, PlaneNormalWorld) &&
 		IsValid(TargetObj) &&
@@ -119,13 +130,17 @@ void ULaserCapacitorComponent::CommitFullChargeSlice()
 			PlaneNormalWorld);
 	}
 
+	OnChargeStateChanged.Broadcast(false);
+
 	ChargeNormalized = 0.0f;
 	CooldownRemainingSeconds = FMath::Max(0.01f, LaserCooldownSeconds);
 	EmitChargeTelemetry(0.0f, true);
 
 	if (SliceResult.Outcome == ECommitSliceOutcome::Success)
 	{
-		OnTelemetryImpulse.Broadcast(ETelemetryImpulseId::SliceCommitted, 1.0f, SliceResult.WorldCutCentroid);
+		const float SafeRefAreaCm2 = FMath::Max(50.0f, ReferenceCutAreaCm2);
+		const float CutAreaNormalized = FMath::Clamp(SliceResult.CutCrossSectionAreaCm2 / SafeRefAreaCm2, 0.12f, 1.0f);
+		OnTelemetryImpulse.Broadcast(ETelemetryImpulseId::SliceCommitted, CutAreaNormalized, SliceResult.WorldCutCentroid);
 	}
 
 	OnSliceCommittedResult.Broadcast(SliceResult);

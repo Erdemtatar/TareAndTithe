@@ -2,8 +2,11 @@
 
 #include "Components/AudioTelemetryBridgeComponent.h"
 #include "Components/AudioComponent.h"
+#include "Data/TareTithePresentationDataAsset.h"
 #include "Engine/World.h"
 #include "Interfaces/TelemetryPublisherInterface.h"
+#include "Kismet/GameplayStatics.h"
+#include "Sound/SoundAttenuation.h"
 #include "Sound/SoundBase.h"
 #include "Subsystems/InspectionShiftSubsystem.h"
 
@@ -26,6 +29,11 @@ void UAudioTelemetryBridgeComponent::BeginPlay()
 		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
 		{
 			ShiftSubsystem->RegisterAudioTelemetryBridge(this);
+			ShiftSubsystem->OnPresentationAssetChanged.AddUObject(this, &UAudioTelemetryBridgeComponent::ApplyPresentationData);
+			if (const UTareTithePresentationDataAsset* ExistingPresentation = ShiftSubsystem->GetActivePresentationAsset())
+			{
+				ApplyPresentationData(ExistingPresentation);
+			}
 		}
 	}
 }
@@ -36,12 +44,16 @@ void UAudioTelemetryBridgeComponent::EndPlay(const EEndPlayReason::Type EndPlayR
 	{
 		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
 		{
+			ShiftSubsystem->OnPresentationAssetChanged.RemoveAll(this);
 			ShiftSubsystem->UnregisterAudioTelemetryBridge(this);
 		}
 	}
 
 	UnregisterAllPublishers();
 	BoundAudioComponents.Reset();
+	ContinuousLoopsAudioComponent = nullptr;
+	DiscreteImpulsesAudioComponent = nullptr;
+	AmbientBedAudioComponent = nullptr;
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -115,6 +127,84 @@ void UAudioTelemetryBridgeComponent::UnregisterAllPublishers()
 	ActiveSubscriptions.Reset();
 }
 
+void UAudioTelemetryBridgeComponent::SetContinuousLoopsAudioComponent(UAudioComponent* InAudioComponent)
+{
+	ContinuousLoopsAudioComponent = InAudioComponent;
+	ConfigurePersistentAudioComponent(ContinuousLoopsAudioComponent);
+
+	if (bAutoPlayAssignedAudioComponents &&
+		IsValid(ContinuousLoopsAudioComponent) &&
+		IsValid(ContinuousLoopsAudioComponent->GetSound()) &&
+		!ContinuousLoopsAudioComponent->IsPlaying())
+	{
+		ContinuousLoopsAudioComponent->Play();
+	}
+}
+
+void UAudioTelemetryBridgeComponent::SetDiscreteImpulsesAudioComponent(UAudioComponent* InAudioComponent)
+{
+	DiscreteImpulsesAudioComponent = InAudioComponent;
+	ConfigurePersistentAudioComponent(DiscreteImpulsesAudioComponent);
+}
+
+void UAudioTelemetryBridgeComponent::SetAmbientBedAudioComponent(UAudioComponent* InAudioComponent)
+{
+	AmbientBedAudioComponent = InAudioComponent;
+	ConfigurePersistentAudioComponent(AmbientBedAudioComponent);
+
+	if (bAutoPlayAssignedAudioComponents &&
+		IsValid(AmbientBedAudioComponent) &&
+		IsValid(AmbientBedAudioComponent->GetSound()) &&
+		!AmbientBedAudioComponent->IsPlaying())
+	{
+		AmbientBedAudioComponent->Play();
+	}
+}
+
+void UAudioTelemetryBridgeComponent::ApplyPresentationData(const UTareTithePresentationDataAsset* InPresentationData)
+{
+	PresentationData = InPresentationData;
+	if (!IsValid(PresentationData))
+	{
+		return;
+	}
+
+	if (IsValid(ContinuousLoopsAudioComponent) && IsValid(PresentationData->ContinuousLoopsMetaSound))
+	{
+		ConfigurePersistentAudioComponent(ContinuousLoopsAudioComponent);
+		if (ContinuousLoopsAudioComponent->GetSound() != PresentationData->ContinuousLoopsMetaSound)
+		{
+			ContinuousLoopsAudioComponent->SetSound(PresentationData->ContinuousLoopsMetaSound);
+		}
+		if (bAutoPlayAssignedAudioComponents && !ContinuousLoopsAudioComponent->IsPlaying())
+		{
+			ContinuousLoopsAudioComponent->Play();
+		}
+	}
+
+	if (IsValid(AmbientBedAudioComponent) && IsValid(PresentationData->AmbientCellBedSound))
+	{
+		ConfigurePersistentAudioComponent(AmbientBedAudioComponent);
+		if (AmbientBedAudioComponent->GetSound() != PresentationData->AmbientCellBedSound)
+		{
+			AmbientBedAudioComponent->SetSound(PresentationData->AmbientCellBedSound);
+		}
+		if (bAutoPlayAssignedAudioComponents && !AmbientBedAudioComponent->IsPlaying())
+		{
+			AmbientBedAudioComponent->Play();
+		}
+	}
+
+	if (IsValid(DiscreteImpulsesAudioComponent) && IsValid(PresentationData->DiscreteImpulsesMetaSound))
+	{
+		ConfigurePersistentAudioComponent(DiscreteImpulsesAudioComponent);
+		if (DiscreteImpulsesAudioComponent->GetSound() != PresentationData->DiscreteImpulsesMetaSound)
+		{
+			DiscreteImpulsesAudioComponent->SetSound(PresentationData->DiscreteImpulsesMetaSound);
+		}
+	}
+}
+
 void UAudioTelemetryBridgeComponent::RegisterAudioComponent(UAudioComponent* InAudioComponent)
 {
 	if (!IsValid(InAudioComponent))
@@ -122,7 +212,7 @@ void UAudioTelemetryBridgeComponent::RegisterAudioComponent(UAudioComponent* InA
 		return;
 	}
 
-	InAudioComponent->PrimaryComponentTick.bCanEverTick = false;
+	ConfigurePersistentAudioComponent(InAudioComponent);
 	BoundAudioComponents.AddUnique(InAudioComponent);
 
 	if (bAutoPlayAssignedAudioComponents && IsValid(InAudioComponent->GetSound()) && !InAudioComponent->IsPlaying())
@@ -142,6 +232,9 @@ void UAudioTelemetryBridgeComponent::UnregisterAudioComponent(UAudioComponent* I
 void UAudioTelemetryBridgeComponent::ClearAudioComponents()
 {
 	BoundAudioComponents.Reset();
+	ContinuousLoopsAudioComponent = nullptr;
+	DiscreteImpulsesAudioComponent = nullptr;
+	AmbientBedAudioComponent = nullptr;
 }
 
 void UAudioTelemetryBridgeComponent::ResetStreamCache()
@@ -254,8 +347,10 @@ void UAudioTelemetryBridgeComponent::HandlePublisherImpulse(
 	const FVector& WorldLocation)
 {
 	const float ClampedMagnitude = FMath::Clamp(NormalizedMagnitude, 0.0f, 1.0f);
-	const FName TriggerName = ResolveImpulseTriggerName(ImpulseId);
 
+	SpawnSpatialImpulseSoundIfAssigned(ImpulseId, ClampedMagnitude, WorldLocation);
+
+	const FName TriggerName = ResolveImpulseTriggerName(ImpulseId);
 	if (!TriggerName.IsNone())
 	{
 		ForwardImpulseToBoundAudio(TriggerName, ClampedMagnitude);
@@ -264,8 +359,60 @@ void UAudioTelemetryBridgeComponent::HandlePublisherImpulse(
 	OnForwardedTelemetryImpulse.Broadcast(ImpulseId, ClampedMagnitude, WorldLocation);
 }
 
+void UAudioTelemetryBridgeComponent::SpawnSpatialImpulseSoundIfAssigned(
+	ETelemetryImpulseId ImpulseId,
+	float ClampedMagnitude,
+	const FVector& WorldLocation)
+{
+	if (!IsValid(PresentationData))
+	{
+		return;
+	}
+
+	const TObjectPtr<USoundBase>* FoundSpatialSound = PresentationData->SpatialImpulseSounds.Find(ImpulseId);
+	if (FoundSpatialSound == nullptr || !IsValid(*FoundSpatialSound))
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!IsValid(World))
+	{
+		return;
+	}
+
+	const float VolumeMultiplier = FMath::Lerp(SpatialMinVolumeMultiplier, SpatialMaxVolumeMultiplier, ClampedMagnitude);
+	const float PitchMultiplier = FMath::Lerp(SpatialMinPitchMultiplier, SpatialMaxPitchMultiplier, ClampedMagnitude);
+
+	UAudioComponent* SpawnedSpatialAudioComp = UGameplayStatics::SpawnSoundAtLocation(
+		World,
+		FoundSpatialSound->Get(),
+		WorldLocation,
+		FRotator::ZeroRotator,
+		VolumeMultiplier,
+		PitchMultiplier,
+		0.0f,
+		PresentationData->DefaultSpatialAttenuation.Get(),
+		nullptr,
+		true);
+
+	if (IsValid(SpawnedSpatialAudioComp) && !SpatialOneShotMagnitudeParameterName.IsNone())
+	{
+		SpawnedSpatialAudioComp->SetFloatParameter(SpatialOneShotMagnitudeParameterName, ClampedMagnitude);
+	}
+}
+
 void UAudioTelemetryBridgeComponent::ForwardFloatToBoundAudio(FName ParameterName, float Value)
 {
+	if (IsValid(ContinuousLoopsAudioComponent) && IsValid(ContinuousLoopsAudioComponent->GetSound()))
+	{
+		if (bAutoPlayAssignedAudioComponents && !ContinuousLoopsAudioComponent->IsPlaying())
+		{
+			ContinuousLoopsAudioComponent->Play();
+		}
+		ContinuousLoopsAudioComponent->SetFloatParameter(ParameterName, Value);
+	}
+
 	for (int32 Idx = BoundAudioComponents.Num() - 1; Idx >= 0; --Idx)
 	{
 		UAudioComponent* AudioComp = BoundAudioComponents[Idx].Get();
@@ -294,6 +441,16 @@ void UAudioTelemetryBridgeComponent::ForwardImpulseToBoundAudio(FName TriggerNam
 {
 	const FName MagnitudeParameterName(*FString::Printf(TEXT("%s_Magnitude"), *TriggerName.ToString()));
 
+	if (IsValid(DiscreteImpulsesAudioComponent) && IsValid(DiscreteImpulsesAudioComponent->GetSound()))
+	{
+		if (!DiscreteImpulsesAudioComponent->IsPlaying())
+		{
+			DiscreteImpulsesAudioComponent->Play();
+		}
+		DiscreteImpulsesAudioComponent->SetFloatParameter(MagnitudeParameterName, NormalizedMagnitude);
+		DiscreteImpulsesAudioComponent->SetTriggerParameter(TriggerName);
+	}
+
 	for (int32 Idx = BoundAudioComponents.Num() - 1; Idx >= 0; --Idx)
 	{
 		UAudioComponent* AudioComp = BoundAudioComponents[Idx].Get();
@@ -309,13 +466,22 @@ void UAudioTelemetryBridgeComponent::ForwardImpulseToBoundAudio(FName TriggerNam
 			continue;
 		}
 
-		if (bAutoPlayAssignedAudioComponents && !AudioComp->IsPlaying())
+		if (!AudioComp->IsPlaying())
 		{
 			AudioComp->Play();
 		}
 
 		AudioComp->SetFloatParameter(MagnitudeParameterName, NormalizedMagnitude);
 		AudioComp->SetTriggerParameter(TriggerName);
+	}
+}
+
+void UAudioTelemetryBridgeComponent::ConfigurePersistentAudioComponent(UAudioComponent* AudioComp)
+{
+	if (IsValid(AudioComp))
+	{
+		AudioComp->PrimaryComponentTick.bCanEverTick = false;
+		AudioComp->bAutoDestroy = false;
 	}
 }
 

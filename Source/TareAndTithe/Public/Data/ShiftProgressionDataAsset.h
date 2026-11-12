@@ -4,7 +4,6 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
-#include "UObject/SoftObjectPtr.h"
 #include "ShiftProgressionDataAsset.generated.h"
 
 class UMonolithContractDataAsset;
@@ -15,8 +14,8 @@ class TAREANDTITHE_API UShiftProgressionDataAsset : public UPrimaryDataAsset
 	GENERATED_BODY()
 
 public:
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shift")
-	TArray<TSoftObjectPtr<UMonolithContractDataAsset>> OrderedContracts;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Shift")
+	TArray<TObjectPtr<UMonolithContractDataAsset>> OrderedContracts;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Laser", meta = (ClampMin = "0.1", ClampMax = "2.0"))
 	float LaserCapacitorChargeSeconds = 0.35f;

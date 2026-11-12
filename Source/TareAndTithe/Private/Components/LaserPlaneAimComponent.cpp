@@ -76,6 +76,7 @@ void ULaserPlaneAimComponent::SetAimingEnabled(bool bEnabled)
 	{
 		bIsBevelButtonHeld = false;
 		bIsBevelLockActive = false;
+		bIsChargePlaneLocked = false;
 		bSuppressBevelUntilRelease = false;
 
 		if (bHideVisualWhenAimingDisabled && IsValid(LaserVisualComponent))
@@ -167,7 +168,7 @@ FVector ULaserPlaneAimComponent::GetFrameRightUnit() const
 
 void ULaserPlaneAimComponent::AddAimCursorDelta(const FVector2D& MouseDelta)
 {
-	if (MouseDelta.IsNearlyZero())
+	if (bIsChargePlaneLocked || MouseDelta.IsNearlyZero())
 	{
 		return;
 	}
@@ -193,8 +194,8 @@ void ULaserPlaneAimComponent::AddAimCursorDelta(const FVector2D& MouseDelta)
 
 bool ULaserPlaneAimComponent::SetAimFromWorldRay(const FVector& RayOriginWorld, const FVector& RayDirectionWorld)
 {
-	// Never mutate frame offsets or P_0 while RMB bevel lock is active.
-	if (bIsBevelLockActive)
+	// Never mutate frame offsets or P_0 while capacitor charge lock or RMB bevel lock is active.
+	if (bIsChargePlaneLocked || bIsBevelLockActive)
 	{
 		return false;
 	}
@@ -239,7 +240,7 @@ bool ULaserPlaneAimComponent::SetAimFromWorldRay(const FVector& RayOriginWorld, 
 
 void ULaserPlaneAimComponent::AddScrollWheelInput(float WheelSteps, bool bFastSnapHeld)
 {
-	if (FMath::IsNearlyZero(WheelSteps))
+	if (bIsChargePlaneLocked || FMath::IsNearlyZero(WheelSteps))
 	{
 		return;
 	}
@@ -283,14 +284,46 @@ void ULaserPlaneAimComponent::SuppressBevelUntilNextPress()
 	bIsBevelLockActive = false;
 }
 
+void ULaserPlaneAimComponent::SetChargePlaneLocked(bool bLocked)
+{
+	if (bIsChargePlaneLocked == bLocked)
+	{
+		return;
+	}
+
+	if (bLocked)
+	{
+		if (bPlaneStateDirty)
+		{
+			RecomputePlaneAndDispatchPreview();
+		}
+		ChargeLockedPlaneOriginWorld = CurrentPlaneOriginWorld;
+		ChargeLockedRollDegrees = RollDegrees;
+		ChargeLockedPitchBevelDegrees = PitchBevelDegrees;
+		bIsChargePlaneLocked = true;
+	}
+	else
+	{
+		bIsChargePlaneLocked = false;
+		bPlaneStateDirty = true;
+		if (bIsAimingEnabled)
+		{
+			RecomputePlaneAndDispatchPreview();
+		}
+	}
+}
+
 void ULaserPlaneAimComponent::ResetAimAndOrientation()
 {
 	AimHorizontalCm = 0.0f;
 	AimVerticalCm = 0.0f;
 	RollDegrees = 0.0f;
 	PitchBevelDegrees = 0.0f;
+	ChargeLockedRollDegrees = 0.0f;
+	ChargeLockedPitchBevelDegrees = 0.0f;
 	bIsBevelButtonHeld = false;
 	bIsBevelLockActive = false;
+	bIsChargePlaneLocked = false;
 	bSuppressBevelUntilRelease = false;
 
 	bPlaneStateDirty = true;
@@ -309,7 +342,16 @@ void ULaserPlaneAimComponent::RecomputePlaneAndDispatchPreview()
 	const FVector FrameRight = GetFrameRightUnit();
 	const FVector FrameUp = FVector::UpVector;
 
-	if (bIsBevelLockActive)
+	float EffectiveRollDegrees = RollDegrees;
+	float EffectivePitchBevelDegrees = PitchBevelDegrees;
+
+	if (bIsChargePlaneLocked)
+	{
+		CurrentPlaneOriginWorld = ChargeLockedPlaneOriginWorld;
+		EffectiveRollDegrees = ChargeLockedRollDegrees;
+		EffectivePitchBevelDegrees = ChargeLockedPitchBevelDegrees;
+	}
+	else if (bIsBevelLockActive)
 	{
 		CurrentPlaneOriginWorld = LockedPlaneOriginWorld;
 	}
@@ -319,8 +361,8 @@ void ULaserPlaneAimComponent::RecomputePlaneAndDispatchPreview()
 		LockedPlaneOriginWorld = CurrentPlaneOriginWorld;
 	}
 
-	const double RollRad = FMath::DegreesToRadians(static_cast<double>(RollDegrees));
-	const double PitchBevelRad = FMath::DegreesToRadians(static_cast<double>(PitchBevelDegrees));
+	const double RollRad = FMath::DegreesToRadians(static_cast<double>(EffectiveRollDegrees));
+	const double PitchBevelRad = FMath::DegreesToRadians(static_cast<double>(EffectivePitchBevelDegrees));
 
 	const FQuat RollQuat(FrameForward, RollRad);
 	const FQuat PitchBevelQuat(FrameRight, PitchBevelRad);

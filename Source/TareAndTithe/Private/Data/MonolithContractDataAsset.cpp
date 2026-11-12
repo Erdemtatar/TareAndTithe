@@ -32,7 +32,7 @@ EDataValidationResult UMonolithContractDataAsset::IsDataValid(FDataValidationCon
 		Result = EDataValidationResult::Invalid;
 	}
 
-	if (BaseShape == EMonolithBaseShape::CustomStaticMesh && CustomMonolithMesh.IsNull())
+	if (BaseShape == EMonolithBaseShape::CustomStaticMesh && !IsValid(CustomMonolithMesh))
 	{
 		Context.AddError(LOCTEXT("MissingCustomStaticMesh", "CustomMonolithMesh must be assigned when BaseShape is CustomStaticMesh."));
 		Result = EDataValidationResult::Invalid;

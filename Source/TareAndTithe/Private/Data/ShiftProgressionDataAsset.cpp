@@ -21,7 +21,7 @@ EDataValidationResult UShiftProgressionDataAsset::IsDataValid(FDataValidationCon
 
 	for (int32 Index = 0; Index < OrderedContracts.Num(); ++Index)
 	{
-		if (OrderedContracts[Index].IsNull())
+		if (!IsValid(OrderedContracts[Index]))
 		{
 			Context.AddError(FText::Format(
 				LOCTEXT("NullContractEntry", "OrderedContracts[{0}] must not be null."),

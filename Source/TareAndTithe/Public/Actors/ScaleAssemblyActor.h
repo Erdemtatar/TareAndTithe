@@ -19,6 +19,7 @@ class USceneComponent;
 class UShiftProgressionDataAsset;
 class UStaticMesh;
 class UStaticMeshComponent;
+class UTareTithePresentationDataAsset;
 class UTextRenderComponent;
 enum class EShiftPhase : uint8;
 
@@ -50,6 +51,7 @@ public:
 	void ConfigureForContract(const UMonolithContractDataAsset* Contract, EDiverterRoute InitialRoute);
 	bool RequestToggleDiverterRoute();
 	void ReconcileScaleOverlaps();
+	void ApplyPresentationData(const UTareTithePresentationDataAsset* InPresentationData);
 
 	FOnTelemetryStreamSignature OnTelemetryStream;
 	FOnTelemetryImpulseSignature OnTelemetryImpulse;
@@ -67,10 +69,16 @@ protected:
 	TObjectPtr<UStaticMeshComponent> LeftHopperGuideVisual;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly")
+	TObjectPtr<UBoxComponent> LeftHopperGuideCollider;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly")
 	TObjectPtr<USceneComponent> PanMotionRoot;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly")
 	TObjectPtr<UStaticMeshComponent> PanPlatformVisual;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly")
+	TObjectPtr<UBoxComponent> PanDeckCollider;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly")
 	TObjectPtr<UBoxComponent> PanRimFrontBox;
@@ -94,6 +102,9 @@ protected:
 	TObjectPtr<UStaticMeshComponent> DiverterFlapperVisual;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly")
+	TObjectPtr<UBoxComponent> DiverterPlateCollider;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly")
 	TObjectPtr<UStaticMeshComponent> TareChuteVisual;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly")
@@ -107,6 +118,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly|Readout")
 	TObjectPtr<USceneComponent> ReadoutConsolePivot;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly|Readout")
+	TObjectPtr<USceneComponent> ScaleConsoleRoot;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly|Readout")
 	TObjectPtr<UStaticMeshComponent> ReadoutBackingPlate;
@@ -143,6 +157,21 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Trigger")
 	FVector PanTriggerBoxExtentCm = FVector(35.05, 28.05, 49.0);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Colliders")
+	FVector PanDeckBoxExtentCm = FVector(38.0, 31.0, 3.0);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Colliders")
+	FVector DiverterPlateColliderOffsetCm = FVector(0.0, 0.0, 45.5);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Colliders")
+	FVector DiverterPlateBoxExtentCm = FVector(42.0, 1.5, 45.5);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Colliders")
+	FVector LeftHopperGuideOffsetCm = FVector(0.0, -32.5, 78.0);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Colliders")
+	FVector LeftHopperGuideBoxExtentCm = FVector(42.0, 1.5, 40.0);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Trigger", meta = (ClampMin = "2.0", ClampMax = "40.0"))
 	float FlapperFilterEngagementAngleDegrees = 15.0f;
@@ -219,6 +248,9 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<UMaterialInterface> UnlitReadoutTextMaterial;
+
+	UPROPERTY(Transient)
+	TObjectPtr<const UTareTithePresentationDataAsset> PresentationData;
 
 	FContractRuntimeSnapshot CachedSnapshot;
 	int32 CachedContractIndex = 0;

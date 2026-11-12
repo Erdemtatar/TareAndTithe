@@ -6,9 +6,11 @@
 #include "Components/AudioTelemetryBridgeComponent.h"
 #include "Data/MonolithContractDataAsset.h"
 #include "Data/ShiftProgressionDataAsset.h"
+#include "Data/TareTithePresentationDataAsset.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Interfaces/MassPayloadInterface.h"
+#include "Misc/PackageName.h"
 #include "Subsystems/ChunkPoolSubsystem.h"
 #include "TimerManager.h"
 
@@ -73,6 +75,25 @@ void UInspectionShiftSubsystem::Deinitialize()
 	ReceiverBinding = FShiftQuotaReceiverBinding();
 
 	Super::Deinitialize();
+}
+
+void UInspectionShiftSubsystem::SetPresentationAsset(const UTareTithePresentationDataAsset* InPresentationAsset)
+{
+	if (ActivePresentationAsset == InPresentationAsset)
+	{
+		return;
+	}
+
+	ActivePresentationAsset = InPresentationAsset;
+
+	if (IsValid(ActivePresentationAsset) &&
+		IsValid(ActivePresentationAsset->ShiftProgressionOverride) &&
+		!IsValid(ActiveProgressionAsset))
+	{
+		SetShiftProgressionAsset(ActivePresentationAsset->ShiftProgressionOverride);
+	}
+
+	OnPresentationAssetChanged.Broadcast(ActivePresentationAsset);
 }
 
 void UInspectionShiftSubsystem::SetShiftProgressionAsset(const UShiftProgressionDataAsset* InProgressionAsset)
@@ -312,7 +333,7 @@ void UInspectionShiftSubsystem::NotifySliceCommittedSummary(const FSliceResultSu
 
 	if (SliceSummary.Outcome == ECommitSliceOutcome::DetonatedVein)
 	{
-		TriggerContractFault(EContractFaultReason::VolatileDetonation);
+		TriggerContractFaultAtLocation(EContractFaultReason::VolatileDetonation, SliceSummary.WorldCutCentroid);
 		return;
 	}
 
@@ -510,6 +531,19 @@ void UInspectionShiftSubsystem::RequestManualContractReset()
 
 void UInspectionShiftSubsystem::TriggerContractFault(EContractFaultReason FaultReason)
 {
+	const bool bIsScaleOrTareFault =
+		(FaultReason == EContractFaultReason::ScaleContaminated) ||
+		(FaultReason == EContractFaultReason::QuotaOvershoot) ||
+		(FaultReason == EContractFaultReason::TareAllowanceExceeded);
+
+	const FVector Origin = bIsScaleOrTareFault ? QueryReceiverLocationOrZero() : QueryRigLocationOrZero();
+	TriggerContractFaultAtLocation(FaultReason, Origin);
+}
+
+void UInspectionShiftSubsystem::TriggerContractFaultAtLocation(
+	EContractFaultReason FaultReason,
+	const FVector& FaultWorldLocation)
+{
 	if (FaultReason == EContractFaultReason::None || CurrentPhase != EShiftPhase::ActiveInspection)
 	{
 		return;
@@ -519,7 +553,7 @@ void UInspectionShiftSubsystem::TriggerContractFault(EContractFaultReason FaultR
 	SetShiftPhase(EShiftPhase::FaultResetDelay);
 	RefreshAndBroadcastSnapshot();
 
-	OnTelemetryImpulse.Broadcast(ETelemetryImpulseId::FaultTriggered, 1.0f, QueryRigLocationOrZero());
+	OnTelemetryImpulse.Broadcast(ETelemetryImpulseId::FaultTriggered, 1.0f, FaultWorldLocation);
 	OnShiftVerdict.Broadcast(EShiftVerdictType::ContractFaultReset, FaultReason);
 
 	if (UWorld* World = GetWorld())
@@ -560,6 +594,26 @@ bool UInspectionShiftSubsystem::EnsureShiftProgressionInitialized()
 	if (IsValid(ActiveProgressionAsset) && ActiveProgressionAsset->OrderedContracts.Num() > 0)
 	{
 		return true;
+	}
+
+	if (IsValid(ActivePresentationAsset) &&
+		IsValid(ActivePresentationAsset->ShiftProgressionOverride) &&
+		ActivePresentationAsset->ShiftProgressionOverride->OrderedContracts.Num() > 0)
+	{
+		ActiveProgressionAsset = ActivePresentationAsset->ShiftProgressionOverride;
+		return true;
+	}
+
+	if (FPackageName::DoesPackageExist(TEXT("/Game/Presentation/DA_ShiftProgression")))
+	{
+		UShiftProgressionDataAsset* DiscoveredProgression = LoadObject<UShiftProgressionDataAsset>(
+			nullptr,
+			TEXT("/Game/Presentation/DA_ShiftProgression.DA_ShiftProgression"));
+		if (IsValid(DiscoveredProgression) && DiscoveredProgression->OrderedContracts.Num() > 0)
+		{
+			ActiveProgressionAsset = DiscoveredProgression;
+			return true;
+		}
 	}
 
 	ActiveProgressionAsset = BuildFallbackGreyboxProgression();
@@ -703,7 +757,7 @@ UShiftProgressionDataAsset* UInspectionShiftSubsystem::BuildFallbackGreyboxProgr
 
 	for (UMonolithContractDataAsset* FallbackContract : FallbackGreyboxContracts)
 	{
-		FallbackGreyboxProgression->OrderedContracts.Add(TSoftObjectPtr<UMonolithContractDataAsset>(FallbackContract));
+		FallbackGreyboxProgression->OrderedContracts.Add(FallbackContract);
 	}
 
 	return FallbackGreyboxProgression;
@@ -716,13 +770,8 @@ const UMonolithContractDataAsset* UInspectionShiftSubsystem::ResolveContractAtIn
 		return nullptr;
 	}
 
-	const TSoftObjectPtr<UMonolithContractDataAsset>& SoftContract = ActiveProgressionAsset->OrderedContracts[ContractIndex];
-	if (UMonolithContractDataAsset* ExistingContract = SoftContract.Get())
-	{
-		return ExistingContract;
-	}
-
-	return SoftContract.IsNull() ? nullptr : SoftContract.LoadSynchronous();
+	const TObjectPtr<UMonolithContractDataAsset>& ContractRef = ActiveProgressionAsset->OrderedContracts[ContractIndex];
+	return IsValid(ContractRef) ? ContractRef.Get() : nullptr;
 }
 
 bool UInspectionShiftSubsystem::LoadAndBeginContract(int32 ContractIndex)

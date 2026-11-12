@@ -15,6 +15,7 @@ class UAudioTelemetryBridgeComponent;
 class UCameraComponent;
 class UInputAction;
 class UInputMappingContext;
+class UInspectorKinestheticsComponent;
 class ULaserCapacitorComponent;
 class ULaserPlaneAimComponent;
 class UMaterialInstanceDynamic;
@@ -25,6 +26,7 @@ class UShiftProgressionDataAsset;
 class USoundBase;
 class UStaticMesh;
 class UStaticMeshComponent;
+class UTareTithePresentationDataAsset;
 
 UCLASS()
 class TAREANDTITHE_API AInspectorPawn : public APawn, public ITelemetryPublisherInterface
@@ -43,6 +45,7 @@ public:
 	virtual FOnTelemetryImpulseSignature& GetTelemetryImpulseDelegate() override { return OnTelemetryImpulse; }
 
 	void RefreshAimTargetAndFrameFromShift();
+	void ApplyPresentationData(const UTareTithePresentationDataAsset* InPresentationData);
 
 	FOnTelemetryStreamSignature OnTelemetryStream;
 	FOnTelemetryImpulseSignature OnTelemetryImpulse;
@@ -52,6 +55,12 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inspector")
 	TObjectPtr<USceneComponent> PawnRoot;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inspector|Camera")
+	TObjectPtr<USceneComponent> CameraViewPivot;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inspector|Camera")
+	TObjectPtr<USceneComponent> CameraShakeOffsetComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inspector|Camera")
 	TObjectPtr<UCameraComponent> InspectorCamera;
@@ -83,6 +92,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inspector|Laser")
 	TObjectPtr<ULaserCapacitorComponent> LaserCapacitorComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inspector|Kinesthetics")
+	TObjectPtr<UInspectorKinestheticsComponent> InspectorKinestheticsComponent;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inspector|Audio")
 	TObjectPtr<UAudioTelemetryBridgeComponent> AudioTelemetryBridgeComponent;
 
@@ -91,6 +103,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inspector|Audio")
 	TObjectPtr<UAudioComponent> ImpulseMetaSoundAudioComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inspector|Audio")
+	TObjectPtr<UAudioComponent> AmbientBedAudioComponent;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Audio")
 	TObjectPtr<USoundBase> ContinuousMetaSoundAsset;
@@ -207,6 +222,7 @@ private:
 		FVector& OutPlaneNormalWorld);
 
 	void HandlePreviewTelemetryUpdated(const FSlicePreviewTelemetry& PreviewTelemetry);
+	void HandleCapacitorChargeStateChanged(bool bIsNowCharging);
 	void HandleCapacitorTelemetryStream(ETelemetryStreamId StreamId, float NormalizedValue);
 	void HandleCapacitorTelemetryImpulse(ETelemetryImpulseId ImpulseId, float NormalizedMagnitude, const FVector& WorldLocation);
 	void HandleShiftPhaseChanged(EShiftPhase NewPhase);
@@ -245,6 +261,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInterface> AutoResolvedLaserSheetMasterMaterial;
+
+	UPROPERTY(Transient)
+	TObjectPtr<const UTareTithePresentationDataAsset> PresentationData;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> LaserSheetMID;

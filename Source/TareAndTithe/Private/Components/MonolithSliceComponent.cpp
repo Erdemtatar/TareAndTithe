@@ -348,6 +348,22 @@ void UMonolithSliceComponent::SetFallbackMaterials(
 	FallbackCutCapMaterial = InCutCapMaterial;
 }
 
+void UMonolithSliceComponent::RefreshActiveMaterials()
+{
+	const UMonolithContractDataAsset* Contract = ActiveContract.Get();
+	ActiveOuterMaterial = (IsValid(Contract) && IsValid(Contract->OuterShellMaterial))
+		? Contract->OuterShellMaterial.Get()
+		: FallbackOuterMaterial.Get();
+	ActiveCutCapMaterial = (IsValid(Contract) && IsValid(Contract->MoltenCutCapMaterial))
+		? Contract->MoltenCutCapMaterial.Get()
+		: FallbackCutCapMaterial.Get();
+
+	if (IsValid(RemainderMeshComponent))
+	{
+		RemainderMeshComponent->ConfigureMaterialSet({ActiveOuterMaterial.Get(), ActiveCutCapMaterial.Get()});
+	}
+}
+
 void UMonolithSliceComponent::SetClampGripBoxLocal(const FBox& InGripBoxLocal, bool bDisableAutoFit)
 {
 	ClampGripBoxLocal = InGripBoxLocal;
@@ -383,9 +399,9 @@ bool UMonolithSliceComponent::InitializeMonolithFromContract(
 
 	// Step 2: Populate from CustomStaticMesh (with edge weld + watertight verification) or procedural generator.
 	bool bBuiltValidClosedMesh = false;
-	if (Contract->BaseShape == EMonolithBaseShape::CustomStaticMesh && !Contract->CustomMonolithMesh.IsNull())
+	if (Contract->BaseShape == EMonolithBaseShape::CustomStaticMesh && IsValid(Contract->CustomMonolithMesh))
 	{
-		UStaticMesh* LoadedMesh = Contract->CustomMonolithMesh.LoadSynchronous();
+		UStaticMesh* LoadedMesh = Contract->CustomMonolithMesh.Get();
 		if (IsValid(LoadedMesh))
 		{
 			FGeometryScriptCopyMeshFromAssetOptions AssetOptions;
@@ -485,12 +501,12 @@ bool UMonolithSliceComponent::InitializeMonolithFromContract(
 			*Contract->GetName(), InitialTriCount, MaxProceduralTriangleBudget);
 	}
 
-	ActiveOuterMaterial = Contract->OuterShellMaterial.IsNull()
-		? FallbackOuterMaterial.Get()
-		: Contract->OuterShellMaterial.LoadSynchronous();
-	ActiveCutCapMaterial = Contract->MoltenCutCapMaterial.IsNull()
-		? FallbackCutCapMaterial.Get()
-		: Contract->MoltenCutCapMaterial.LoadSynchronous();
+	ActiveOuterMaterial = IsValid(Contract->OuterShellMaterial)
+		? Contract->OuterShellMaterial.Get()
+		: FallbackOuterMaterial.Get();
+	ActiveCutCapMaterial = IsValid(Contract->MoltenCutCapMaterial)
+		? Contract->MoltenCutCapMaterial.Get()
+		: FallbackCutCapMaterial.Get();
 	RemainderMeshComponent->ConfigureMaterialSet({ActiveOuterMaterial.Get(), ActiveCutCapMaterial.Get()});
 
 	if (!InitialLocalBounds.IsEmpty())

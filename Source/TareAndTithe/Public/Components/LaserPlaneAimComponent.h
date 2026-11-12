@@ -43,6 +43,9 @@ public:
 	void SuppressBevelUntilNextPress();
 	bool IsBevelLockActive() const { return bIsBevelLockActive; }
 
+	void SetChargePlaneLocked(bool bLocked);
+	bool IsChargePlaneLocked() const { return bIsChargePlaneLocked; }
+
 	void ResetAimAndOrientation();
 	void ForceRefreshPreview();
 
@@ -101,6 +104,7 @@ private:
 
 	FVector CurrentPlaneOriginWorld = FVector::ZeroVector;
 	FVector LockedPlaneOriginWorld = FVector::ZeroVector;
+	FVector ChargeLockedPlaneOriginWorld = FVector::ZeroVector;
 	FVector CurrentPlaneNormalWorld = FVector::UpVector;
 	FQuat CurrentPlaneOrientationWorld = FQuat::Identity;
 	FBox CachedTargetWorldBounds = FBox(ForceInit);
@@ -110,10 +114,13 @@ private:
 	float AimVerticalCm = 0.0f;
 	float RollDegrees = 0.0f;
 	float PitchBevelDegrees = 0.0f;
+	float ChargeLockedRollDegrees = 0.0f;
+	float ChargeLockedPitchBevelDegrees = 0.0f;
 
 	bool bIsAimingEnabled = false;
 	bool bIsBevelButtonHeld = false;
 	bool bIsBevelLockActive = false;
+	bool bIsChargePlaneLocked = false;
 	bool bSuppressBevelUntilRelease = false;
 	bool bPlaneStateDirty = true;
 };

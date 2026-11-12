@@ -9,6 +9,7 @@
 #include "Components/TextRenderComponent.h"
 #include "Data/MonolithContractDataAsset.h"
 #include "Data/ShiftProgressionDataAsset.h"
+#include "Data/TareTithePresentationDataAsset.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -46,13 +47,11 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 		UnlitReadoutTextMaterial = UnlitTextMatFinder.Object;
 	}
 
-	auto ConfigureSolidKinematicMesh = [this](UStaticMeshComponent* MeshComp)
+	auto ConfigureVisualOnlyMesh = [this](UStaticMeshComponent* MeshComp)
 	{
 		MeshComp->PrimaryComponentTick.bCanEverTick = false;
 		MeshComp->SetSimulatePhysics(false);
-		MeshComp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-		MeshComp->SetCollisionObjectType(ECC_WorldDynamic);
-		MeshComp->SetCollisionResponseToAllChannels(ECR_Block);
+		MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		MeshComp->SetGenerateOverlapEvents(false);
 		if (IsValid(FallbackCubeMesh))
 		{
@@ -64,17 +63,40 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 		}
 	};
 
+	auto ConfigureAuthoritativeBlockingBox = [](
+		UBoxComponent* BoxComp,
+		USceneComponent* ParentComp,
+		const FVector& RelativeLocationCm,
+		const FVector& ExtentCm)
+	{
+		BoxComp->SetupAttachment(ParentComp);
+		BoxComp->PrimaryComponentTick.bCanEverTick = false;
+		BoxComp->SetSimulatePhysics(false);
+		BoxComp->SetRelativeScale3D(FVector::OneVector);
+		BoxComp->SetRelativeLocation(RelativeLocationCm);
+		BoxComp->InitBoxExtent(ExtentCm);
+		BoxComp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		BoxComp->SetCollisionObjectType(ECC_WorldDynamic);
+		BoxComp->SetCollisionResponseToAllChannels(ECR_Ignore);
+		BoxComp->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Block);
+		BoxComp->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
+		BoxComp->SetGenerateOverlapEvents(false);
+	};
+
 	ScaleBaseVisual = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ScaleBaseVisual"));
 	ScaleBaseVisual->SetupAttachment(ScaleRoot);
-	ConfigureSolidKinematicMesh(ScaleBaseVisual);
+	ConfigureVisualOnlyMesh(ScaleBaseVisual);
 	ScaleBaseVisual->SetRelativeLocation(FVector(0.0, 0.0, 6.0));
 	ScaleBaseVisual->SetRelativeScale3D(FVector(0.82, 0.68, 0.12));
 
 	LeftHopperGuideVisual = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LeftHopperGuideVisual"));
 	LeftHopperGuideVisual->SetupAttachment(ScaleRoot);
-	ConfigureSolidKinematicMesh(LeftHopperGuideVisual);
-	LeftHopperGuideVisual->SetRelativeLocation(FVector(0.0, -32.5, 78.0));
+	ConfigureVisualOnlyMesh(LeftHopperGuideVisual);
+	LeftHopperGuideVisual->SetRelativeLocation(LeftHopperGuideOffsetCm);
 	LeftHopperGuideVisual->SetRelativeScale3D(FVector(0.84, 0.03, 0.80));
+
+	LeftHopperGuideCollider = CreateDefaultSubobject<UBoxComponent>(TEXT("LeftHopperGuideCollider"));
+	ConfigureAuthoritativeBlockingBox(LeftHopperGuideCollider, ScaleRoot, LeftHopperGuideOffsetCm, LeftHopperGuideBoxExtentCm);
 
 	constexpr double PanScaleX = 0.76;
 	constexpr double PanScaleY = 0.62;
@@ -89,29 +111,26 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 
 	PanPlatformVisual = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("PanPlatformVisual"));
 	PanPlatformVisual->SetupAttachment(PanMotionRoot);
-	ConfigureSolidKinematicMesh(PanPlatformVisual);
+	ConfigureVisualOnlyMesh(PanPlatformVisual);
 	PanPlatformVisual->SetRelativeLocation(FVector::ZeroVector);
 	PanPlatformVisual->SetRelativeScale3D(FVector(PanScaleX, PanScaleY, PanScaleZ));
 
-	auto ConfigurePanRimBox = [this](
+	// Authoritative unscaled (1, 1, 1) physical deck collider decoupled from PanPlatformVisual mesh swaps.
+	PanDeckCollider = CreateDefaultSubobject<UBoxComponent>(TEXT("PanDeckCollider"));
+	ConfigureAuthoritativeBlockingBox(
+		PanDeckCollider,
+		PanMotionRoot,
+		FVector(0.0, 0.0, static_cast<double>(PanDeckTopLocalZCm) - PanDeckBoxExtentCm.Z),
+		PanDeckBoxExtentCm);
+
+	auto ConfigurePanRimBox = [&](
 		UBoxComponent* RimBox,
 		double DxCm,
 		double DyCm,
 		double DzCm,
 		const FVector& ExtentCm)
 	{
-		RimBox->SetupAttachment(PanMotionRoot);
-		RimBox->PrimaryComponentTick.bCanEverTick = false;
-		RimBox->SetSimulatePhysics(false);
-		RimBox->SetRelativeScale3D(FVector::OneVector);
-		RimBox->SetRelativeLocation(FVector(DxCm, DyCm, DzCm));
-		RimBox->InitBoxExtent(ExtentCm);
-		RimBox->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-		RimBox->SetCollisionObjectType(ECC_WorldDynamic);
-		RimBox->SetCollisionResponseToAllChannels(ECR_Ignore);
-		RimBox->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Block);
-		RimBox->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
-		RimBox->SetGenerateOverlapEvents(false);
+		ConfigureAuthoritativeBlockingBox(RimBox, PanMotionRoot, FVector(DxCm, DyCm, DzCm), ExtentCm);
 	};
 
 	// 4 unscaled physical rim walls (22 cm total height [-3.0, +19.0], 16 cm raised curb above the +3.0 cm pan deck) moving with PanMotionRoot.
@@ -155,31 +174,28 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 
 	DiverterFlapperVisual = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("DiverterFlapperVisual"));
 	DiverterFlapperVisual->SetupAttachment(DiverterFlapperPivot);
-	ConfigureSolidKinematicMesh(DiverterFlapperVisual);
-	DiverterFlapperVisual->SetCollisionResponseToAllChannels(ECR_Ignore);
-	DiverterFlapperVisual->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Block);
-	DiverterFlapperVisual->SetRelativeLocation(FVector(0.0, 0.0, 45.5));
+	ConfigureVisualOnlyMesh(DiverterFlapperVisual);
+	DiverterFlapperVisual->SetRelativeLocation(DiverterPlateColliderOffsetCm);
 	DiverterFlapperVisual->SetRelativeScale3D(FVector(0.84, 0.03, 0.91));
+
+	// Authoritative unscaled (1, 1, 1) ramp collider decoupled from DiverterFlapperVisual mesh swaps.
+	DiverterPlateCollider = CreateDefaultSubobject<UBoxComponent>(TEXT("DiverterPlateCollider"));
+	ConfigureAuthoritativeBlockingBox(
+		DiverterPlateCollider,
+		DiverterFlapperPivot,
+		DiverterPlateColliderOffsetCm,
+		DiverterPlateBoxExtentCm);
 
 	TareChuteVisual = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("TareChuteVisual"));
 	TareChuteVisual->SetupAttachment(ScaleRoot);
-	TareChuteVisual->PrimaryComponentTick.bCanEverTick = false;
-	TareChuteVisual->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	TareChuteVisual->SetGenerateOverlapEvents(false);
-	if (IsValid(FallbackCubeMesh))
-	{
-		TareChuteVisual->SetStaticMesh(FallbackCubeMesh);
-	}
-	if (IsValid(BaseGreyboxShapeMaterial))
-	{
-		TareChuteVisual->SetMaterial(0, BaseGreyboxShapeMaterial);
-	}
+	ConfigureVisualOnlyMesh(TareChuteVisual);
 	TareChuteVisual->SetRelativeLocation(FVector(0.0, 86.0, 4.0));
 	TareChuteVisual->SetRelativeScale3D(FVector(0.86, 0.84, 0.08));
 
 	TareChuteTriggerBox = CreateDefaultSubobject<UBoxComponent>(TEXT("TareChuteTriggerBox"));
 	TareChuteTriggerBox->SetupAttachment(ScaleRoot);
 	TareChuteTriggerBox->PrimaryComponentTick.bCanEverTick = false;
+	TareChuteTriggerBox->SetRelativeScale3D(FVector::OneVector);
 	TareChuteTriggerBox->SetRelativeLocation(FVector(0.0, 86.0, 36.0));
 	TareChuteTriggerBox->InitBoxExtent(FVector(58.0, 49.0, 52.0));
 
@@ -192,9 +208,16 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 	ReadoutConsolePivot->PrimaryComponentTick.bCanEverTick = false;
 	ReadoutConsolePivot->SetRelativeLocation(FVector(-43.5, 0.0, 18.2));
 	ReadoutConsolePivot->SetRelativeRotation(FRotator(-10.0f, 0.0f, 0.0f));
+	ReadoutConsolePivot->SetRelativeScale3D(FVector::OneVector);
+
+	// Unscaled (1, 1, 1) grouping root translated/rotated by ScaleConsoleLocalOffset so custom mesh housings never squash text scale.
+	ScaleConsoleRoot = CreateDefaultSubobject<USceneComponent>(TEXT("ScaleConsoleRoot"));
+	ScaleConsoleRoot->SetupAttachment(ReadoutConsolePivot);
+	ScaleConsoleRoot->PrimaryComponentTick.bCanEverTick = false;
+	ScaleConsoleRoot->SetRelativeTransform(FTransform::Identity);
 
 	ReadoutBackingPlate = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ReadoutBackingPlate"));
-	ReadoutBackingPlate->SetupAttachment(ReadoutConsolePivot);
+	ReadoutBackingPlate->SetupAttachment(ScaleConsoleRoot);
 	ReadoutBackingPlate->PrimaryComponentTick.bCanEverTick = false;
 	ReadoutBackingPlate->SetSimulatePhysics(false);
 	ReadoutBackingPlate->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -236,11 +259,11 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 	};
 
 	HeaderStencilText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("HeaderStencilText"));
-	HeaderStencilText->SetupAttachment(ReadoutConsolePivot);
+	HeaderStencilText->SetupAttachment(ScaleConsoleRoot);
 	ConfigureReadoutText(HeaderStencilText, FVector(-2.0, 0.0, 14.8), 5.4f, ReadoutHeaderCyanColor, TEXT("DIRECTOR'S CUT"));
 
 	ContractCodeText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("ContractCodeText"));
-	ContractCodeText->SetupAttachment(ReadoutConsolePivot);
+	ContractCodeText->SetupAttachment(ScaleConsoleRoot);
 	ConfigureReadoutText(
 		ContractCodeText,
 		FVector(-2.0, 0.0, 9.6),
@@ -249,7 +272,7 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 		TEXT("CONTRACT 01/06 | TARGET: 12.00 KG [10.75 - 13.25]"));
 
 	StatusBannerText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("StatusBannerText"));
-	StatusBannerText->SetupAttachment(ReadoutConsolePivot);
+	StatusBannerText->SetupAttachment(ScaleConsoleRoot);
 	ConfigureReadoutText(
 		StatusBannerText,
 		FVector(-2.0, 0.0, 3.6),
@@ -258,19 +281,19 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 		TEXT("HOLD [LMB] TO SLICE MONOLITH INTO TITHE"));
 
 	MassReadoutText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("MassReadoutText"));
-	MassReadoutText->SetupAttachment(ReadoutConsolePivot);
+	MassReadoutText->SetupAttachment(ScaleConsoleRoot);
 	ConfigureReadoutText(MassReadoutText, FVector(-2.0, 0.0, -3.8), 9.4f, ReadoutGoldColor, TEXT("00.00 / 12.00 KG"));
 
 	TareReadoutText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("TareReadoutText"));
-	TareReadoutText->SetupAttachment(ReadoutConsolePivot);
+	TareReadoutText->SetupAttachment(ScaleConsoleRoot);
 	ConfigureReadoutText(TareReadoutText, FVector(-2.0, -58.0, -10.6), 5.6f, ReadoutGoldColor, TEXT("TARE: 0.0 / 14.0 KG"));
 
 	RouteReadoutText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("RouteReadoutText"));
-	RouteReadoutText->SetupAttachment(ReadoutConsolePivot);
+	RouteReadoutText->SetupAttachment(ScaleConsoleRoot);
 	ConfigureReadoutText(RouteReadoutText, FVector(-2.0, 58.0, -10.6), 5.6f, ReadoutHeaderCyanColor, TEXT("ROUTE: TITHE [SPACE]"));
 
 	ControlStencilText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("ControlStencilText"));
-	ControlStencilText->SetupAttachment(ReadoutConsolePivot);
+	ControlStencilText->SetupAttachment(ScaleConsoleRoot);
 	ConfigureReadoutText(
 		ControlStencilText,
 		FVector(-2.0, 0.0, -15.6),
@@ -305,7 +328,7 @@ void AScaleAssemblyActor::BeginPlay()
 
 	if (IsValid(DiverterGateComponent))
 	{
-		DiverterGateComponent->SetFlapperPivotAndPrimitive(DiverterFlapperPivot, DiverterFlapperVisual);
+		DiverterGateComponent->SetFlapperPivotAndPrimitive(DiverterFlapperPivot, DiverterPlateCollider);
 		DiverterGateComponent->BindTareChuteTrigger(TareChuteTriggerBox);
 		DiverterGateComponent->OnRouteChanged.AddUObject(this, &AScaleAssemblyActor::HandleDiverterRouteChanged);
 		DiverterGateComponent->OnRouteSlewCompleted.AddUObject(this, &AScaleAssemblyActor::HandleDiverterRouteSlewCompleted);
@@ -322,6 +345,9 @@ void AScaleAssemblyActor::BeginPlay()
 			ShiftSubsystem->OnShiftVerdict.AddUniqueDynamic(this, &AScaleAssemblyActor::HandleShiftVerdict);
 			ShiftSubsystem->OnShiftPhaseChanged.AddUObject(this, &AScaleAssemblyActor::HandleShiftPhaseChanged);
 			ShiftSubsystem->OnActiveContractLoaded.AddUObject(this, &AScaleAssemblyActor::HandleActiveContractLoaded);
+			ShiftSubsystem->OnPresentationAssetChanged.AddUObject(this, &AScaleAssemblyActor::ApplyPresentationData);
+
+			ApplyPresentationData(ShiftSubsystem->GetActivePresentationAsset());
 
 			CachedShiftPhase = ShiftSubsystem->GetCurrentPhase();
 
@@ -351,6 +377,7 @@ void AScaleAssemblyActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 			ShiftSubsystem->OnShiftVerdict.RemoveDynamic(this, &AScaleAssemblyActor::HandleShiftVerdict);
 			ShiftSubsystem->OnShiftPhaseChanged.RemoveAll(this);
 			ShiftSubsystem->OnActiveContractLoaded.RemoveAll(this);
+			ShiftSubsystem->OnPresentationAssetChanged.RemoveAll(this);
 			ShiftSubsystem->UnregisterQuotaReceiver(this);
 			ShiftSubsystem->UnregisterTelemetryPublisher(this);
 		}
@@ -476,6 +503,27 @@ void AScaleAssemblyActor::ReconcileScaleOverlaps()
 	{
 		ScaleWeighingComponent->ReconcileOverlappingPayloads(true);
 	}
+}
+
+void AScaleAssemblyActor::ApplyPresentationData(const UTareTithePresentationDataAsset* InPresentationData)
+{
+	PresentationData = InPresentationData;
+
+	if (IsValid(ScaleConsoleRoot))
+	{
+		ScaleConsoleRoot->SetRelativeTransform(
+			IsValid(InPresentationData) ? InPresentationData->ScaleConsoleLocalOffset : FTransform::Identity);
+	}
+
+	if (!IsValid(InPresentationData))
+	{
+		return;
+	}
+
+	InPresentationData->ScaleBaseMeshSlot.ApplyToVisualComponent(ScaleBaseVisual);
+	InPresentationData->ScalePanMeshSlot.ApplyToVisualComponent(PanPlatformVisual);
+	InPresentationData->DiverterFlapperMeshSlot.ApplyToVisualComponent(DiverterFlapperVisual);
+	InPresentationData->TareChuteMeshSlot.ApplyToVisualComponent(TareChuteVisual);
 }
 
 void AScaleAssemblyActor::HandleContractSnapshotUpdated(const FContractRuntimeSnapshot& Snapshot)
@@ -643,12 +691,80 @@ bool AScaleAssemblyActor::ShouldIgnorePayloadInPanForTareRamp(const AActor* Cand
 
 void AScaleAssemblyActor::EnforcePanTriggerGeometryAndCollision()
 {
+	UStaticMeshComponent* const PureVisualMeshes[6] = {
+		ScaleBaseVisual,
+		LeftHopperGuideVisual,
+		PanPlatformVisual,
+		DiverterFlapperVisual,
+		TareChuteVisual,
+		ReadoutBackingPlate
+	};
+	for (UStaticMeshComponent* VisualComp : PureVisualMeshes)
+	{
+		if (IsValid(VisualComp))
+		{
+			VisualComp->SetSimulatePhysics(false);
+			VisualComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			VisualComp->SetGenerateOverlapEvents(false);
+		}
+	}
+
+	auto EnforceAuthoritativeCollider = [](
+		UBoxComponent* ColliderBox,
+		USceneComponent* ExpectedParent,
+		const FVector& RelLocationCm,
+		const FVector& ExtentCm)
+	{
+		if (!IsValid(ColliderBox) || !IsValid(ExpectedParent))
+		{
+			return;
+		}
+		if (ColliderBox->GetAttachParent() != ExpectedParent)
+		{
+			ColliderBox->AttachToComponent(ExpectedParent, FAttachmentTransformRules::KeepRelativeTransform);
+		}
+		ColliderBox->SetRelativeScale3D(FVector::OneVector);
+		ColliderBox->SetRelativeLocation(RelLocationCm);
+		ColliderBox->SetBoxExtent(ExtentCm, true);
+		ColliderBox->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		ColliderBox->SetCollisionObjectType(ECC_WorldDynamic);
+		ColliderBox->SetCollisionResponseToAllChannels(ECR_Ignore);
+		ColliderBox->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Block);
+		ColliderBox->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
+		ColliderBox->SetGenerateOverlapEvents(false);
+	};
+
+	if (IsValid(PanMotionRoot))
+	{
+		PanMotionRoot->SetRelativeScale3D(FVector::OneVector);
+	}
+	if (IsValid(DiverterFlapperPivot))
+	{
+		DiverterFlapperPivot->SetRelativeScale3D(FVector::OneVector);
+	}
+
+	EnforceAuthoritativeCollider(
+		LeftHopperGuideCollider,
+		ScaleRoot,
+		LeftHopperGuideOffsetCm,
+		LeftHopperGuideBoxExtentCm);
+
+	EnforceAuthoritativeCollider(
+		PanDeckCollider,
+		PanMotionRoot,
+		FVector(0.0, 0.0, static_cast<double>(PanDeckTopLocalZCm) - PanDeckBoxExtentCm.Z),
+		PanDeckBoxExtentCm);
+
+	EnforceAuthoritativeCollider(
+		DiverterPlateCollider,
+		DiverterFlapperPivot,
+		DiverterPlateColliderOffsetCm,
+		DiverterPlateBoxExtentCm);
+
 	if (!IsValid(PanTriggerBox) || !IsValid(PanMotionRoot))
 	{
 		return;
 	}
-
-	PanMotionRoot->SetRelativeScale3D(FVector::OneVector);
 
 	if (PanTriggerBox->GetAttachParent() != PanMotionRoot)
 	{

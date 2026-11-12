@@ -4,12 +4,14 @@
 #include "Camera/CameraComponent.h"
 #include "Components/AudioComponent.h"
 #include "Components/AudioTelemetryBridgeComponent.h"
+#include "Components/InspectorKinestheticsComponent.h"
 #include "Components/LaserCapacitorComponent.h"
 #include "Components/LaserPlaneAimComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Data/MonolithContractDataAsset.h"
 #include "Data/ShiftProgressionDataAsset.h"
+#include "Data/TareTithePresentationDataAsset.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
@@ -40,11 +42,23 @@ AInspectorPawn::AInspectorPawn()
 	SetRootComponent(PawnRoot);
 	PawnRoot->PrimaryComponentTick.bCanEverTick = false;
 
+	// Steady view pivot (baseline pullback + smooth aim parallax) strictly isolated from kinesthetic camera shake.
+	CameraViewPivot = CreateDefaultSubobject<USceneComponent>(TEXT("CameraViewPivot"));
+	CameraViewPivot->SetupAttachment(PawnRoot);
+	CameraViewPivot->PrimaryComponentTick.bCanEverTick = false;
+	CameraViewPivot->SetRelativeLocation(BaselineCameraRelativeLocation);
+	CameraViewPivot->SetRelativeRotation(FRotator(BaselineCameraPitchDegrees, 0.0f, 0.0f));
+	CameraViewPivot->SetRelativeScale3D(FVector::OneVector);
+
+	CameraShakeOffsetComponent = CreateDefaultSubobject<USceneComponent>(TEXT("CameraShakeOffsetComponent"));
+	CameraShakeOffsetComponent->SetupAttachment(CameraViewPivot);
+	CameraShakeOffsetComponent->PrimaryComponentTick.bCanEverTick = false;
+	CameraShakeOffsetComponent->SetRelativeTransform(FTransform::Identity);
+
 	InspectorCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("InspectorCamera"));
-	InspectorCamera->SetupAttachment(PawnRoot);
+	InspectorCamera->SetupAttachment(CameraShakeOffsetComponent);
 	InspectorCamera->PrimaryComponentTick.bCanEverTick = false;
-	InspectorCamera->SetRelativeLocation(BaselineCameraRelativeLocation);
-	InspectorCamera->SetRelativeRotation(FRotator(BaselineCameraPitchDegrees, 0.0f, 0.0f));
+	InspectorCamera->SetRelativeTransform(FTransform::Identity);
 	InspectorCamera->FieldOfView = DefaultCameraFieldOfView;
 	InspectorCamera->bUsePawnControlRotation = false;
 	ApplyLockedCameraExposureSettings();
@@ -120,27 +134,45 @@ AInspectorPawn::AInspectorPawn()
 
 	LaserPlaneAimComponent = CreateDefaultSubobject<ULaserPlaneAimComponent>(TEXT("LaserPlaneAimComponent"));
 	LaserCapacitorComponent = CreateDefaultSubobject<ULaserCapacitorComponent>(TEXT("LaserCapacitorComponent"));
+	InspectorKinestheticsComponent = CreateDefaultSubobject<UInspectorKinestheticsComponent>(TEXT("InspectorKinestheticsComponent"));
 	AudioTelemetryBridgeComponent = CreateDefaultSubobject<UAudioTelemetryBridgeComponent>(TEXT("AudioTelemetryBridgeComponent"));
 
 	ContinuousMetaSoundAudioComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("ContinuousMetaSoundAudioComponent"));
 	ContinuousMetaSoundAudioComponent->SetupAttachment(PawnRoot);
 	ContinuousMetaSoundAudioComponent->PrimaryComponentTick.bCanEverTick = false;
 	ContinuousMetaSoundAudioComponent->bAutoActivate = false;
+	ContinuousMetaSoundAudioComponent->bAutoDestroy = false;
 
 	ImpulseMetaSoundAudioComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("ImpulseMetaSoundAudioComponent"));
 	ImpulseMetaSoundAudioComponent->SetupAttachment(PawnRoot);
 	ImpulseMetaSoundAudioComponent->PrimaryComponentTick.bCanEverTick = false;
 	ImpulseMetaSoundAudioComponent->bAutoActivate = false;
+	ImpulseMetaSoundAudioComponent->bAutoDestroy = false;
+
+	AmbientBedAudioComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("AmbientBedAudioComponent"));
+	AmbientBedAudioComponent->SetupAttachment(PawnRoot);
+	AmbientBedAudioComponent->PrimaryComponentTick.bCanEverTick = false;
+	AmbientBedAudioComponent->bAutoActivate = false;
+	AmbientBedAudioComponent->bAutoDestroy = false;
 }
 
 void AInspectorPawn::BeginPlay()
 {
 	Super::BeginPlay();
 
+	if (IsValid(CameraViewPivot))
+	{
+		CameraViewPivot->SetRelativeLocation(BaselineCameraRelativeLocation);
+		CameraViewPivot->SetRelativeRotation(FRotator(BaselineCameraPitchDegrees, 0.0f, 0.0f));
+		CameraViewPivot->SetRelativeScale3D(FVector::OneVector);
+	}
+	if (IsValid(CameraShakeOffsetComponent))
+	{
+		CameraShakeOffsetComponent->SetRelativeTransform(FTransform::Identity);
+	}
 	if (IsValid(InspectorCamera))
 	{
-		InspectorCamera->SetRelativeLocation(BaselineCameraRelativeLocation);
-		InspectorCamera->SetRelativeRotation(FRotator(BaselineCameraPitchDegrees, 0.0f, 0.0f));
+		InspectorCamera->SetRelativeTransform(FTransform::Identity);
 		InspectorCamera->SetFieldOfView(DefaultCameraFieldOfView);
 		ApplyLockedCameraExposureSettings();
 	}
@@ -156,19 +188,41 @@ void AInspectorPawn::BeginPlay()
 		PC->SetShowMouseCursor(false);
 	}
 
-	if (IsValid(ContinuousMetaSoundAudioComponent) && IsValid(ContinuousMetaSoundAsset))
+	if (IsValid(ContinuousMetaSoundAudioComponent))
 	{
-		ContinuousMetaSoundAudioComponent->SetSound(ContinuousMetaSoundAsset);
+		ContinuousMetaSoundAudioComponent->bAutoDestroy = false;
+		if (IsValid(ContinuousMetaSoundAsset))
+		{
+			ContinuousMetaSoundAudioComponent->SetSound(ContinuousMetaSoundAsset);
+		}
 	}
-	if (IsValid(ImpulseMetaSoundAudioComponent) && IsValid(ImpulseMetaSoundAsset))
+	if (IsValid(ImpulseMetaSoundAudioComponent))
 	{
-		ImpulseMetaSoundAudioComponent->SetSound(ImpulseMetaSoundAsset);
+		ImpulseMetaSoundAudioComponent->bAutoDestroy = false;
+		if (IsValid(ImpulseMetaSoundAsset))
+		{
+			ImpulseMetaSoundAudioComponent->SetSound(ImpulseMetaSoundAsset);
+		}
+	}
+	if (IsValid(AmbientBedAudioComponent))
+	{
+		AmbientBedAudioComponent->bAutoDestroy = false;
 	}
 
 	if (IsValid(AudioTelemetryBridgeComponent))
 	{
-		AudioTelemetryBridgeComponent->RegisterAudioComponent(ContinuousMetaSoundAudioComponent);
-		AudioTelemetryBridgeComponent->RegisterAudioComponent(ImpulseMetaSoundAudioComponent);
+		AudioTelemetryBridgeComponent->SetContinuousLoopsAudioComponent(ContinuousMetaSoundAudioComponent);
+		AudioTelemetryBridgeComponent->SetDiscreteImpulsesAudioComponent(ImpulseMetaSoundAudioComponent);
+		AudioTelemetryBridgeComponent->SetAmbientBedAudioComponent(AmbientBedAudioComponent);
+	}
+
+	if (IsValid(InspectorKinestheticsComponent))
+	{
+		InspectorKinestheticsComponent->BindShakeAndCameraComponents(
+			CameraShakeOffsetComponent,
+			InspectorCamera,
+			DefaultCameraFieldOfView);
+		InspectorKinestheticsComponent->BindTelemetryBridge(AudioTelemetryBridgeComponent);
 	}
 
 	if (IsValid(LaserPlaneAimComponent))
@@ -180,6 +234,7 @@ void AInspectorPawn::BeginPlay()
 	if (IsValid(LaserCapacitorComponent))
 	{
 		LaserCapacitorComponent->OnQuerySliceTarget.BindUObject(this, &AInspectorPawn::HandleQueryLaserSliceTarget);
+		LaserCapacitorComponent->OnChargeStateChanged.AddUObject(this, &AInspectorPawn::HandleCapacitorChargeStateChanged);
 		LaserCapacitorComponent->OnTelemetryStream.AddUObject(this, &AInspectorPawn::HandleCapacitorTelemetryStream);
 		LaserCapacitorComponent->OnTelemetryImpulse.AddUObject(this, &AInspectorPawn::HandleCapacitorTelemetryImpulse);
 	}
@@ -191,6 +246,9 @@ void AInspectorPawn::BeginPlay()
 			ShiftSubsystem->RegisterTelemetryPublisher(this, this);
 			ShiftSubsystem->OnShiftPhaseChanged.AddUObject(this, &AInspectorPawn::HandleShiftPhaseChanged);
 			ShiftSubsystem->OnActiveContractLoaded.AddUObject(this, &AInspectorPawn::HandleActiveContractLoaded);
+			ShiftSubsystem->OnPresentationAssetChanged.AddUObject(this, &AInspectorPawn::ApplyPresentationData);
+
+			ApplyPresentationData(ShiftSubsystem->GetActivePresentationAsset());
 
 			if (const UShiftProgressionDataAsset* ShiftConfig = ShiftSubsystem->GetActiveShiftProgression())
 			{
@@ -303,6 +361,7 @@ void AInspectorPawn::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		{
 			ShiftSubsystem->OnShiftPhaseChanged.RemoveAll(this);
 			ShiftSubsystem->OnActiveContractLoaded.RemoveAll(this);
+			ShiftSubsystem->OnPresentationAssetChanged.RemoveAll(this);
 			ShiftSubsystem->UnregisterTelemetryPublisher(this);
 		}
 	}
@@ -314,11 +373,30 @@ void AInspectorPawn::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	if (IsValid(LaserCapacitorComponent))
 	{
 		LaserCapacitorComponent->OnQuerySliceTarget.Unbind();
+		LaserCapacitorComponent->OnChargeStateChanged.RemoveAll(this);
 		LaserCapacitorComponent->OnTelemetryStream.RemoveAll(this);
 		LaserCapacitorComponent->OnTelemetryImpulse.RemoveAll(this);
 	}
 
 	Super::EndPlay(EndPlayReason);
+}
+
+void AInspectorPawn::ApplyPresentationData(const UTareTithePresentationDataAsset* InPresentationData)
+{
+	PresentationData = InPresentationData;
+
+	if (IsValid(InspectorKinestheticsComponent))
+	{
+		InspectorKinestheticsComponent->SetPresentationData(InPresentationData);
+	}
+
+	if (IsValid(AudioTelemetryBridgeComponent))
+	{
+		AudioTelemetryBridgeComponent->ApplyPresentationData(InPresentationData);
+	}
+
+	InitializeLaserSheetDynamicMaterial();
+	UpdateLaserSheetMaterialVisuals();
 }
 
 void AInspectorPawn::RefreshAimTargetAndFrameFromShift()
@@ -486,7 +564,11 @@ void AInspectorPawn::ConfigureLaserFrameGeometry()
 		LaserFrameRightBar->SetRelativeScale3D(FVector(SpanDepthScale, BarWidthScale, BarThickScale));
 	}
 
-	const bool bHasCustomTranslucentSheet = IsValid(LaserSheetOverrideMaterial) || IsValid(AutoResolvedLaserSheetMasterMaterial);
+	const bool bHasPresentationSheetMaterial = IsValid(PresentationData) && IsValid(PresentationData->LaserSheetMaterial);
+	const bool bHasCustomTranslucentSheet =
+		IsValid(LaserSheetOverrideMaterial) ||
+		bHasPresentationSheetMaterial ||
+		IsValid(AutoResolvedLaserSheetMasterMaterial);
 	if (bHasCustomTranslucentSheet)
 	{
 		const FVector FullSheetScale(SafeDepthCm / 100.0, SafeWidthCm / 100.0, 1.0);
@@ -522,7 +604,12 @@ void AInspectorPawn::ConfigureLaserFrameGeometry()
 
 void AInspectorPawn::InitializeLaserSheetDynamicMaterial()
 {
-	if (!IsValid(LaserSheetOverrideMaterial) && !IsValid(AutoResolvedLaserSheetMasterMaterial))
+	UMaterialInterface* PresentationSheetMat =
+		(IsValid(PresentationData) && IsValid(PresentationData->LaserSheetMaterial))
+		? PresentationData->LaserSheetMaterial.Get()
+		: nullptr;
+
+	if (!IsValid(LaserSheetOverrideMaterial) && !IsValid(PresentationSheetMat) && !IsValid(AutoResolvedLaserSheetMasterMaterial))
 	{
 		if (FPackageName::DoesPackageExist(TEXT("/Game/Materials/M_LaserSheet_Master")))
 		{
@@ -536,7 +623,7 @@ void AInspectorPawn::InitializeLaserSheetDynamicMaterial()
 
 	UMaterialInterface* EffectiveCustomSheetMat = IsValid(LaserSheetOverrideMaterial)
 		? LaserSheetOverrideMaterial.Get()
-		: AutoResolvedLaserSheetMasterMaterial.Get();
+		: (IsValid(PresentationSheetMat) ? PresentationSheetMat : AutoResolvedLaserSheetMasterMaterial.Get());
 	UMaterialInterface* SheetSourceMaterial = IsValid(EffectiveCustomSheetMat)
 		? EffectiveCustomSheetMat
 		: BaseGreyboxPlaneMaterial.Get();
@@ -638,7 +725,7 @@ void AInspectorPawn::UpdateLaserSheetMaterialVisuals()
 
 void AInspectorPawn::UpdateCameraParallaxFromAim()
 {
-	if (!IsValid(InspectorCamera) || !IsValid(LaserPlaneAimComponent))
+	if (!IsValid(CameraViewPivot) || !IsValid(LaserPlaneAimComponent))
 	{
 		return;
 	}
@@ -656,8 +743,8 @@ void AInspectorPawn::UpdateCameraParallaxFromAim()
 	const float TargetPitchDeg = FMath::Clamp(NormV * MaxCameraParallaxPitchDegrees, -MaxCameraParallaxPitchDegrees, MaxCameraParallaxPitchDegrees);
 	const float FinalPitchDeg = FMath::Min(TargetPitchDeg + BaselineCameraPitchDegrees, MaxUpwardCameraPitchCeilingDegrees);
 
-	// Subtle baseline downward look plus clamped aim-tracking parallax that never cuts off the bottom console bezel.
-	InspectorCamera->SetRelativeRotation(FRotator(FinalPitchDeg, TargetYawDeg, 0.0f));
+	// Subtle baseline downward look plus clamped aim-tracking parallax applied strictly to CameraViewPivot, never CameraShakeOffsetComponent.
+	CameraViewPivot->SetRelativeRotation(FRotator(FinalPitchDeg, TargetYawDeg, 0.0f));
 }
 
 void AInspectorPawn::ApplyNativeScalabilityPreset(int32 QualityLevel, float TsrResolutionScalePercent)
@@ -693,6 +780,14 @@ void AInspectorPawn::HandlePreviewTelemetryUpdated(const FSlicePreviewTelemetry&
 	CachedVeinProximityNormalized = PreviewTelemetry.VeinProximityNormalized;
 	UpdateCameraParallaxFromAim();
 	UpdateLaserSheetMaterialVisuals();
+}
+
+void AInspectorPawn::HandleCapacitorChargeStateChanged(bool bIsNowCharging)
+{
+	if (IsValid(LaserPlaneAimComponent))
+	{
+		LaserPlaneAimComponent->SetChargePlaneLocked(bIsNowCharging);
+	}
 }
 
 void AInspectorPawn::HandleCapacitorTelemetryStream(ETelemetryStreamId StreamId, float NormalizedValue)
@@ -751,6 +846,11 @@ void AInspectorPawn::HandleActiveContractLoaded(
 	if (IsValid(LaserPlaneAimComponent))
 	{
 		LaserPlaneAimComponent->ResetAimAndOrientation();
+	}
+
+	if (IsValid(InspectorKinestheticsComponent))
+	{
+		InspectorKinestheticsComponent->ResetKinestheticsImmediate();
 	}
 
 	RefreshAimTargetAndFrameFromShift();

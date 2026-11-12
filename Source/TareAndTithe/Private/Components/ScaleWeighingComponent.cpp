@@ -238,7 +238,13 @@ void UScaleWeighingComponent::HandlePanTriggerBeginOverlap(
 	SetComponentTickEnabled(true);
 
 	const float NormalizedImpact = FMath::Clamp(ChunkMassKg / FMath::Max(0.5f, TargetQuotaMassKg), 0.05f, 1.0f);
-	OnTelemetryImpulse.Broadcast(ETelemetryImpulseId::ChunkScaleImpact, NormalizedImpact, OtherActor->GetActorLocation());
+	FVector ImpactWorldLocation = OtherActor->GetActorLocation();
+	if (IsValid(PanPlatformComponent))
+	{
+		const double DeckWorldZ = PanPlatformComponent->GetComponentLocation().Z + static_cast<double>(PanWellFloorOffsetZCm + 6.0f);
+		ImpactWorldLocation.Z = DeckWorldZ;
+	}
+	OnTelemetryImpulse.Broadcast(ETelemetryImpulseId::ChunkScaleImpact, NormalizedImpact, ImpactWorldLocation);
 	OnChunkLandedOnScale.Broadcast(OtherActor, ChunkMassKg, PanMassKg);
 
 	if (bChunkContaminated)

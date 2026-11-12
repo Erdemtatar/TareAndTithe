@@ -4,7 +4,6 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
-#include "UObject/SoftObjectPtr.h"
 #include "Core/TareTitheTypes.h"
 #include "MonolithContractDataAsset.generated.h"
 
@@ -23,8 +22,8 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Geometry")
 	EMonolithBaseShape BaseShape = EMonolithBaseShape::Box;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Geometry", meta = (EditCondition = "BaseShape == EMonolithBaseShape::CustomStaticMesh"))
-	TSoftObjectPtr<UStaticMesh> CustomMonolithMesh;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Geometry", meta = (EditCondition = "BaseShape == EMonolithBaseShape::CustomStaticMesh"))
+	TObjectPtr<UStaticMesh> CustomMonolithMesh = nullptr;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Geometry")
 	FVector DimensionsCm = FVector(40.0f, 40.0f, 100.0f);
@@ -68,11 +67,11 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Veins")
 	TArray<FVolatileVeinDefinition> HiddenVeins;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Materials")
-	TSoftObjectPtr<UMaterialInterface> OuterShellMaterial;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Materials")
+	TObjectPtr<UMaterialInterface> OuterShellMaterial = nullptr;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Materials")
-	TSoftObjectPtr<UMaterialInterface> MoltenCutCapMaterial;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Materials")
+	TObjectPtr<UMaterialInterface> MoltenCutCapMaterial = nullptr;
 
 	virtual FPrimaryAssetId GetPrimaryAssetId() const override;
 

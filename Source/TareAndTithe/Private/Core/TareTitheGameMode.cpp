@@ -6,10 +6,12 @@
 #include "Actors/MonolithRigActor.h"
 #include "Actors/ScaleAssemblyActor.h"
 #include "Actors/StrayFloorCatchActor.h"
+#include "Components/BoxComponent.h"
 #include "Components/PointLightComponent.h"
 #include "Components/SpotLightComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Data/ShiftProgressionDataAsset.h"
+#include "Data/TareTithePresentationDataAsset.h"
 #include "Engine/PointLight.h"
 #include "Engine/SpotLight.h"
 #include "Engine/StaticMesh.h"
@@ -21,6 +23,7 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "Math/RotationMatrix.h"
+#include "Misc/PackageName.h"
 #include "Subsystems/InspectionShiftSubsystem.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -49,37 +52,52 @@ void ATareTitheGameMode::InitGame(const FString& MapName, const FString& Options
 	Super::InitGame(MapName, Options, ErrorMessage);
 
 	ApplyBaseline6GbVramScalability();
-
-	if (IsValid(DefaultShiftProgression))
-	{
-		if (UWorld* World = GetWorld())
-		{
-			if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
-			{
-				ShiftSubsystem->SetShiftProgressionAsset(DefaultShiftProgression);
-			}
-		}
-	}
+	ResolveAndPublishPresentationAndProgression();
 }
 
 void ATareTitheGameMode::StartPlay()
 {
-	if (IsValid(DefaultShiftProgression))
-	{
-		if (UWorld* World = GetWorld())
-		{
-			if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
-			{
-				ShiftSubsystem->SetShiftProgressionAsset(DefaultShiftProgression);
-			}
-		}
-	}
+	ResolveAndPublishPresentationAndProgression();
 
 	Super::StartPlay();
 
 	if (bSpawnGreyboxCellIfStationsMissing)
 	{
 		SpawnMissingGreyboxStationsIfNeeded();
+	}
+}
+
+void ATareTitheGameMode::ResolveAndPublishPresentationAndProgression()
+{
+	if (!IsValid(PresentationData) && FPackageName::DoesPackageExist(TEXT("/Game/Presentation/DA_Presentation")))
+	{
+		PresentationData = LoadObject<UTareTithePresentationDataAsset>(
+			nullptr,
+			TEXT("/Game/Presentation/DA_Presentation.DA_Presentation"));
+	}
+
+	UShiftProgressionDataAsset* ResolvedProgression = DefaultShiftProgression;
+	if (!IsValid(ResolvedProgression) && IsValid(PresentationData) && IsValid(PresentationData->ShiftProgressionOverride))
+	{
+		ResolvedProgression = PresentationData->ShiftProgressionOverride;
+	}
+	if (!IsValid(ResolvedProgression) && FPackageName::DoesPackageExist(TEXT("/Game/Presentation/DA_ShiftProgression")))
+	{
+		ResolvedProgression = LoadObject<UShiftProgressionDataAsset>(
+			nullptr,
+			TEXT("/Game/Presentation/DA_ShiftProgression.DA_ShiftProgression"));
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
+		{
+			ShiftSubsystem->SetPresentationAsset(PresentationData);
+			if (IsValid(ResolvedProgression))
+			{
+				ShiftSubsystem->SetShiftProgressionAsset(ResolvedProgression);
+			}
+		}
 	}
 }
 
@@ -205,9 +223,22 @@ void ATareTitheGameMode::SpawnGreyboxPitEnclosureAndLighting(UWorld* World)
 		PitMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.14f);
 	}
 
-	auto SpawnEnclosureSlab = [&](const FVector& Location, const FVector& Scale3D, bool bEnableSolidCatchCollision)
+	auto SpawnEnclosureSlab = [&](const FVector& Location, const FVector& GreyboxScale3D, bool bIsFloorSlab)
 	{
-		if (!IsValid(GreyboxCellCubeMesh))
+		const FMeshPresentationSlot* AssignedSlot = nullptr;
+		UMaterialInterface* CustomCellMaterial = nullptr;
+		if (IsValid(PresentationData))
+		{
+			AssignedSlot = bIsFloorSlab
+				? &PresentationData->CellFloorGrateMeshSlot
+				: &PresentationData->CellWallPanelMeshSlot;
+			CustomCellMaterial = bIsFloorSlab
+				? PresentationData->CellFloorMaterial.Get()
+				: PresentationData->CellWallMaterial.Get();
+		}
+
+		const bool bHasCustomMesh = (AssignedSlot != nullptr) && IsValid(AssignedSlot->Mesh);
+		if (!bHasCustomMesh && !IsValid(GreyboxCellCubeMesh))
 		{
 			return;
 		}
@@ -229,23 +260,29 @@ void ATareTitheGameMode::SpawnGreyboxPitEnclosureAndLighting(UWorld* World)
 
 		MeshComp->PrimaryComponentTick.bCanEverTick = false;
 		MeshComp->SetMobility(EComponentMobility::Movable);
-		MeshComp->SetStaticMesh(GreyboxCellCubeMesh);
-		MeshComp->SetWorldScale3D(Scale3D);
+		MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		MeshComp->SetGenerateOverlapEvents(false);
-		if (bEnableSolidCatchCollision)
+
+		if (bHasCustomMesh)
 		{
-			MeshComp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-			MeshComp->SetCollisionObjectType(ECC_WorldStatic);
-			MeshComp->SetCollisionResponseToAllChannels(ECR_Block);
+			AssignedSlot->ApplyToVisualComponent(MeshComp);
+			const FTransform WorldSlabTransform =
+				AssignedSlot->VisualLocalTransform * FTransform(FRotator::ZeroRotator, Location, FVector::OneVector);
+			MeshComp->SetWorldTransform(WorldSlabTransform);
+			if (AssignedSlot->MaterialOverrides.Num() == 0 && IsValid(CustomCellMaterial) && !IsValid(MeshComp->GetMaterial(0)))
+			{
+				MeshComp->SetMaterial(0, CustomCellMaterial);
+			}
 		}
 		else
 		{
-			MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		}
-
-		if (IsValid(PitMID))
-		{
-			MeshComp->SetMaterial(0, PitMID);
+			MeshComp->SetStaticMesh(GreyboxCellCubeMesh);
+			MeshComp->SetWorldScale3D(GreyboxScale3D);
+			UMaterialInterface* ResolvedMat = IsValid(CustomCellMaterial) ? CustomCellMaterial : PitMID;
+			if (IsValid(ResolvedMat))
+			{
+				MeshComp->SetMaterial(0, ResolvedMat);
+			}
 		}
 	};
 
@@ -261,9 +298,32 @@ void ATareTitheGameMode::SpawnGreyboxPitEnclosureAndLighting(UWorld* World)
 	constexpr double WallHeightScaleZ = 6.00;
 	constexpr double CeilingZ = 475.0;
 
-	// Solid pit floor sits well below AStrayFloorCatchActor (-35 cm) so stray chunks trigger StrayFloorCatch first while snapped remainders land solidly.
+	// Authoritative invisible unscaled (1, 1, 1) pit floor catch collider below AStrayFloorCatchActor (-35 cm), decoupled from visual grate mesh swaps.
+	if (AActor* PitFloorCatchActor = World->SpawnActor<AActor>(
+		AActor::StaticClass(),
+		FTransform(FRotator::ZeroRotator, FVector(EnclosureCenterX, DropY, -95.0), FVector::OneVector),
+		SpawnParams))
+	{
+		UBoxComponent* PitFloorCatchBox = NewObject<UBoxComponent>(PitFloorCatchActor, TEXT("PitFloorCatchCollider"));
+		if (IsValid(PitFloorCatchBox))
+		{
+			PitFloorCatchBox->PrimaryComponentTick.bCanEverTick = false;
+			PitFloorCatchBox->SetMobility(EComponentMobility::Movable);
+			PitFloorCatchActor->SetRootComponent(PitFloorCatchBox);
+			PitFloorCatchBox->SetWorldLocationAndRotation(FVector(EnclosureCenterX, DropY, -95.0), FRotator::ZeroRotator);
+			PitFloorCatchBox->SetWorldScale3D(FVector::OneVector);
+			PitFloorCatchBox->InitBoxExtent(FVector(50.0 * EnclosureSpanScaleX, 50.0 * EnclosureSpanScaleY, 10.0));
+			PitFloorCatchBox->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			PitFloorCatchBox->SetCollisionObjectType(ECC_WorldStatic);
+			PitFloorCatchBox->SetCollisionResponseToAllChannels(ECR_Block);
+			PitFloorCatchBox->SetGenerateOverlapEvents(false);
+			PitFloorCatchBox->RegisterComponent();
+		}
+	}
+
+	// Visual-only pit floor and cell enclosure slabs (NoCollision).
 	SpawnEnclosureSlab(FVector(EnclosureCenterX, DropY, -95.0), FVector(EnclosureSpanScaleX, EnclosureSpanScaleY, 0.20), true);
-	// Front wall behind Director Booth and rear cell wall behind X = -150 cm so pulled-back camera (-68 cm) never clips level geometry.
+	// Front wall behind Director Booth and rear cell wall behind X = -150 cm so pulled-back camera never clips level geometry.
 	SpawnEnclosureSlab(FVector(FrontWallX, DropY, WallCenterZ), FVector(0.20, EnclosureSpanScaleY, WallHeightScaleZ), false);
 	SpawnEnclosureSlab(FVector(RearWallX, DropY, WallCenterZ), FVector(0.20, EnclosureSpanScaleY, WallHeightScaleZ), false);
 	SpawnEnclosureSlab(FVector(EnclosureCenterX, DropY - SideWallOffsetY, WallCenterZ), FVector(EnclosureSpanScaleX, 0.20, WallHeightScaleZ), false);

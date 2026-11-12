@@ -16,6 +16,7 @@ class ASeveredChunkActor;
 class UAudioTelemetryBridgeComponent;
 class UMonolithContractDataAsset;
 class UShiftProgressionDataAsset;
+class UTareTithePresentationDataAsset;
 
 UENUM(BlueprintType)
 enum class EShiftPhase : uint8
@@ -45,6 +46,7 @@ DECLARE_DELEGATE_RetVal(float, FQueryStationFloatDelegate);
 DECLARE_DELEGATE_RetVal(FVector, FQueryStationVectorDelegate);
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnShiftPhaseChangedSignature, EShiftPhase /*NewPhase*/);
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnPresentationAssetChangedSignature, const UTareTithePresentationDataAsset* /*PresentationAsset*/);
 DECLARE_MULTICAST_DELEGATE_ThreeParams(
 	FOnActiveContractLoadedSignature,
 	const UMonolithContractDataAsset* /*Contract*/,
@@ -84,6 +86,8 @@ public:
 	virtual FOnTelemetryImpulseSignature& GetTelemetryImpulseDelegate() override { return OnTelemetryImpulse; }
 
 	// Progression & Configuration
+	void SetPresentationAsset(const UTareTithePresentationDataAsset* InPresentationAsset);
+	const UTareTithePresentationDataAsset* GetActivePresentationAsset() const { return ActivePresentationAsset; }
 	void SetShiftProgressionAsset(const UShiftProgressionDataAsset* InProgressionAsset);
 	const UShiftProgressionDataAsset* GetActiveShiftProgression() const { return ActiveProgressionAsset; }
 	const UMonolithContractDataAsset* GetActiveContract() const { return ActiveContract; }
@@ -144,6 +148,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Shift")
 	void TriggerContractFault(EContractFaultReason FaultReason);
 
+	void TriggerContractFaultAtLocation(EContractFaultReason FaultReason, const FVector& FaultWorldLocation);
+
 	UPROPERTY(BlueprintAssignable, Category = "Shift")
 	FOnContractSnapshotUpdatedSignature OnContractSnapshotUpdated;
 
@@ -151,6 +157,7 @@ public:
 	FOnShiftVerdictSignature OnShiftVerdict;
 
 	FOnShiftPhaseChangedSignature OnShiftPhaseChanged;
+	FOnPresentationAssetChangedSignature OnPresentationAssetChanged;
 	FOnActiveContractLoadedSignature OnActiveContractLoaded;
 	FOnTelemetryStreamSignature OnTelemetryStream;
 	FOnTelemetryImpulseSignature OnTelemetryImpulse;
@@ -181,6 +188,9 @@ private:
 	float QueryLiveRemainderMassKg() const;
 	FVector QueryRigLocationOrZero() const;
 	FVector QueryReceiverLocationOrZero() const;
+
+	UPROPERTY(Transient)
+	TObjectPtr<const UTareTithePresentationDataAsset> ActivePresentationAsset;
 
 	UPROPERTY(Transient)
 	TObjectPtr<const UShiftProgressionDataAsset> ActiveProgressionAsset;

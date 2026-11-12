@@ -12,6 +12,7 @@ class UMaterialInterface;
 class UPointLightComponent;
 class USceneComponent;
 class UStaticMeshComponent;
+class UTareTithePresentationDataAsset;
 class UTextRenderComponent;
 
 UCLASS()
@@ -25,6 +26,8 @@ public:
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
+	void ApplyPresentationData(const UTareTithePresentationDataAsset* InPresentationData);
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -35,7 +38,13 @@ protected:
 	TObjectPtr<UStaticMeshComponent> BoothFrameVisual;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "DirectorBooth")
+	TObjectPtr<USceneComponent> BlastShutterMotionPivot;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "DirectorBooth")
 	TObjectPtr<UStaticMeshComponent> BlastShutterVisual;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "DirectorBooth|Readout")
+	TObjectPtr<USceneComponent> BoothSignRoot;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "DirectorBooth|Readout")
 	TObjectPtr<USceneComponent> BoothHeaderPivot;

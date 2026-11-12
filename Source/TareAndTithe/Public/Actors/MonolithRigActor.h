@@ -20,6 +20,7 @@ class USceneComponent;
 class UShiftProgressionDataAsset;
 class UStaticMesh;
 class UStaticMeshComponent;
+class UTareTithePresentationDataAsset;
 class UVeinScannerComponent;
 
 UCLASS()
@@ -55,6 +56,8 @@ public:
 		const UShiftProgressionDataAsset* ShiftConfig,
 		float& OutInitialMassKg);
 
+	void ApplyPresentationData(const UTareTithePresentationDataAsset* InPresentationData);
+
 	FOnTelemetryStreamSignature OnTelemetryStream;
 	FOnTelemetryImpulseSignature OnTelemetryImpulse;
 
@@ -63,6 +66,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rig")
 	TObjectPtr<USceneComponent> ClampPivotRoot;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rig")
+	TObjectPtr<UStaticMeshComponent> ClampSpringHousingVisual;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rig")
 	TObjectPtr<USceneComponent> TiltingMountComponent;
@@ -105,8 +111,8 @@ protected:
 
 private:
 	void EnsureGreyboxMaterialsInitialized();
-	UMaterialInterface* ResolveEffectiveOuterMaterial() const;
-	UMaterialInterface* ResolveEffectiveCutCapMaterial() const;
+	UMaterialInterface* ResolveEffectiveOuterMaterial(const UMonolithContractDataAsset* Contract = nullptr) const;
+	UMaterialInterface* ResolveEffectiveCutCapMaterial(const UMonolithContractDataAsset* Contract = nullptr) const;
 	FVector TransformRemainderCoMToMountLocal(const FVector& RemainderLocalCoMCm) const;
 	float QueryCurrentRemainderMassKg() const;
 	FVector QueryRigWorldLocation() const;
@@ -124,6 +130,12 @@ private:
 	TObjectPtr<UMaterialInterface> BaseGreyboxShapeMaterial;
 
 	UPROPERTY(Transient)
+	TObjectPtr<const UTareTithePresentationDataAsset> PresentationData;
+
+	UPROPERTY(Transient)
+	TObjectPtr<const UMonolithContractDataAsset> CachedLoadedContract;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInterface> AutoResolvedOuterMasterMaterial;
 
 	UPROPERTY(Transient)
@@ -137,4 +149,6 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> ClampJawMID;
+
+	bool bHasCustomClampJawMesh = false;
 };

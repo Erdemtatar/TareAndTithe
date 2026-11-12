@@ -30,6 +30,7 @@ public:
 	UDynamicMeshComponent* GetRemainderMeshComponent() const { return RemainderMeshComponent; }
 
 	void SetFallbackMaterials(UMaterialInterface* InOuterMaterial, UMaterialInterface* InCutCapMaterial);
+	void RefreshActiveMaterials();
 
 	void SetClampGripBoxLocal(const FBox& InGripBoxLocal, bool bDisableAutoFit = true);
 	const FBox& GetClampGripBoxLocal() const { return ClampGripBoxLocal; }

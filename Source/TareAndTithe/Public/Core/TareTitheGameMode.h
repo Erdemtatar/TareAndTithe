@@ -9,6 +9,7 @@
 class UMaterialInterface;
 class UShiftProgressionDataAsset;
 class UStaticMesh;
+class UTareTithePresentationDataAsset;
 
 UCLASS()
 class TAREANDTITHE_API ATareTitheGameMode : public AGameModeBase
@@ -22,8 +23,11 @@ public:
 	virtual void StartPlay() override;
 
 protected:
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation")
+	TObjectPtr<UTareTithePresentationDataAsset> PresentationData = nullptr;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shift")
-	TObjectPtr<UShiftProgressionDataAsset> DefaultShiftProgression;
+	TObjectPtr<UShiftProgressionDataAsset> DefaultShiftProgression = nullptr;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell")
 	bool bSpawnGreyboxCellIfStationsMissing = true;
@@ -68,6 +72,7 @@ protected:
 	float BaselineTsrResolutionScalePercent = 85.0f;
 
 private:
+	void ResolveAndPublishPresentationAndProgression();
 	void ApplyBaseline6GbVramScalability();
 	void SpawnMissingGreyboxStationsIfNeeded();
 	void SpawnGreyboxPitEnclosureAndLighting(UWorld* World);

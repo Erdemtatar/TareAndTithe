@@ -10,6 +10,7 @@
 #include "Components/VeinScannerComponent.h"
 #include "Data/MonolithContractDataAsset.h"
 #include "Data/ShiftProgressionDataAsset.h"
+#include "Data/TareTithePresentationDataAsset.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "GeometryScript/CollisionFunctions.h"
@@ -28,6 +29,14 @@ AMonolithRigActor::AMonolithRigActor()
 	SetRootComponent(ClampPivotRoot);
 	ClampPivotRoot->PrimaryComponentTick.bCanEverTick = false;
 
+	ClampSpringHousingVisual = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ClampSpringHousingVisual"));
+	ClampSpringHousingVisual->SetupAttachment(ClampPivotRoot);
+	ClampSpringHousingVisual->PrimaryComponentTick.bCanEverTick = false;
+	ClampSpringHousingVisual->SetSimulatePhysics(false);
+	ClampSpringHousingVisual->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ClampSpringHousingVisual->SetGenerateOverlapEvents(false);
+	ClampSpringHousingVisual->SetVisibility(false, false);
+
 	TiltingMountComponent = CreateDefaultSubobject<USceneComponent>(TEXT("TiltingMountComponent"));
 	TiltingMountComponent->SetupAttachment(ClampPivotRoot);
 	TiltingMountComponent->PrimaryComponentTick.bCanEverTick = false;
@@ -35,6 +44,7 @@ AMonolithRigActor::AMonolithRigActor()
 	ClampJawVisual = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ClampJawVisual"));
 	ClampJawVisual->SetupAttachment(TiltingMountComponent);
 	ClampJawVisual->PrimaryComponentTick.bCanEverTick = false;
+	ClampJawVisual->SetSimulatePhysics(false);
 	ClampJawVisual->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	ClampJawVisual->SetGenerateOverlapEvents(false);
 	ClampJawVisual->SetRelativeLocation(FVector(0.0, 0.0, -2.0));
@@ -101,6 +111,12 @@ void AMonolithRigActor::BeginPlay()
 	{
 		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
 		{
+			ShiftSubsystem->OnPresentationAssetChanged.AddUObject(this, &AMonolithRigActor::ApplyPresentationData);
+			if (const UTareTithePresentationDataAsset* ExistingPresentation = ShiftSubsystem->GetActivePresentationAsset())
+			{
+				ApplyPresentationData(ExistingPresentation);
+			}
+
 			ShiftSubsystem->RegisterTelemetryPublisher(this, this);
 
 			FShiftSliceableRigBinding Binding;
@@ -121,6 +137,7 @@ void AMonolithRigActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	{
 		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
 		{
+			ShiftSubsystem->OnPresentationAssetChanged.RemoveAll(this);
 			ShiftSubsystem->UnregisterSliceableRig(this);
 			ShiftSubsystem->UnregisterTelemetryPublisher(this);
 		}
@@ -177,7 +194,10 @@ FSliceResultSummary AMonolithRigActor::CommitSlicePlane_Implementation(
 
 	if (Summary.Outcome == ECommitSliceOutcome::Success && IsValid(RemainderMeshComponent))
 	{
-		RemainderMeshComponent->ConfigureMaterialSet({ResolveEffectiveOuterMaterial(), ResolveEffectiveCutCapMaterial()});
+		RemainderMeshComponent->ConfigureMaterialSet({
+			ResolveEffectiveOuterMaterial(CachedLoadedContract),
+			ResolveEffectiveCutCapMaterial(CachedLoadedContract)
+		});
 	}
 
 	if (Summary.Outcome == ECommitSliceOutcome::Success && IsValid(ClampTorqueSolverComponent))
@@ -223,8 +243,11 @@ bool AMonolithRigActor::LoadContractOnRig(
 		return false;
 	}
 
+	CachedLoadedContract = Contract;
 	EnsureGreyboxMaterialsInitialized();
-	MonolithSliceComponent->SetFallbackMaterials(ResolveEffectiveOuterMaterial(), ResolveEffectiveCutCapMaterial());
+	MonolithSliceComponent->SetFallbackMaterials(
+		ResolveEffectiveOuterMaterial(nullptr),
+		ResolveEffectiveCutCapMaterial(nullptr));
 
 	// Restore kinematic hierarchy in case previous contract ended via ClampStructuralSnap freefall.
 	RemainderMeshComponent->SetSimulatePhysics(false);
@@ -244,7 +267,10 @@ bool AMonolithRigActor::LoadContractOnRig(
 		return false;
 	}
 
-	RemainderMeshComponent->ConfigureMaterialSet({ResolveEffectiveOuterMaterial(), ResolveEffectiveCutCapMaterial()});
+	RemainderMeshComponent->ConfigureMaterialSet({
+		ResolveEffectiveOuterMaterial(Contract),
+		ResolveEffectiveCutCapMaterial(Contract)
+	});
 
 	// Align top of generated/imported mesh (whether Center or Base origin) cleanly inside TiltingMountComponent's clamp jaws.
 	const FBox LocalBounds = MonolithSliceComponent->GetRemainderLocalBounds();
@@ -254,7 +280,7 @@ bool AMonolithRigActor::LoadContractOnRig(
 	RemainderMeshComponent->SetRelativeLocationAndRotation(FVector(0.0, 0.0, -TopLocalZ), FQuat::Identity);
 	RemainderMeshComponent->UpdateBounds();
 
-	if (IsValid(ClampJawVisual))
+	if (IsValid(ClampJawVisual) && !bHasCustomClampJawMesh)
 	{
 		const double JawScaleX = FMath::Max(0.14, (static_cast<double>(Contract->DimensionsCm.X) * 0.68) / 100.0);
 		const double JawScaleY = FMath::Max(0.14, (static_cast<double>(Contract->DimensionsCm.Y) * 0.68) / 100.0);
@@ -270,6 +296,43 @@ bool AMonolithRigActor::LoadContractOnRig(
 
 	OutInitialMassKg = InitialMassKg;
 	return true;
+}
+
+void AMonolithRigActor::ApplyPresentationData(const UTareTithePresentationDataAsset* InPresentationData)
+{
+	PresentationData = InPresentationData;
+	EnsureGreyboxMaterialsInitialized();
+
+	bHasCustomClampJawMesh = false;
+	if (IsValid(PresentationData))
+	{
+		bHasCustomClampJawMesh = PresentationData->ClampJawMeshSlot.ApplyToVisualComponent(ClampJawVisual);
+
+		if (IsValid(ClampSpringHousingVisual))
+		{
+			const bool bHasHousingMesh = PresentationData->ClampSpringHousingMeshSlot.ApplyToVisualComponent(ClampSpringHousingVisual);
+			ClampSpringHousingVisual->SetVisibility(bHasHousingMesh, false);
+		}
+	}
+	else if (IsValid(ClampSpringHousingVisual))
+	{
+		ClampSpringHousingVisual->SetVisibility(false, false);
+	}
+
+	if (IsValid(MonolithSliceComponent))
+	{
+		MonolithSliceComponent->SetFallbackMaterials(
+			ResolveEffectiveOuterMaterial(nullptr),
+			ResolveEffectiveCutCapMaterial(nullptr));
+		MonolithSliceComponent->RefreshActiveMaterials();
+	}
+	else if (IsValid(RemainderMeshComponent))
+	{
+		RemainderMeshComponent->ConfigureMaterialSet({
+			ResolveEffectiveOuterMaterial(CachedLoadedContract),
+			ResolveEffectiveCutCapMaterial(CachedLoadedContract)
+		});
+	}
 }
 
 void AMonolithRigActor::EnsureGreyboxMaterialsInitialized()
@@ -343,8 +406,16 @@ void AMonolithRigActor::EnsureGreyboxMaterialsInitialized()
 	}
 }
 
-UMaterialInterface* AMonolithRigActor::ResolveEffectiveOuterMaterial() const
+UMaterialInterface* AMonolithRigActor::ResolveEffectiveOuterMaterial(const UMonolithContractDataAsset* Contract) const
 {
+	if (IsValid(Contract) && IsValid(Contract->OuterShellMaterial))
+	{
+		return Contract->OuterShellMaterial.Get();
+	}
+	if (IsValid(PresentationData) && IsValid(PresentationData->DefaultMonolithOuterMaterial))
+	{
+		return PresentationData->DefaultMonolithOuterMaterial.Get();
+	}
 	if (IsValid(OuterShellOverrideMaterial))
 	{
 		return OuterShellOverrideMaterial.Get();
@@ -356,8 +427,16 @@ UMaterialInterface* AMonolithRigActor::ResolveEffectiveOuterMaterial() const
 	return FallbackOuterMID.Get();
 }
 
-UMaterialInterface* AMonolithRigActor::ResolveEffectiveCutCapMaterial() const
+UMaterialInterface* AMonolithRigActor::ResolveEffectiveCutCapMaterial(const UMonolithContractDataAsset* Contract) const
 {
+	if (IsValid(Contract) && IsValid(Contract->MoltenCutCapMaterial))
+	{
+		return Contract->MoltenCutCapMaterial.Get();
+	}
+	if (IsValid(PresentationData) && IsValid(PresentationData->DefaultMoltenCutCapMaterial))
+	{
+		return PresentationData->DefaultMoltenCutCapMaterial.Get();
+	}
 	if (IsValid(MoltenCutCapOverrideMaterial))
 	{
 		return MoltenCutCapOverrideMaterial.Get();

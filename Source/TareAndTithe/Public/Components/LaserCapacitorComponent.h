@@ -17,6 +17,7 @@ DECLARE_DELEGATE_RetVal_ThreeParams(
 	FVector& /*OutPlaneNormalWorld*/);
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnLaserSliceCommittedSignature, const FSliceResultSummary& /*SliceResult*/);
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnLaserChargeStateChangedSignature, bool /*bIsNowCharging*/);
 
 UCLASS(ClassGroup = (TareAndTithe), meta = (BlueprintSpawnableComponent))
 class TAREANDTITHE_API ULaserCapacitorComponent : public UActorComponent
@@ -41,6 +42,7 @@ public:
 
 	FQueryLaserSliceTargetSignature OnQuerySliceTarget;
 	FOnLaserSliceCommittedSignature OnSliceCommittedResult;
+	FOnLaserChargeStateChangedSignature OnChargeStateChanged;
 	FSimpleMulticastDelegate OnChargeCancelled;
 
 	FOnTelemetryStreamSignature OnTelemetryStream;
@@ -55,6 +57,9 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "LaserCapacitor|Telemetry", meta = (ClampMin = "0.0001", ClampMax = "0.05"))
 	float ChargeTelemetryDeadband = 0.005f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "LaserCapacitor|Telemetry", meta = (ClampMin = "50.0", ClampMax = "5000.0"))
+	float ReferenceCutAreaCm2 = 900.0f;
 
 private:
 	void CommitFullChargeSlice();
