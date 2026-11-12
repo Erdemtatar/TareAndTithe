@@ -59,6 +59,18 @@ void UScaleWeighingComponent::BindPanContainmentTrigger(UPrimitiveComponent* InT
 	}
 }
 
+void UScaleWeighingComponent::SetPanWellBoundsGeometry(
+	const FVector2D& InHalfExtentXYCm,
+	float InPanFloorOffsetZCm,
+	float InRecoveryMaxHeightZCm)
+{
+	PanWellHalfExtentXYCm = FVector2D(
+		FMath::Max(2.0, InHalfExtentXYCm.X),
+		FMath::Max(2.0, InHalfExtentXYCm.Y));
+	PanWellFloorOffsetZCm = InPanFloorOffsetZCm;
+	PanWellMaxRecoveryHeightZCm = FMath::Max(20.0f, InRecoveryMaxHeightZCm);
+}
+
 void UScaleWeighingComponent::ConfigureForContract(const UMonolithContractDataAsset* Contract)
 {
 	if (IsValid(Contract))
@@ -202,6 +214,13 @@ void UScaleWeighingComponent::HandlePanTriggerBeginOverlap(
 		return;
 	}
 
+	if (IncomingState != EChunkRoutingState::OnScalePan &&
+		OnShouldIgnorePayloadInPan.IsBound() &&
+		OnShouldIgnorePayloadInPan.Execute(OtherActor))
+	{
+		return;
+	}
+
 	FTrackedPanPayload NewEntry;
 	NewEntry.PayloadActor = OtherActor;
 	NewEntry.PayloadPrimitive = OtherComp;
@@ -239,14 +258,17 @@ void UScaleWeighingComponent::HandlePanTriggerEndOverlap(
 		return;
 	}
 
-	// Multi-convex-hull guard: ignore sub-shape exit if another hull of the same actor remains inside the pan volume.
-	if (IsValid(PanContainmentTrigger) && PanContainmentTrigger->IsOverlappingActor(OtherActor))
+	const int32 ExistingIdx = FindTrackedPayloadIndex(OtherActor);
+	if (ExistingIdx == INDEX_NONE)
 	{
 		return;
 	}
 
-	const int32 ExistingIdx = FindTrackedPayloadIndex(OtherActor);
-	if (ExistingIdx == INDEX_NONE)
+	const EChunkRoutingState LeavingState = IMassPayloadInterface::Execute_GetRoutingState(OtherActor);
+
+	// Multi-convex-hull & stacked recovery guard: retain if still overlapping or still resting inside the pan well column.
+	if ((IsValid(PanContainmentTrigger) && PanContainmentTrigger->IsOverlappingActor(OtherActor)) ||
+		(LeavingState == EChunkRoutingState::OnScalePan && IsPayloadWithinPanRecoveryWell(OtherActor)))
 	{
 		return;
 	}
@@ -254,7 +276,6 @@ void UScaleWeighingComponent::HandlePanTriggerEndOverlap(
 	TrackedPayloads.RemoveAtSwap(ExistingIdx, EAllowShrinking::No);
 
 	// Genuine bounce-out vs. pool reset guard: only transition back to InFlight if still marked OnScalePan.
-	const EChunkRoutingState LeavingState = IMassPayloadInterface::Execute_GetRoutingState(OtherActor);
 	if (LeavingState == EChunkRoutingState::OnScalePan)
 	{
 		const float BouncedMassKg = IMassPayloadInterface::Execute_GetAnalyticalMassKg(OtherActor);
@@ -283,6 +304,31 @@ int32 UScaleWeighingComponent::FindTrackedPayloadIndex(const AActor* PayloadActo
 		}
 	}
 	return INDEX_NONE;
+}
+
+bool UScaleWeighingComponent::IsPayloadWithinPanRecoveryWell(const AActor* PayloadActor) const
+{
+	if (!IsValid(PayloadActor))
+	{
+		return false;
+	}
+
+	const USceneComponent* ReferenceComp = IsValid(PanPlatformComponent)
+		? PanPlatformComponent.Get()
+		: PanContainmentTrigger.Get();
+	if (!IsValid(ReferenceComp))
+	{
+		return false;
+	}
+
+	const FVector LocalPos = ReferenceComp->GetComponentTransform().InverseTransformPosition(PayloadActor->GetActorLocation());
+	const double MaxHalfX = PanWellHalfExtentXYCm.X + static_cast<double>(PanWellRecoveryMarginXYCm);
+	const double MaxHalfY = PanWellHalfExtentXYCm.Y + static_cast<double>(PanWellRecoveryMarginXYCm);
+
+	return (FMath::Abs(LocalPos.X) <= MaxHalfX) &&
+		(FMath::Abs(LocalPos.Y) <= MaxHalfY) &&
+		(LocalPos.Z >= static_cast<double>(PanWellFloorOffsetZCm)) &&
+		(LocalPos.Z <= static_cast<double>(PanWellMaxRecoveryHeightZCm));
 }
 
 bool UScaleWeighingComponent::ReconcileOverlappingPayloads(bool bEnableTickOnChange)
@@ -319,7 +365,10 @@ bool UScaleWeighingComponent::ReconcileOverlappingPayloads(bool bEnableTickOnCha
 
 		const EChunkRoutingState CurrentState = IMassPayloadInterface::Execute_GetRoutingState(TrackedActor);
 		const bool bStillOverlapping = OverlappingActors.Contains(TrackedActor);
-		if (!bStillOverlapping ||
+		const bool bRetainedInPanWell = bStillOverlapping ||
+			(CurrentState == EChunkRoutingState::OnScalePan && IsPayloadWithinPanRecoveryWell(TrackedActor));
+
+		if (!bRetainedInPanWell ||
 			CurrentState == EChunkRoutingState::PooledInactive ||
 			CurrentState == EChunkRoutingState::ConsumedAsTare ||
 			CurrentState == EChunkRoutingState::LostAsStrayTare)
@@ -327,7 +376,7 @@ bool UScaleWeighingComponent::ReconcileOverlappingPayloads(bool bEnableTickOnCha
 			TrackedPayloads.RemoveAtSwap(Idx, EAllowShrinking::No);
 			bMembershipChanged = true;
 
-			if (!bStillOverlapping && CurrentState == EChunkRoutingState::OnScalePan)
+			if (!bRetainedInPanWell && CurrentState == EChunkRoutingState::OnScalePan)
 			{
 				const float BouncedMassKg = IMassPayloadInterface::Execute_GetAnalyticalMassKg(TrackedActor);
 				IMassPayloadInterface::Execute_NotifyRoutingStateChanged(TrackedActor, EChunkRoutingState::InFlight);
@@ -360,6 +409,14 @@ bool UScaleWeighingComponent::ReconcileOverlappingPayloads(bool bEnableTickOnCha
 		}
 
 		const int32 ExistingIdx = FindTrackedPayloadIndex(OverlappedActor);
+		if (ExistingIdx == INDEX_NONE && CurrentState != EChunkRoutingState::OnScalePan)
+		{
+			if (OnShouldIgnorePayloadInPan.IsBound() && OnShouldIgnorePayloadInPan.Execute(OverlappedActor))
+			{
+				continue;
+			}
+		}
+
 		const bool bWasMissingFromPan = (ExistingIdx == INDEX_NONE) || (CurrentState != EChunkRoutingState::OnScalePan);
 		if (ExistingIdx == INDEX_NONE)
 		{
@@ -411,6 +468,68 @@ bool UScaleWeighingComponent::ReconcileOverlappingPayloads(bool bEnableTickOnCha
 	}
 
 	return bMembershipChanged || !FMath::IsNearlyEqual(PreviousPanMassKg, PanMassKg, 1.0e-4f);
+}
+
+bool UScaleWeighingComponent::TryRecoverPayloadOnPan(AActor* PayloadActor)
+{
+	if (!IsValid(PayloadActor) || PayloadActor == GetOwner() || !PayloadActor->Implements<UMassPayloadInterface>())
+	{
+		return false;
+	}
+
+	const EChunkRoutingState CurrentState = IMassPayloadInterface::Execute_GetRoutingState(PayloadActor);
+	if (CurrentState == EChunkRoutingState::PooledInactive ||
+		CurrentState == EChunkRoutingState::ConsumedAsTare ||
+		CurrentState == EChunkRoutingState::LostAsStrayTare)
+	{
+		return false;
+	}
+
+	const int32 ExistingIdx = FindTrackedPayloadIndex(PayloadActor);
+	if (ExistingIdx != INDEX_NONE && CurrentState == EChunkRoutingState::OnScalePan)
+	{
+		RecomputeAnalyticalPanMass();
+		return true;
+	}
+
+	if (!IsPayloadWithinPanRecoveryWell(PayloadActor))
+	{
+		return false;
+	}
+
+	if (CurrentState != EChunkRoutingState::OnScalePan &&
+		OnShouldIgnorePayloadInPan.IsBound() &&
+		OnShouldIgnorePayloadInPan.Execute(PayloadActor))
+	{
+		return false;
+	}
+
+	if (ExistingIdx == INDEX_NONE)
+	{
+		FTrackedPanPayload RecoveredEntry;
+		RecoveredEntry.PayloadActor = PayloadActor;
+		RecoveredEntry.PayloadPrimitive = Cast<UPrimitiveComponent>(PayloadActor->GetRootComponent());
+		TrackedPayloads.Add(RecoveredEntry);
+	}
+
+	IMassPayloadInterface::Execute_NotifyRoutingStateChanged(PayloadActor, EChunkRoutingState::OnScalePan);
+
+	const float ChunkMassKg = IMassPayloadInterface::Execute_GetAnalyticalMassKg(PayloadActor);
+	const bool bChunkContaminated = IMassPayloadInterface::Execute_IsVolatileContaminated(PayloadActor);
+
+	RecomputeAnalyticalPanMass();
+
+	SettleHoldElapsedSeconds = 0.0f;
+	SetSettledState(false);
+	SetComponentTickEnabled(true);
+
+	OnChunkLandedOnScale.Broadcast(PayloadActor, ChunkMassKg, PanMassKg);
+	if (bChunkContaminated)
+	{
+		OnScaleContaminationDetected.Broadcast(PayloadActor);
+	}
+
+	return true;
 }
 
 void UScaleWeighingComponent::RecomputeAnalyticalPanMass()

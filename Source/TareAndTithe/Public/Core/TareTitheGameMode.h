@@ -44,16 +44,22 @@ protected:
 	FVector DefaultDirectorBoothLocation = FVector(430.0, 0.0, 258.0);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell")
-	FLinearColor GreyboxPitEnclosureColor = FLinearColor(0.035f, 0.038f, 0.043f, 1.0f);
+	FLinearColor GreyboxPitEnclosureColor = FLinearColor(0.085f, 0.092f, 0.105f, 1.0f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell", meta = (ClampMax = "-150.0"))
 	float RearCellWallXCm = -200.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell|Lighting", meta = (ClampMin = "100.0", ClampMax = "25000.0"))
-	float KeySpotLightIntensity = 5800.0f;
+	float KeySpotLightIntensity = 10500.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell|Lighting", meta = (ClampMin = "50.0", ClampMax = "15000.0"))
-	float FillPointLightIntensity = 2400.0f;
+	float FillPointLightIntensity = 4450.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell|Lighting")
+	FVector RimPointLightLocation = FVector(335.0, 0.0, 250.0);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell|Lighting", meta = (ClampMin = "50.0", ClampMax = "15000.0"))
+	float RimPointLightIntensity = 5200.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Scalability", meta = (ClampMin = "0", ClampMax = "3"))
 	int32 BaselineScalabilityLevel = 2;

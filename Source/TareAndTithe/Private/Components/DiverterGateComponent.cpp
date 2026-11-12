@@ -139,6 +139,7 @@ bool UDiverterGateComponent::SetRoute(EDiverterRoute NewRoute, bool bInstant)
 		ApplyFlapperRotation(false);
 		SetComponentTickEnabled(false);
 		OnRouteChanged.Broadcast(CurrentRoute);
+		OnRouteSlewCompleted.Broadcast(CurrentRoute);
 		return true;
 	}
 
@@ -187,6 +188,7 @@ void UDiverterGateComponent::TickComponent(
 	if (bConverged)
 	{
 		SetComponentTickEnabled(false);
+		OnRouteSlewCompleted.Broadcast(CurrentRoute);
 	}
 }
 

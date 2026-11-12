@@ -83,8 +83,8 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Monolith|Defaults", meta = (ClampMin = "1.0", ClampMax = "100.0"))
 	float FallbackChunkSeparationSpeedCmPerSec = 15.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Monolith|Defaults", meta = (ClampMin = "1.5", ClampMax = "10.0"))
-	float FallbackInFlightWatchdogSeconds = 4.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Monolith|Defaults", meta = (ClampMin = "1.5", ClampMax = "15.0"))
+	float FallbackInFlightWatchdogSeconds = 6.0f;
 
 private:
 	bool EnsureRemainderMeshComponent();

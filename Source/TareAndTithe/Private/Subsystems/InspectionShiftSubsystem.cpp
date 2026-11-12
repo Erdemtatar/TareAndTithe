@@ -16,6 +16,8 @@ namespace
 {
 	constexpr float DefaultTransitionDelaySeconds = 1.8f;
 	constexpr float QuotaBoundaryFloatEpsilonKg = 1.0e-3f;
+	constexpr float WatchdogActiveFallVelocityThresholdZCmPerSec = -25.0f;
+	constexpr float WatchdogActiveFallMinCellFloorZCm = -75.0f;
 }
 
 bool UInspectionShiftSubsystem::ShouldCreateSubsystem(UObject* Outer) const
@@ -578,7 +580,7 @@ UShiftProgressionDataAsset* UInspectionShiftSubsystem::BuildFallbackGreyboxProgr
 	FallbackGreyboxProgression->MinSliverVolumeCm3 = 20.0f;
 	FallbackGreyboxProgression->MinChunkAxisThicknessCm = 0.30f;
 	FallbackGreyboxProgression->ChunkSeparationSpeedCmPerSec = 15.0f;
-	FallbackGreyboxProgression->MaxInFlightWatchdogSeconds = 4.0f;
+	FallbackGreyboxProgression->MaxInFlightWatchdogSeconds = 6.0f;
 	FallbackGreyboxProgression->FaultAutoResetDelaySeconds = 1.8f;
 
 	auto MakeVein = [](const FVector& StartCm, const FVector& EndCm, float RadiusCm, float WarnCm) -> FVolatileVeinDefinition
@@ -951,6 +953,37 @@ void UInspectionShiftSubsystem::HandleChunkWatchdogExpired(ASeveredChunkActor* E
 
 	const EChunkRoutingState CurrentRoutingState = IMassPayloadInterface::Execute_GetRoutingState(ExpiredChunk);
 	if (CurrentRoutingState != EChunkRoutingState::InFlight)
+	{
+		if (ActiveInFlightPayloads.Remove(ExpiredChunk) > 0)
+		{
+			RecomputeInFlightMassFromSet();
+			if (CurrentPhase == EShiftPhase::ActiveInspection)
+			{
+				RefreshAndBroadcastSnapshot();
+				EvaluateContractHealth();
+			}
+		}
+		return;
+	}
+
+	// Smart Watchdog Recovery Shield: never delete or penalize a chunk resting inside or stacked above the scale pan well.
+	if (UObject* ScaleReceiverObj = ReceiverBinding.QuotaReceiver.GetObject())
+	{
+		if (IsValid(ScaleReceiverObj) && IQuotaReceiverInterface::Execute_TryRecoverPayloadOnReceiver(ScaleReceiverObj, ExpiredChunk))
+		{
+			ActiveInFlightPayloads.Remove(ExpiredChunk);
+			RecomputeInFlightMassFromSet();
+			if (CurrentPhase == EShiftPhase::ActiveInspection)
+			{
+				RefreshAndBroadcastSnapshot();
+				EvaluateContractHealth();
+			}
+			return;
+		}
+	}
+
+	// Single re-arm if the chunk is still actively falling downward inside the cell rather than wedged.
+	if (ExpiredChunk->TryRearmWatchdogIfActivelyFalling(WatchdogActiveFallVelocityThresholdZCmPerSec, WatchdogActiveFallMinCellFloorZCm))
 	{
 		return;
 	}

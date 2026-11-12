@@ -308,8 +308,8 @@ void AMonolithRigActor::EnsureGreyboxMaterialsInitialized()
 			FallbackOuterMID->SetVectorParameterValue(TEXT("Color"), GreyboxOuterShellColor);
 			FallbackOuterMID->SetVectorParameterValue(TEXT("EmissiveColorConst"), FLinearColor::Black);
 			FallbackOuterMID->SetScalarParameterValue(TEXT("EmissiveScale"), 0.0f);
-			FallbackOuterMID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.78f);
-			FallbackOuterMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.25f);
+			FallbackOuterMID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.72f);
+			FallbackOuterMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.28f);
 		}
 	}
 

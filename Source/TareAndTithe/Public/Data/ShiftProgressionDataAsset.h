@@ -33,8 +33,8 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Slicer", meta = (ClampMin = "1.0", ClampMax = "100.0"))
 	float ChunkSeparationSpeedCmPerSec = 15.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Safety", meta = (ClampMin = "1.5", ClampMax = "10.0"))
-	float MaxInFlightWatchdogSeconds = 4.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Safety", meta = (ClampMin = "1.5", ClampMax = "15.0"))
+	float MaxInFlightWatchdogSeconds = 6.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Safety", meta = (ClampMin = "0.2", ClampMax = "3.0"))
 	float FaultAutoResetDelaySeconds = 1.8f;

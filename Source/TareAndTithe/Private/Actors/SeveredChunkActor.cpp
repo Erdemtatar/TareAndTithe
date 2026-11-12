@@ -71,6 +71,7 @@ void ASeveredChunkActor::ActivateFromSlice(
 
 	AnalyticalMassKg = FMath::Max(0.001f, InAnalyticalMassKg);
 	bVolatileContaminated = bInIsContaminated;
+	bHasRearmedWatchdogOnce = false;
 	ActiveWatchdogSeconds = (InWatchdogSeconds > 0.0f) ? InWatchdogSeconds : DefaultWatchdogSeconds;
 	RoutingState = EChunkRoutingState::InFlight;
 
@@ -129,6 +130,35 @@ void ASeveredChunkActor::ActivateFromSlice(
 	StartInFlightWatchdog(ActiveWatchdogSeconds);
 }
 
+bool ASeveredChunkActor::TryRearmWatchdogIfActivelyFalling(float MaxDownwardVelocityZCmPerSec, float MinCellFloorZCm)
+{
+	if (RoutingState != EChunkRoutingState::InFlight || bHasRearmedWatchdogOnce)
+	{
+		return false;
+	}
+
+	const FVector WorldLoc = GetActorLocation();
+	if (WorldLoc.Z <= static_cast<double>(MinCellFloorZCm))
+	{
+		return false;
+	}
+
+	FVector LinearVel = GetVelocity();
+	if (IsValid(ChunkMeshComponent) && ChunkMeshComponent->IsSimulatingPhysics())
+	{
+		LinearVel = ChunkMeshComponent->GetPhysicsLinearVelocity();
+	}
+
+	if (LinearVel.Z < static_cast<double>(MaxDownwardVelocityZCmPerSec))
+	{
+		bHasRearmedWatchdogOnce = true;
+		StartInFlightWatchdog(ActiveWatchdogSeconds);
+		return true;
+	}
+
+	return false;
+}
+
 void ASeveredChunkActor::DeactivateToPool()
 {
 	ClearInFlightWatchdog();
@@ -136,6 +166,7 @@ void ASeveredChunkActor::DeactivateToPool()
 	RoutingState = EChunkRoutingState::PooledInactive;
 	AnalyticalMassKg = 0.0f;
 	bVolatileContaminated = false;
+	bHasRearmedWatchdogOnce = false;
 
 	if (IsValid(ChunkMeshComponent))
 	{
@@ -190,6 +221,7 @@ void ASeveredChunkActor::NotifyRoutingStateChanged_Implementation(EChunkRoutingS
 
 	if (RoutingState == EChunkRoutingState::InFlight)
 	{
+		bHasRearmedWatchdogOnce = false;
 		StartInFlightWatchdog(ActiveWatchdogSeconds);
 	}
 	else
@@ -224,13 +256,13 @@ void ASeveredChunkActor::EnsureFallbackChunkMaterialsInitialized()
 		FallbackChunkOuterMID = UMaterialInstanceDynamic::Create(BaseRuntimeSurfaceMaterial, this);
 		if (IsValid(FallbackChunkOuterMID))
 		{
-			const FLinearColor OuterSlagColor(0.018f, 0.020f, 0.024f, 1.0f);
+			const FLinearColor OuterSlagColor(0.065f, 0.072f, 0.085f, 1.0f);
 			FallbackChunkOuterMID->SetVectorParameterValue(TEXT("BaseColorConst"), OuterSlagColor);
 			FallbackChunkOuterMID->SetVectorParameterValue(TEXT("Color"), OuterSlagColor);
 			FallbackChunkOuterMID->SetVectorParameterValue(TEXT("EmissiveColorConst"), FLinearColor::Black);
 			FallbackChunkOuterMID->SetScalarParameterValue(TEXT("EmissiveScale"), 0.0f);
-			FallbackChunkOuterMID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.78f);
-			FallbackChunkOuterMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.25f);
+			FallbackChunkOuterMID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.72f);
+			FallbackChunkOuterMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.28f);
 		}
 	}
 
@@ -240,7 +272,7 @@ void ASeveredChunkActor::EnsureFallbackChunkMaterialsInitialized()
 		if (IsValid(FallbackChunkCutCapMID))
 		{
 			const FLinearColor MoltenBaseColor(1.00f, 0.30f, 0.015f, 1.0f);
-			const FLinearColor MoltenEmissiveColor(2.35f, 0.52f, 0.02f, 1.0f);
+			const FLinearColor MoltenEmissiveColor(1.65f, 0.36f, 0.015f, 1.0f);
 			FallbackChunkCutCapMID->SetVectorParameterValue(TEXT("BaseColorConst"), MoltenBaseColor);
 			FallbackChunkCutCapMID->SetVectorParameterValue(TEXT("Color"), MoltenBaseColor);
 			FallbackChunkCutCapMID->SetVectorParameterValue(TEXT("EmissiveColorConst"), MoltenEmissiveColor);

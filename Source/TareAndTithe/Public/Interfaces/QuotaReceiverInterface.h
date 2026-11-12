@@ -7,6 +7,8 @@
 #include "Core/TareTitheTypes.h"
 #include "QuotaReceiverInterface.generated.h"
 
+class AActor;
+
 UINTERFACE(MinimalAPI)
 class UQuotaReceiverInterface : public UInterface
 {
@@ -32,4 +34,7 @@ public:
 
 	UFUNCTION(BlueprintNativeEvent, Category = "Quota")
 	void ResetReceiverState();
+
+	UFUNCTION(BlueprintNativeEvent, Category = "Quota")
+	bool TryRecoverPayloadOnReceiver(AActor* PayloadActor);
 };

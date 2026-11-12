@@ -302,4 +302,18 @@ void ATareTitheGameMode::SpawnGreyboxPitEnclosureAndLighting(UWorld* World)
 		CellFillLight->PointLightComponent->SetCastShadows(false);
 		CellFillLight->PointLightComponent->SetLightColor(FLinearColor(0.86f, 0.91f, 1.0f, 1.0f));
 	}
+
+	// Cool industrial rim light behind/above the monolith for silhouette separation against the rear inspection booth.
+	APointLight* CellRimLight = World->SpawnActor<APointLight>(
+		APointLight::StaticClass(),
+		FTransform(FRotator::ZeroRotator, RimPointLightLocation, FVector::OneVector),
+		SpawnParams);
+	if (IsValid(CellRimLight) && IsValid(CellRimLight->PointLightComponent))
+	{
+		CellRimLight->PointLightComponent->SetMobility(EComponentMobility::Movable);
+		CellRimLight->PointLightComponent->SetIntensity(RimPointLightIntensity);
+		CellRimLight->PointLightComponent->SetAttenuationRadius(620.0f);
+		CellRimLight->PointLightComponent->SetCastShadows(false);
+		CellRimLight->PointLightComponent->SetLightColor(FLinearColor(0.72f, 0.86f, 1.00f, 1.0f));
+	}
 }

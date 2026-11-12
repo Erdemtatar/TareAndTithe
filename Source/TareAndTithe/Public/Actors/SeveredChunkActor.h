@@ -40,7 +40,9 @@ public:
 		UMaterialInterface* OuterMaterial,
 		UMaterialInterface* CutCapMaterial,
 		const FVector& InInitialLinearVelocityCmPerSec,
-		float InWatchdogSeconds = 4.0f);
+		float InWatchdogSeconds = 6.0f);
+
+	bool TryRearmWatchdogIfActivelyFalling(float MaxDownwardVelocityZCmPerSec = -25.0f, float MinCellFloorZCm = -75.0f);
 
 	void DeactivateToPool();
 
@@ -69,8 +71,8 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Chunk|Collision", meta = (ClampMin = "0.05", ClampMax = "2.0"))
 	float MinCollisionThicknessCm = 0.30f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Chunk|Safety", meta = (ClampMin = "1.5", ClampMax = "10.0"))
-	float DefaultWatchdogSeconds = 4.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Chunk|Safety", meta = (ClampMin = "1.5", ClampMax = "15.0"))
+	float DefaultWatchdogSeconds = 6.0f;
 
 private:
 	void EnsureFallbackChunkMaterialsInitialized();
@@ -88,8 +90,9 @@ private:
 	TObjectPtr<UMaterialInstanceDynamic> FallbackChunkCutCapMID;
 
 	float AnalyticalMassKg = 0.0f;
-	float ActiveWatchdogSeconds = 4.0f;
+	float ActiveWatchdogSeconds = 6.0f;
 	bool bVolatileContaminated = false;
+	bool bHasRearmedWatchdogOnce = false;
 	EChunkRoutingState RoutingState = EChunkRoutingState::PooledInactive;
 	FTimerHandle WatchdogTimerHandle;
 };

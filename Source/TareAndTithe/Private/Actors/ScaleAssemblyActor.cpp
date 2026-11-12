@@ -79,30 +79,32 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 	constexpr double PanScaleX = 0.76;
 	constexpr double PanScaleY = 0.62;
 	constexpr double PanScaleZ = 0.06;
-	const FVector InvPanScale(1.0 / PanScaleX, 1.0 / PanScaleY, 1.0 / PanScaleZ);
-	auto ToPanChildRelLoc = [PanScaleX, PanScaleY, PanScaleZ](double DxCm, double DyCm, double DzCm) -> FVector
-	{
-		return FVector(DxCm / PanScaleX, DyCm / PanScaleY, DzCm / PanScaleZ);
-	};
 
-	PanPlatform = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("PanPlatform"));
-	PanPlatform->SetupAttachment(ScaleRoot);
-	ConfigureSolidKinematicMesh(PanPlatform);
-	PanPlatform->SetRelativeLocation(FVector(0.0, 0.0, 22.0));
-	PanPlatform->SetRelativeScale3D(FVector(PanScaleX, PanScaleY, PanScaleZ));
+	// Unscaled (1, 1, 1) motion root translated by UScaleWeighingComponent so child UBoxComponents operate in true world centimeters without non-uniform Z squashing.
+	PanMotionRoot = CreateDefaultSubobject<USceneComponent>(TEXT("PanMotionRoot"));
+	PanMotionRoot->SetupAttachment(ScaleRoot);
+	PanMotionRoot->PrimaryComponentTick.bCanEverTick = false;
+	PanMotionRoot->SetRelativeLocation(FVector(0.0, 0.0, 22.0));
+	PanMotionRoot->SetRelativeScale3D(FVector::OneVector);
 
-	auto ConfigurePanRimBox = [this, &InvPanScale, &ToPanChildRelLoc](
+	PanPlatformVisual = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("PanPlatformVisual"));
+	PanPlatformVisual->SetupAttachment(PanMotionRoot);
+	ConfigureSolidKinematicMesh(PanPlatformVisual);
+	PanPlatformVisual->SetRelativeLocation(FVector::ZeroVector);
+	PanPlatformVisual->SetRelativeScale3D(FVector(PanScaleX, PanScaleY, PanScaleZ));
+
+	auto ConfigurePanRimBox = [this](
 		UBoxComponent* RimBox,
 		double DxCm,
 		double DyCm,
 		double DzCm,
 		const FVector& ExtentCm)
 	{
-		RimBox->SetupAttachment(PanPlatform);
+		RimBox->SetupAttachment(PanMotionRoot);
 		RimBox->PrimaryComponentTick.bCanEverTick = false;
 		RimBox->SetSimulatePhysics(false);
-		RimBox->SetRelativeScale3D(InvPanScale);
-		RimBox->SetRelativeLocation(ToPanChildRelLoc(DxCm, DyCm, DzCm));
+		RimBox->SetRelativeScale3D(FVector::OneVector);
+		RimBox->SetRelativeLocation(FVector(DxCm, DyCm, DzCm));
 		RimBox->InitBoxExtent(ExtentCm);
 		RimBox->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 		RimBox->SetCollisionObjectType(ECC_WorldDynamic);
@@ -112,25 +114,30 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 		RimBox->SetGenerateOverlapEvents(false);
 	};
 
-	// 4 raised physical rim walls (15 cm total height, 12 cm curb above pan deck) moving with PanPlatform without self-overlapping PanTriggerBox.
+	// 4 unscaled physical rim walls (22 cm total height [-3.0, +19.0], 16 cm raised curb above the +3.0 cm pan deck) moving with PanMotionRoot.
+	const double RimBottomLocalZ = static_cast<double>(PanDeckTopLocalZCm) - 6.0;
+	const double RimTopLocalZ = static_cast<double>(PanDeckTopLocalZCm) + static_cast<double>(PanRimCurbHeightAboveDeckCm);
+	const double RimHalfHeightZ = 0.5 * (RimTopLocalZ - RimBottomLocalZ);
+	const double RimCenterLocalZ = 0.5 * (RimTopLocalZ + RimBottomLocalZ);
+
 	PanRimFrontBox = CreateDefaultSubobject<UBoxComponent>(TEXT("PanRimFrontBox"));
-	ConfigurePanRimBox(PanRimFrontBox, -36.5, 0.0, 7.5, FVector(1.5, 31.0, 7.5));
+	ConfigurePanRimBox(PanRimFrontBox, -36.5, 0.0, RimCenterLocalZ, FVector(1.5, 31.0, RimHalfHeightZ));
 
 	PanRimBackBox = CreateDefaultSubobject<UBoxComponent>(TEXT("PanRimBackBox"));
-	ConfigurePanRimBox(PanRimBackBox, +36.5, 0.0, 7.5, FVector(1.5, 31.0, 7.5));
+	ConfigurePanRimBox(PanRimBackBox, +36.5, 0.0, RimCenterLocalZ, FVector(1.5, 31.0, RimHalfHeightZ));
 
 	PanRimLeftBox = CreateDefaultSubobject<UBoxComponent>(TEXT("PanRimLeftBox"));
-	ConfigurePanRimBox(PanRimLeftBox, 0.0, -29.5, 7.5, FVector(35.0, 1.5, 7.5));
+	ConfigurePanRimBox(PanRimLeftBox, 0.0, -29.5, RimCenterLocalZ, FVector(35.0, 1.5, RimHalfHeightZ));
 
 	PanRimRightBox = CreateDefaultSubobject<UBoxComponent>(TEXT("PanRimRightBox"));
-	ConfigurePanRimBox(PanRimRightBox, 0.0, +29.5, 7.5, FVector(35.0, 1.5, 7.5));
+	ConfigurePanRimBox(PanRimRightBox, 0.0, +29.5, RimCenterLocalZ, FVector(35.0, 1.5, RimHalfHeightZ));
 
 	PanTriggerBox = CreateDefaultSubobject<UBoxComponent>(TEXT("PanTriggerBox"));
-	PanTriggerBox->SetupAttachment(PanPlatform);
+	PanTriggerBox->SetupAttachment(PanMotionRoot);
 	PanTriggerBox->PrimaryComponentTick.bCanEverTick = false;
-	PanTriggerBox->SetRelativeScale3D(InvPanScale);
-	// Bottom face at -3.0 cm (6.0 cm below the +3.0 cm top surface of PanPlatform); top face at +19.0 cm (>= 13.8 cm below +45 deg DiverterFlapper ramp).
-	PanTriggerBox->SetRelativeLocation(ToPanChildRelLoc(0.0, 0.0, static_cast<double>(PanTriggerCenterOffsetZCm)));
+	PanTriggerBox->SetRelativeScale3D(FVector::OneVector);
+	// Bottom at -3.0 cm (6.0 cm below +3.0 cm top deck); top at +95.0 cm (+92.0 cm above deck) so 12+ stacked slices stay 100% inside.
+	PanTriggerBox->SetRelativeLocation(FVector(0.0, 0.0, static_cast<double>(PanDeckTopLocalZCm + PanTriggerCenterAboveDeckZCm)));
 	PanTriggerBox->InitBoxExtent(PanTriggerBoxExtentCm);
 	PanTriggerBox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	PanTriggerBox->SetCollisionObjectType(ECC_WorldDynamic);
@@ -203,7 +210,7 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 		ReadoutBackingPlate->SetMaterial(0, BaseGreyboxShapeMaterial);
 	}
 	ReadoutBackingPlate->SetRelativeLocation(FVector::ZeroVector);
-	ReadoutBackingPlate->SetRelativeScale3D(FVector(0.016, 2.52, 0.37));
+	ReadoutBackingPlate->SetRelativeScale3D(FVector(0.016, 3.16, 0.37));
 
 	// Backing plate front face is at local X = -0.8 cm; placing all text at local X = -2.0 cm positions glyphs exactly 1.2 cm in front.
 	auto ConfigureReadoutText = [this](
@@ -237,16 +244,16 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 	ConfigureReadoutText(
 		ContractCodeText,
 		FVector(-2.0, 0.0, 9.6),
-		5.2f,
+		4.6f,
 		ReadoutHeaderCyanColor,
-		TEXT("CONTRACT 01/06 | TARGET: 12.00 KG [10.75 - 13.25 KG]"));
+		TEXT("CONTRACT 01/06 | TARGET: 12.00 KG [10.75 - 13.25]"));
 
 	StatusBannerText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("StatusBannerText"));
 	StatusBannerText->SetupAttachment(ReadoutConsolePivot);
 	ConfigureReadoutText(
 		StatusBannerText,
 		FVector(-2.0, 0.0, 3.6),
-		6.2f,
+		6.0f,
 		ReadoutNormalSkyBlueColor,
 		TEXT("HOLD [LMB] TO SLICE MONOLITH INTO TITHE"));
 
@@ -256,18 +263,18 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 
 	TareReadoutText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("TareReadoutText"));
 	TareReadoutText->SetupAttachment(ReadoutConsolePivot);
-	ConfigureReadoutText(TareReadoutText, FVector(-2.0, -52.0, -10.6), 5.8f, ReadoutGoldColor, TEXT("TARE: 0.0 / 14.0 KG"));
+	ConfigureReadoutText(TareReadoutText, FVector(-2.0, -58.0, -10.6), 5.6f, ReadoutGoldColor, TEXT("TARE: 0.0 / 14.0 KG"));
 
 	RouteReadoutText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("RouteReadoutText"));
 	RouteReadoutText->SetupAttachment(ReadoutConsolePivot);
-	ConfigureReadoutText(RouteReadoutText, FVector(-2.0, 52.0, -10.6), 5.8f, ReadoutHeaderCyanColor, TEXT("ROUTE: TITHE [SPACE]"));
+	ConfigureReadoutText(RouteReadoutText, FVector(-2.0, 58.0, -10.6), 5.6f, ReadoutHeaderCyanColor, TEXT("ROUTE: TITHE [SPACE]"));
 
 	ControlStencilText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("ControlStencilText"));
 	ControlStencilText->SetupAttachment(ReadoutConsolePivot);
 	ConfigureReadoutText(
 		ControlStencilText,
 		FVector(-2.0, 0.0, -15.6),
-		4.5f,
+		4.1f,
 		ReadoutControlStencilColor,
 		TEXT("SCROLL: ROTATE | RMB: BEVEL | [SPACE]: TITHE/TARE | [E]: STAMP | HOLD [R]: RESET"));
 }
@@ -281,7 +288,12 @@ void AScaleAssemblyActor::BeginPlay()
 
 	if (IsValid(ScaleWeighingComponent))
 	{
-		ScaleWeighingComponent->SetPanPlatformComponent(PanPlatform);
+		ScaleWeighingComponent->SetPanPlatformComponent(PanMotionRoot);
+		ScaleWeighingComponent->SetPanWellBoundsGeometry(
+			FVector2D(PanTriggerBoxExtentCm.X, PanTriggerBoxExtentCm.Y),
+			PanDeckTopLocalZCm - 6.0f,
+			PanDeckTopLocalZCm + 135.0f);
+		ScaleWeighingComponent->OnShouldIgnorePayloadInPan.BindUObject(this, &AScaleAssemblyActor::ShouldIgnorePayloadInPanForTareRamp);
 		ScaleWeighingComponent->BindPanContainmentTrigger(PanTriggerBox);
 		ScaleWeighingComponent->OnTelemetryStream.AddUObject(this, &AScaleAssemblyActor::HandleChildTelemetryStream);
 		ScaleWeighingComponent->OnTelemetryImpulse.AddUObject(this, &AScaleAssemblyActor::HandleChildTelemetryImpulse);
@@ -296,6 +308,7 @@ void AScaleAssemblyActor::BeginPlay()
 		DiverterGateComponent->SetFlapperPivotAndPrimitive(DiverterFlapperPivot, DiverterFlapperVisual);
 		DiverterGateComponent->BindTareChuteTrigger(TareChuteTriggerBox);
 		DiverterGateComponent->OnRouteChanged.AddUObject(this, &AScaleAssemblyActor::HandleDiverterRouteChanged);
+		DiverterGateComponent->OnRouteSlewCompleted.AddUObject(this, &AScaleAssemblyActor::HandleDiverterRouteSlewCompleted);
 		DiverterGateComponent->OnChunkRoutedToTare.AddUObject(this, &AScaleAssemblyActor::HandleChunkRoutedToTare);
 		DiverterGateComponent->OnTelemetryImpulse.AddUObject(this, &AScaleAssemblyActor::HandleChildTelemetryImpulse);
 	}
@@ -345,6 +358,7 @@ void AScaleAssemblyActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	if (IsValid(ScaleWeighingComponent))
 	{
+		ScaleWeighingComponent->OnShouldIgnorePayloadInPan.Unbind();
 		ScaleWeighingComponent->OnTelemetryStream.RemoveAll(this);
 		ScaleWeighingComponent->OnTelemetryImpulse.RemoveAll(this);
 		ScaleWeighingComponent->OnChunkLandedOnScale.RemoveAll(this);
@@ -356,6 +370,7 @@ void AScaleAssemblyActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	if (IsValid(DiverterGateComponent))
 	{
 		DiverterGateComponent->OnRouteChanged.RemoveAll(this);
+		DiverterGateComponent->OnRouteSlewCompleted.RemoveAll(this);
 		DiverterGateComponent->OnChunkRoutedToTare.RemoveAll(this);
 		DiverterGateComponent->OnTelemetryImpulse.RemoveAll(this);
 	}
@@ -395,6 +410,15 @@ void AScaleAssemblyActor::ResetReceiverState_Implementation()
 	}
 	RefreshRouteReadout();
 	RefreshStatusBannerReadout();
+}
+
+bool AScaleAssemblyActor::TryRecoverPayloadOnReceiver_Implementation(AActor* PayloadActor)
+{
+	if (!IsValid(ScaleWeighingComponent))
+	{
+		return false;
+	}
+	return ScaleWeighingComponent->TryRecoverPayloadOnPan(PayloadActor);
 }
 
 void AScaleAssemblyActor::ConfigureForContract(const UMonolithContractDataAsset* Contract, EDiverterRoute InitialRoute)
@@ -568,30 +592,71 @@ void AScaleAssemblyActor::HandleActiveContractLoaded(
 	RefreshStatusBannerReadout();
 }
 
-void AScaleAssemblyActor::HandleDiverterRouteChanged(EDiverterRoute /*NewRoute*/)
+void AScaleAssemblyActor::HandleDiverterRouteChanged(EDiverterRoute NewRoute)
 {
 	RefreshRouteReadout();
+	if (NewRoute == EDiverterRoute::TitheScale)
+	{
+		ReconcileScaleOverlaps();
+	}
+}
+
+void AScaleAssemblyActor::HandleDiverterRouteSlewCompleted(EDiverterRoute ConvergedRoute)
+{
+	if (ConvergedRoute == EDiverterRoute::TitheScale)
+	{
+		ReconcileScaleOverlaps();
+	}
+}
+
+bool AScaleAssemblyActor::ShouldIgnorePayloadInPanForTareRamp(const AActor* CandidateActor) const
+{
+	if (!IsValid(CandidateActor) || !IsValid(DiverterGateComponent) || !IsValid(DiverterFlapperPivot))
+	{
+		return false;
+	}
+
+	const bool bRampClosedOrSlewing =
+		(DiverterGateComponent->GetCurrentRoute() == EDiverterRoute::TareChute) ||
+		(DiverterGateComponent->GetCurrentFlapperAngleDegrees() > FlapperFilterEngagementAngleDegrees);
+
+	if (!bRampClosedOrSlewing)
+	{
+		return false;
+	}
+
+	const FVector FlapperPivotWorld = DiverterFlapperPivot->GetComponentLocation();
+	// DiverterFlapperPivot rotates around +X from 0 deg (vertical along +Z) to +45 deg (ramp toward -Y/+Z);
+	// its right vector (+Y rotated around +X by +theta) points strictly toward the upper/chute half-space of the plate.
+	const FVector FlapperUpperNormalWorld = DiverterFlapperPivot->GetRightVector().GetSafeNormal();
+	if (FlapperUpperNormalWorld.IsNearlyZero())
+	{
+		return false;
+	}
+
+	const double SignedDistAboveRampCm = FVector::DotProduct(
+		CandidateActor->GetActorLocation() - FlapperPivotWorld,
+		FlapperUpperNormalWorld);
+
+	return SignedDistAboveRampCm >= static_cast<double>(FlapperUpperSideSignedMarginCm);
 }
 
 void AScaleAssemblyActor::EnforcePanTriggerGeometryAndCollision()
 {
-	if (!IsValid(PanTriggerBox) || !IsValid(PanPlatform))
+	if (!IsValid(PanTriggerBox) || !IsValid(PanMotionRoot))
 	{
 		return;
 	}
 
-	const FVector PlatformScale = PanPlatform->GetRelativeScale3D();
-	const double SafeScaleX = FMath::Max(0.01, FMath::Abs(PlatformScale.X));
-	const double SafeScaleY = FMath::Max(0.01, FMath::Abs(PlatformScale.Y));
-	const double SafeScaleZ = FMath::Max(0.01, FMath::Abs(PlatformScale.Z));
+	PanMotionRoot->SetRelativeScale3D(FVector::OneVector);
 
-	if (PanTriggerBox->GetAttachParent() != PanPlatform)
+	if (PanTriggerBox->GetAttachParent() != PanMotionRoot)
 	{
-		PanTriggerBox->AttachToComponent(PanPlatform, FAttachmentTransformRules::KeepRelativeTransform);
+		PanTriggerBox->AttachToComponent(PanMotionRoot, FAttachmentTransformRules::KeepRelativeTransform);
 	}
 
-	PanTriggerBox->SetRelativeScale3D(FVector(1.0 / SafeScaleX, 1.0 / SafeScaleY, 1.0 / SafeScaleZ));
-	PanTriggerBox->SetRelativeLocation(FVector(0.0, 0.0, static_cast<double>(PanTriggerCenterOffsetZCm) / SafeScaleZ));
+	PanTriggerBox->SetRelativeScale3D(FVector::OneVector);
+	PanTriggerBox->SetRelativeLocation(FVector(0.0, 0.0, static_cast<double>(PanDeckTopLocalZCm + PanTriggerCenterAboveDeckZCm)));
 	PanTriggerBox->SetBoxExtent(PanTriggerBoxExtentCm, true);
 	PanTriggerBox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	PanTriggerBox->SetCollisionObjectType(ECC_WorldDynamic);
@@ -615,7 +680,7 @@ void AScaleAssemblyActor::RefreshContractHeaderReadout()
 	const float MaxValidKg = TargetKg + CachedSnapshot.QuotaToleranceKg;
 
 	const FString HeaderLine = FString::Printf(
-		TEXT("CONTRACT %02d/%02d | TARGET: %.2f KG [%.2f - %.2f KG]"),
+		TEXT("CONTRACT %02d/%02d | TARGET: %.2f KG [%.2f - %.2f]"),
 		DisplayIndex,
 		DisplayTotal,
 		TargetKg,
@@ -673,12 +738,19 @@ void AScaleAssemblyActor::RefreshStatusBannerReadout()
 		return;
 	}
 
-	const bool bChunksInFlight = CachedSnapshot.InFlightMassKg > KINDA_SMALL_NUMBER;
-	const bool bScaleOscillating = !IsReceiverSettled_Implementation();
-	if (bChunksInFlight || bScaleOscillating)
+	if (CachedSnapshot.InFlightMassKg > 0.01f)
+	{
+		StatusBannerText->SetTextRenderColor(ReadoutNormalSkyBlueColor);
+		StatusBannerText->SetText(FText::FromString(TEXT("CHUNK DROPPING...")));
+		return;
+	}
+
+	if (!CachedSnapshot.bScaleSettledForStamp &&
+		CachedSnapshot.SettledScaleMassKg > 0.0f &&
+		!IsReceiverSettled_Implementation())
 	{
 		StatusBannerText->SetTextRenderColor(ReadoutGoldColor);
-		StatusBannerText->SetText(FText::FromString(TEXT("WEIGHING / SETTLING...")));
+		StatusBannerText->SetText(FText::FromString(TEXT("SCALE SETTLING...")));
 		return;
 	}
 
@@ -796,11 +868,11 @@ void AScaleAssemblyActor::InitializeGreyboxVisualMaterials()
 	};
 
 	ApplyTintedGreyboxMaterial(ReadoutBackingPlate, ConsoleBezelLinearColor, 0.96f, 0.02f);
-	ApplyTintedGreyboxMaterial(ScaleBaseVisual, FLinearColor(0.032f, 0.036f, 0.042f, 1.0f), 0.78f, 0.35f);
-	ApplyTintedGreyboxMaterial(LeftHopperGuideVisual, FLinearColor(0.055f, 0.060f, 0.070f, 1.0f), 0.72f, 0.40f);
-	ApplyTintedGreyboxMaterial(PanPlatform, FLinearColor(0.055f, 0.050f, 0.042f, 1.0f), 0.68f, 0.45f);
-	ApplyTintedGreyboxMaterial(DiverterFlapperVisual, FLinearColor(0.14f, 0.075f, 0.020f, 1.0f), 0.56f, 0.48f);
-	ApplyTintedGreyboxMaterial(TareChuteVisual, FLinearColor(0.045f, 0.022f, 0.020f, 1.0f), 0.82f, 0.28f);
+	ApplyTintedGreyboxMaterial(ScaleBaseVisual, FLinearColor(0.055f, 0.062f, 0.072f, 1.0f), 0.76f, 0.35f);
+	ApplyTintedGreyboxMaterial(LeftHopperGuideVisual, FLinearColor(0.082f, 0.090f, 0.105f, 1.0f), 0.70f, 0.40f);
+	ApplyTintedGreyboxMaterial(PanPlatformVisual, FLinearColor(0.095f, 0.086f, 0.074f, 1.0f), 0.66f, 0.45f);
+	ApplyTintedGreyboxMaterial(DiverterFlapperVisual, FLinearColor(0.18f, 0.095f, 0.024f, 1.0f), 0.54f, 0.48f);
+	ApplyTintedGreyboxMaterial(TareChuteVisual, FLinearColor(0.068f, 0.032f, 0.028f, 1.0f), 0.80f, 0.28f);
 }
 
 FVector AScaleAssemblyActor::QueryScaleWorldLocation() const

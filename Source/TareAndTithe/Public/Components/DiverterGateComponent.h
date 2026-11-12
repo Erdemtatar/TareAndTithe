@@ -42,6 +42,7 @@ public:
 	float GetCurrentFlapperAngleDegrees() const { return CurrentAngleDegrees; }
 
 	FOnDiverterRouteChangedSignature OnRouteChanged;
+	FOnDiverterRouteChangedSignature OnRouteSlewCompleted;
 	FOnChunkRoutedToTareSignature OnChunkRoutedToTare;
 	FOnTelemetryImpulseSignature OnTelemetryImpulse;
 

@@ -41,6 +41,7 @@ public:
 	virtual bool HasContaminationFault_Implementation() const override;
 	virtual EDiverterRoute GetActiveDiverterRoute_Implementation() const override;
 	virtual void ResetReceiverState_Implementation() override;
+	virtual bool TryRecoverPayloadOnReceiver_Implementation(AActor* PayloadActor) override;
 
 	// ITelemetryPublisherInterface
 	virtual FOnTelemetryStreamSignature& GetTelemetryStreamDelegate() override { return OnTelemetryStream; }
@@ -66,7 +67,10 @@ protected:
 	TObjectPtr<UStaticMeshComponent> LeftHopperGuideVisual;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly")
-	TObjectPtr<UStaticMeshComponent> PanPlatform;
+	TObjectPtr<USceneComponent> PanMotionRoot;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly")
+	TObjectPtr<UStaticMeshComponent> PanPlatformVisual;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly")
 	TObjectPtr<UBoxComponent> PanRimFrontBox;
@@ -128,11 +132,23 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly|Readout")
 	TObjectPtr<UTextRenderComponent> ControlStencilText;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Trigger", meta = (ClampMin = "4.0", ClampMax = "12.0"))
-	float PanTriggerCenterOffsetZCm = 8.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Trigger", meta = (ClampMin = "1.0", ClampMax = "10.0"))
+	float PanDeckTopLocalZCm = 3.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Trigger", meta = (ClampMin = "8.0", ClampMax = "30.0"))
+	float PanRimCurbHeightAboveDeckCm = 16.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Trigger", meta = (ClampMin = "10.0", ClampMax = "80.0"))
+	float PanTriggerCenterAboveDeckZCm = 43.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Trigger")
-	FVector PanTriggerBoxExtentCm = FVector(35.05, 28.05, 11.0);
+	FVector PanTriggerBoxExtentCm = FVector(35.05, 28.05, 49.0);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Trigger", meta = (ClampMin = "2.0", ClampMax = "40.0"))
+	float FlapperFilterEngagementAngleDegrees = 15.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Trigger", meta = (ClampMin = "-6.0", ClampMax = "6.0"))
+	float FlapperUpperSideSignedMarginCm = -1.5f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Colors")
 	FLinearColor ConsoleBezelLinearColor = FLinearColor(0.005f, 0.006f, 0.008f, 1.0f);
@@ -176,6 +192,8 @@ private:
 		int32 ContractIndex);
 
 	void HandleDiverterRouteChanged(EDiverterRoute NewRoute);
+	void HandleDiverterRouteSlewCompleted(EDiverterRoute ConvergedRoute);
+	bool ShouldIgnorePayloadInPanForTareRamp(const AActor* CandidateActor) const;
 	void EnforcePanTriggerGeometryAndCollision();
 	void RefreshContractHeaderReadout();
 	void RefreshStatusBannerReadout();

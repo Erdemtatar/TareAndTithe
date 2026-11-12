@@ -12,6 +12,7 @@ class UPrimitiveComponent;
 class UMonolithContractDataAsset;
 struct FHitResult;
 
+DECLARE_DELEGATE_RetVal_OneParam(bool, FShouldIgnorePayloadInPanSignature, const AActor* /*CandidateActor*/);
 DECLARE_MULTICAST_DELEGATE_ThreeParams(FOnScaleChunkEventSignature, AActor* /*PayloadActor*/, float /*ChunkMassKg*/, float /*UpdatedPanMassKg*/);
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnScaleContaminationSignature, AActor* /*ContaminatedActor*/);
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnScaleSettledChangedSignature, bool /*bIsSettled*/, float /*SettledPanMassKg*/);
@@ -33,10 +34,16 @@ public:
 	void BindPanContainmentTrigger(UPrimitiveComponent* InTriggerComponent);
 	UPrimitiveComponent* GetPanContainmentTrigger() const { return PanContainmentTrigger; }
 
+	void SetPanWellBoundsGeometry(
+		const FVector2D& InHalfExtentXYCm,
+		float InPanFloorOffsetZCm,
+		float InRecoveryMaxHeightZCm = 140.0f);
+
 	void ConfigureForContract(const UMonolithContractDataAsset* Contract);
 	void SetTargetQuotaMassKg(float InTargetQuotaMassKg);
 	void ResetScaleState();
 	bool ReconcileOverlappingPayloads(bool bEnableTickOnChange = false);
+	bool TryRecoverPayloadOnPan(AActor* PayloadActor);
 
 	float GetPanMassKg() const { return PanMassKg; }
 	float GetSettledMassKg() const { return PanMassKg; }
@@ -44,6 +51,7 @@ public:
 	bool HasContaminationFault() const { return bHasContamination; }
 	int32 GetOverlappingPayloadCount() const { return TrackedPayloads.Num(); }
 
+	FShouldIgnorePayloadInPanSignature OnShouldIgnorePayloadInPan;
 	FOnScaleChunkEventSignature OnChunkLandedOnScale;
 	FOnScaleChunkEventSignature OnChunkBouncedOffScale;
 	FOnScaleContaminationSignature OnScaleContaminationDetected;
@@ -85,6 +93,18 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Scale|Telemetry", meta = (ClampMin = "0.001", ClampMax = "0.05"))
 	float TelemetryDeadband = 0.01f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Scale|Recovery")
+	FVector2D PanWellHalfExtentXYCm = FVector2D(35.05, 28.05);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Scale|Recovery", meta = (ClampMin = "0.0", ClampMax = "15.0"))
+	float PanWellRecoveryMarginXYCm = 4.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Scale|Recovery")
+	float PanWellFloorOffsetZCm = -3.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Scale|Recovery", meta = (ClampMin = "20.0", ClampMax = "250.0"))
+	float PanWellMaxRecoveryHeightZCm = 140.0f;
+
 private:
 	struct FTrackedPanPayload
 	{
@@ -109,6 +129,7 @@ private:
 		int32 OtherBodyIndex);
 
 	int32 FindTrackedPayloadIndex(const AActor* PayloadActor) const;
+	bool IsPayloadWithinPanRecoveryWell(const AActor* PayloadActor) const;
 	void RecomputeAnalyticalPanMass();
 	bool AreAllPayloadsBelowSettleVelocity() const;
 	void WakeOverlappingPayloads();
