@@ -20,13 +20,13 @@ struct TAREANDTITHE_API FMeshPresentationSlot
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Presentation|Mesh")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Mesh")
 	TObjectPtr<UStaticMesh> Mesh = nullptr;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Presentation|Mesh")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Mesh")
 	TArray<TObjectPtr<UMaterialInterface>> MaterialOverrides;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Presentation|Mesh")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Mesh")
 	FTransform VisualLocalTransform = FTransform::Identity;
 
 	/**
@@ -48,105 +48,105 @@ public:
 	// Audio (Hard References — Cook-Safe under bCookMapsOnly=True)
 	// ============================================================================
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Audio", meta = (DisplayName = "Continuous Loops MetaSound (MS_TelemetryLoops)"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio", meta = (DisplayName = "Continuous Loops MetaSound (MS_TelemetryLoops)"))
 	TObjectPtr<USoundBase> ContinuousLoopsMetaSound = nullptr;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Audio", meta = (DisplayName = "Discrete Impulses MetaSound (MS_TelemetryImpulses)"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio", meta = (DisplayName = "Discrete Impulses MetaSound (MS_TelemetryImpulses)"))
 	TObjectPtr<USoundBase> DiscreteImpulsesMetaSound = nullptr;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Audio")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio")
 	TObjectPtr<USoundBase> AmbientCellBedSound = nullptr;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Audio")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio")
 	TObjectPtr<USoundAttenuation> DefaultSpatialAttenuation = nullptr;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Audio")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio")
 	TMap<ETelemetryImpulseId, TObjectPtr<USoundBase>> SpatialImpulseSounds;
 
 	// ============================================================================
 	// Core Materials
 	// ============================================================================
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Materials")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials")
 	TObjectPtr<UMaterialInterface> LaserSheetMaterial = nullptr;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Materials")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials")
 	TObjectPtr<UMaterialInterface> DefaultMonolithOuterMaterial = nullptr;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Materials")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials")
 	TObjectPtr<UMaterialInterface> DefaultMoltenCutCapMaterial = nullptr;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Materials")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials")
 	TObjectPtr<UMaterialInterface> CellWallMaterial = nullptr;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Materials")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials")
 	TObjectPtr<UMaterialInterface> CellFloorMaterial = nullptr;
 
 	// ============================================================================
 	// Station Mesh Slots
 	// ============================================================================
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StationMeshes|Clamp")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StationMeshes|Clamp")
 	FMeshPresentationSlot ClampJawMeshSlot;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StationMeshes|Clamp")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StationMeshes|Clamp")
 	FMeshPresentationSlot ClampSpringHousingMeshSlot;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StationMeshes|Scale")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StationMeshes|Scale")
 	FMeshPresentationSlot ScaleBaseMeshSlot;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StationMeshes|Scale")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StationMeshes|Scale")
 	FMeshPresentationSlot ScalePanMeshSlot;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StationMeshes|Scale")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StationMeshes|Scale")
 	FMeshPresentationSlot DiverterFlapperMeshSlot;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StationMeshes|Scale")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StationMeshes|Scale")
 	FMeshPresentationSlot TareChuteMeshSlot;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StationMeshes|DirectorBooth")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StationMeshes|DirectorBooth")
 	FMeshPresentationSlot DirectorBoothFrameMeshSlot;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StationMeshes|DirectorBooth")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StationMeshes|DirectorBooth")
 	FMeshPresentationSlot DirectorShutterMeshSlot;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StationMeshes|Enclosure")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StationMeshes|Enclosure")
 	FMeshPresentationSlot CellWallPanelMeshSlot;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StationMeshes|Enclosure")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StationMeshes|Enclosure")
 	FMeshPresentationSlot CellFloorGrateMeshSlot;
 
 	// ============================================================================
 	// Diegetic Console Alignment Offsets
 	// ============================================================================
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ConsoleAlignment")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ConsoleAlignment")
 	FTransform ScaleConsoleLocalOffset = FTransform::Identity;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ConsoleAlignment")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ConsoleAlignment")
 	FTransform BoothSignLocalOffset = FTransform::Identity;
 
 	// ============================================================================
 	// Niagara VFX
 	// ============================================================================
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VFX")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX")
 	TObjectPtr<UNiagaraSystem> LaserSliceSparksVFX = nullptr;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VFX")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX")
 	TObjectPtr<UNiagaraSystem> SliverVaporizedVFX = nullptr;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VFX")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX")
 	TObjectPtr<UNiagaraSystem> VeinDetonationVFX = nullptr;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VFX")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VFX")
 	TObjectPtr<UNiagaraSystem> ScaleHeavyImpactVFX = nullptr;
 
 	// ============================================================================
 	// Optional Progression Override
 	// ============================================================================
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Progression")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Progression")
 	TObjectPtr<UShiftProgressionDataAsset> ShiftProgressionOverride = nullptr;
 
 	virtual FPrimaryAssetId GetPrimaryAssetId() const override;

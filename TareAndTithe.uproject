@@ -12,6 +12,10 @@
 	],
 	"Plugins": [
 		{
+			"Name": "EditorScriptingUtilities",
+			"Enabled": true
+		},
+		{
 			"Name": "EnhancedInput",
 			"Enabled": true
 		},
@@ -29,6 +33,10 @@
 		},
 		{
 			"Name": "Niagara",
+			"Enabled": true
+		},
+		{
+			"Name": "PythonScriptPlugin",
 			"Enabled": true
 		}
 	]

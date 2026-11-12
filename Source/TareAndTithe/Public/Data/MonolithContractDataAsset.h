@@ -16,61 +16,61 @@ class TAREANDTITHE_API UMonolithContractDataAsset : public UPrimaryDataAsset
 	GENERATED_BODY()
 
 public:
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Identity")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Identity")
 	FText ContractCode;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Geometry")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Geometry")
 	EMonolithBaseShape BaseShape = EMonolithBaseShape::Box;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Geometry", meta = (EditCondition = "BaseShape == EMonolithBaseShape::CustomStaticMesh"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Geometry", meta = (EditCondition = "BaseShape == EMonolithBaseShape::CustomStaticMesh"))
 	TObjectPtr<UStaticMesh> CustomMonolithMesh = nullptr;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Geometry")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Geometry")
 	FVector DimensionsCm = FVector(40.0f, 40.0f, 100.0f);
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Geometry", meta = (ClampMin = "10.0", ClampMax = "500.0"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Geometry", meta = (ClampMin = "10.0", ClampMax = "500.0"))
 	float BoxProjectionUVScaleCm = 100.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Geometry", meta = (ClampMin = "10.0", ClampMax = "500.0"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Geometry", meta = (ClampMin = "10.0", ClampMax = "500.0"))
 	float CutCapUVWorldDimensionCm = 100.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Physics", meta = (ClampMin = "0.5", ClampMax = "22.0"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Physics", meta = (ClampMin = "0.5", ClampMax = "22.0"))
 	float DensityGramsPerCm3 = 2.5f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Quota", meta = (ClampMin = "0.5"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Quota", meta = (ClampMin = "0.5"))
 	float TargetTitheMassKg = 10.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Quota", meta = (ClampMin = "0.05"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Quota", meta = (ClampMin = "0.05"))
 	float QuotaToleranceKg = 0.75f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Quota", meta = (ClampMin = "0.0"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Quota", meta = (ClampMin = "0.0"))
 	float MaxAllowedTareWasteKg = 12.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Quota")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Quota")
 	bool bAllowDiverterToggle = true;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Clamp", meta = (ClampMin = "1.0"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Clamp", meta = (ClampMin = "1.0"))
 	float ClampMaxSafeTorqueNm = 45.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Clamp", meta = (ClampMin = "0.5", ClampMax = "15.0"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Clamp", meta = (ClampMin = "0.5", ClampMax = "15.0"))
 	float ClampFatigueGraceSeconds = 4.5f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Clamp", meta = (ClampMin = "0.5", ClampMax = "15.0"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Clamp", meta = (ClampMin = "0.5", ClampMax = "15.0"))
 	float ClampFatigueCooldownSeconds = 3.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Clamp", meta = (ClampMin = "5.0"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Clamp", meta = (ClampMin = "5.0"))
 	float ClampSpringStiffness = 180.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Clamp", meta = (ClampMin = "1.0"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Clamp", meta = (ClampMin = "1.0"))
 	float ClampSpringDamping = 24.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Veins")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Veins")
 	TArray<FVolatileVeinDefinition> HiddenVeins;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Materials")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials")
 	TObjectPtr<UMaterialInterface> OuterShellMaterial = nullptr;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Materials")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials")
 	TObjectPtr<UMaterialInterface> MoltenCutCapMaterial = nullptr;
 
 	virtual FPrimaryAssetId GetPrimaryAssetId() const override;
