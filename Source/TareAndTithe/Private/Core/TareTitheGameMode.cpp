@@ -36,11 +36,11 @@ ATareTitheGameMode::ATareTitheGameMode()
 		GreyboxCellCubeMesh = CubeMeshFinder.Object;
 	}
 
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> BasicMatFinder(
-		TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
-	if (BasicMatFinder.Succeeded())
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> FlattenMatFinder(
+		TEXT("/Engine/EngineMaterials/FlattenMaterial.FlattenMaterial"));
+	if (FlattenMatFinder.Succeeded())
 	{
-		GreyboxCellBaseMaterial = BasicMatFinder.Object;
+		GreyboxCellBaseMaterial = FlattenMatFinder.Object;
 	}
 }
 
@@ -197,7 +197,12 @@ void ATareTitheGameMode::SpawnGreyboxPitEnclosureAndLighting(UWorld* World)
 		: nullptr;
 	if (IsValid(PitMID))
 	{
+		PitMID->SetVectorParameterValue(TEXT("BaseColorConst"), GreyboxPitEnclosureColor);
 		PitMID->SetVectorParameterValue(TEXT("Color"), GreyboxPitEnclosureColor);
+		PitMID->SetVectorParameterValue(TEXT("EmissiveColorConst"), FLinearColor::Black);
+		PitMID->SetScalarParameterValue(TEXT("EmissiveScale"), 0.0f);
+		PitMID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.86f);
+		PitMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.22f);
 	}
 
 	auto SpawnEnclosureSlab = [&](const FVector& Location, const FVector& Scale3D, bool bEnableSolidCatchCollision)
@@ -246,13 +251,24 @@ void ATareTitheGameMode::SpawnGreyboxPitEnclosureAndLighting(UWorld* World)
 
 	const double DropX = DefaultScaleAssemblyLocation.X;
 	const double DropY = DefaultScaleAssemblyLocation.Y;
+	const double FrontWallX = DropX + 270.0;
+	const double RearWallX = FMath::Min(-160.0, static_cast<double>(RearCellWallXCm));
+	const double EnclosureCenterX = 0.5 * (FrontWallX + RearWallX);
+	const double EnclosureSpanScaleX = ((FrontWallX - RearWallX) + 40.0) / 100.0;
+	constexpr double SideWallOffsetY = 360.0;
+	constexpr double EnclosureSpanScaleY = 7.60;
+	constexpr double WallCenterZ = 190.0;
+	constexpr double WallHeightScaleZ = 6.00;
+	constexpr double CeilingZ = 475.0;
 
 	// Solid pit floor sits well below AStrayFloorCatchActor (-35 cm) so stray chunks trigger StrayFloorCatch first while snapped remainders land solidly.
-	SpawnEnclosureSlab(FVector(DropX, DropY, -95.0), FVector(9.0, 6.0, 0.20), true);
-	SpawnEnclosureSlab(FVector(DropX + 270.0, DropY, 150.0), FVector(0.20, 6.0, 5.20), false);
-	SpawnEnclosureSlab(FVector(DropX, DropY - 260.0, 150.0), FVector(9.0, 0.20, 5.20), false);
-	SpawnEnclosureSlab(FVector(DropX, DropY + 260.0, 150.0), FVector(9.0, 0.20, 5.20), false);
-	SpawnEnclosureSlab(FVector(DropX, DropY, 395.0), FVector(9.0, 6.0, 0.20), false);
+	SpawnEnclosureSlab(FVector(EnclosureCenterX, DropY, -95.0), FVector(EnclosureSpanScaleX, EnclosureSpanScaleY, 0.20), true);
+	// Front wall behind Director Booth and rear cell wall behind X = -150 cm so pulled-back camera (-68 cm) never clips level geometry.
+	SpawnEnclosureSlab(FVector(FrontWallX, DropY, WallCenterZ), FVector(0.20, EnclosureSpanScaleY, WallHeightScaleZ), false);
+	SpawnEnclosureSlab(FVector(RearWallX, DropY, WallCenterZ), FVector(0.20, EnclosureSpanScaleY, WallHeightScaleZ), false);
+	SpawnEnclosureSlab(FVector(EnclosureCenterX, DropY - SideWallOffsetY, WallCenterZ), FVector(EnclosureSpanScaleX, 0.20, WallHeightScaleZ), false);
+	SpawnEnclosureSlab(FVector(EnclosureCenterX, DropY + SideWallOffsetY, WallCenterZ), FVector(EnclosureSpanScaleX, 0.20, WallHeightScaleZ), false);
+	SpawnEnclosureSlab(FVector(EnclosureCenterX, DropY, CeilingZ), FVector(EnclosureSpanScaleX, EnclosureSpanScaleY, 0.20), false);
 
 	// Overhead key spotlight aimed directly down the monolith & scale drop column.
 	const FVector KeySpotLocation(DropX - 85.0, DropY - 25.0, 335.0);

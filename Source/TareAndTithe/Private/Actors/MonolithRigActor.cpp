@@ -15,6 +15,7 @@
 #include "GeometryScript/CollisionFunctions.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
+#include "Misc/PackageName.h"
 #include "Subsystems/InspectionShiftSubsystem.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -46,11 +47,11 @@ AMonolithRigActor::AMonolithRigActor()
 		ClampJawVisual->SetStaticMesh(FallbackCubeMesh);
 	}
 
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> BasicMatFinder(
-		TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
-	if (BasicMatFinder.Succeeded())
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> FlattenMatFinder(
+		TEXT("/Engine/EngineMaterials/FlattenMaterial.FlattenMaterial"));
+	if (FlattenMatFinder.Succeeded())
 	{
-		BaseGreyboxShapeMaterial = BasicMatFinder.Object;
+		BaseGreyboxShapeMaterial = FlattenMatFinder.Object;
 		ClampJawVisual->SetMaterial(0, BaseGreyboxShapeMaterial);
 	}
 
@@ -174,6 +175,11 @@ FSliceResultSummary AMonolithRigActor::CommitSlicePlane_Implementation(
 		VeinScannerComponent->GetMutableActiveVeins(),
 		SpawnedChunks);
 
+	if (Summary.Outcome == ECommitSliceOutcome::Success && IsValid(RemainderMeshComponent))
+	{
+		RemainderMeshComponent->ConfigureMaterialSet({ResolveEffectiveOuterMaterial(), ResolveEffectiveCutCapMaterial()});
+	}
+
 	if (Summary.Outcome == ECommitSliceOutcome::Success && IsValid(ClampTorqueSolverComponent))
 	{
 		const FVector MountLocalCoMCm = TransformRemainderCoMToMountLocal(Summary.NewRemainderLocalCoMCm);
@@ -238,6 +244,8 @@ bool AMonolithRigActor::LoadContractOnRig(
 		return false;
 	}
 
+	RemainderMeshComponent->ConfigureMaterialSet({ResolveEffectiveOuterMaterial(), ResolveEffectiveCutCapMaterial()});
+
 	// Align top of generated/imported mesh (whether Center or Base origin) cleanly inside TiltingMountComponent's clamp jaws.
 	const FBox LocalBounds = MonolithSliceComponent->GetRemainderLocalBounds();
 	const double TopLocalZ = LocalBounds.IsValid
@@ -266,6 +274,26 @@ bool AMonolithRigActor::LoadContractOnRig(
 
 void AMonolithRigActor::EnsureGreyboxMaterialsInitialized()
 {
+	if (!IsValid(OuterShellOverrideMaterial) && !IsValid(AutoResolvedOuterMasterMaterial))
+	{
+		if (FPackageName::DoesPackageExist(TEXT("/Game/Materials/M_SlagOuter_Master")))
+		{
+			AutoResolvedOuterMasterMaterial = LoadObject<UMaterialInterface>(
+				nullptr,
+				TEXT("/Game/Materials/M_SlagOuter_Master.M_SlagOuter_Master"));
+		}
+	}
+
+	if (!IsValid(MoltenCutCapOverrideMaterial) && !IsValid(AutoResolvedCutCapMasterMaterial))
+	{
+		if (FPackageName::DoesPackageExist(TEXT("/Game/Materials/M_MoltenCutCap_Master")))
+		{
+			AutoResolvedCutCapMasterMaterial = LoadObject<UMaterialInterface>(
+				nullptr,
+				TEXT("/Game/Materials/M_MoltenCutCap_Master.M_MoltenCutCap_Master"));
+		}
+	}
+
 	if (!IsValid(BaseGreyboxShapeMaterial))
 	{
 		return;
@@ -276,7 +304,12 @@ void AMonolithRigActor::EnsureGreyboxMaterialsInitialized()
 		FallbackOuterMID = UMaterialInstanceDynamic::Create(BaseGreyboxShapeMaterial, this);
 		if (IsValid(FallbackOuterMID))
 		{
+			FallbackOuterMID->SetVectorParameterValue(TEXT("BaseColorConst"), GreyboxOuterShellColor);
 			FallbackOuterMID->SetVectorParameterValue(TEXT("Color"), GreyboxOuterShellColor);
+			FallbackOuterMID->SetVectorParameterValue(TEXT("EmissiveColorConst"), FLinearColor::Black);
+			FallbackOuterMID->SetScalarParameterValue(TEXT("EmissiveScale"), 0.0f);
+			FallbackOuterMID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.78f);
+			FallbackOuterMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.32f);
 		}
 	}
 
@@ -285,7 +318,12 @@ void AMonolithRigActor::EnsureGreyboxMaterialsInitialized()
 		FallbackCutCapMID = UMaterialInstanceDynamic::Create(BaseGreyboxShapeMaterial, this);
 		if (IsValid(FallbackCutCapMID))
 		{
+			FallbackCutCapMID->SetVectorParameterValue(TEXT("BaseColorConst"), GreyboxMoltenCapColor);
 			FallbackCutCapMID->SetVectorParameterValue(TEXT("Color"), GreyboxMoltenCapColor);
+			FallbackCutCapMID->SetVectorParameterValue(TEXT("EmissiveColorConst"), GreyboxMoltenCapEmissiveColor);
+			FallbackCutCapMID->SetScalarParameterValue(TEXT("EmissiveScale"), 1.0f);
+			FallbackCutCapMID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.28f);
+			FallbackCutCapMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.12f);
 		}
 	}
 
@@ -294,7 +332,12 @@ void AMonolithRigActor::EnsureGreyboxMaterialsInitialized()
 		ClampJawMID = UMaterialInstanceDynamic::Create(BaseGreyboxShapeMaterial, this);
 		if (IsValid(ClampJawMID))
 		{
+			ClampJawMID->SetVectorParameterValue(TEXT("BaseColorConst"), GreyboxClampJawColor);
 			ClampJawMID->SetVectorParameterValue(TEXT("Color"), GreyboxClampJawColor);
+			ClampJawMID->SetVectorParameterValue(TEXT("EmissiveColorConst"), FLinearColor::Black);
+			ClampJawMID->SetScalarParameterValue(TEXT("EmissiveScale"), 0.0f);
+			ClampJawMID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.52f);
+			ClampJawMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.65f);
 			ClampJawVisual->SetMaterial(0, ClampJawMID);
 		}
 	}
@@ -302,12 +345,28 @@ void AMonolithRigActor::EnsureGreyboxMaterialsInitialized()
 
 UMaterialInterface* AMonolithRigActor::ResolveEffectiveOuterMaterial() const
 {
-	return IsValid(OuterShellOverrideMaterial) ? OuterShellOverrideMaterial.Get() : FallbackOuterMID.Get();
+	if (IsValid(OuterShellOverrideMaterial))
+	{
+		return OuterShellOverrideMaterial.Get();
+	}
+	if (IsValid(AutoResolvedOuterMasterMaterial))
+	{
+		return AutoResolvedOuterMasterMaterial.Get();
+	}
+	return FallbackOuterMID.Get();
 }
 
 UMaterialInterface* AMonolithRigActor::ResolveEffectiveCutCapMaterial() const
 {
-	return IsValid(MoltenCutCapOverrideMaterial) ? MoltenCutCapOverrideMaterial.Get() : FallbackCutCapMID.Get();
+	if (IsValid(MoltenCutCapOverrideMaterial))
+	{
+		return MoltenCutCapOverrideMaterial.Get();
+	}
+	if (IsValid(AutoResolvedCutCapMasterMaterial))
+	{
+		return AutoResolvedCutCapMasterMaterial.Get();
+	}
+	return FallbackCutCapMID.Get();
 }
 
 FVector AMonolithRigActor::TransformRemainderCoMToMountLocal(const FVector& RemainderLocalCoMCm) const

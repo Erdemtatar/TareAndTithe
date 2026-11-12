@@ -64,6 +64,7 @@ struct FShiftQuotaReceiverBinding
 	TScriptInterface<IQuotaReceiverInterface> QuotaReceiver;
 	FConfigureQuotaReceiverDelegate OnConfigureContract;
 	FToggleQuotaDiverterDelegate OnToggleDiverter;
+	FSimpleDelegate OnReconcileOverlaps;
 	FQueryStationVectorDelegate OnQueryWorldLocation;
 };
 

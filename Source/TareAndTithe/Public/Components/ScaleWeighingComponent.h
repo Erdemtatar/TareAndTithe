@@ -36,6 +36,7 @@ public:
 	void ConfigureForContract(const UMonolithContractDataAsset* Contract);
 	void SetTargetQuotaMassKg(float InTargetQuotaMassKg);
 	void ResetScaleState();
+	bool ReconcileOverlappingPayloads(bool bEnableTickOnChange = false);
 
 	float GetPanMassKg() const { return PanMassKg; }
 	float GetSettledMassKg() const { return PanMassKg; }

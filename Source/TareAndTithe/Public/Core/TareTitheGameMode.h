@@ -46,6 +46,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell")
 	FLinearColor GreyboxPitEnclosureColor = FLinearColor(0.025f, 0.028f, 0.034f, 1.0f);
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell", meta = (ClampMax = "-150.0"))
+	float RearCellWallXCm = -200.0f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Scalability", meta = (ClampMin = "0", ClampMax = "3"))
 	int32 BaselineScalabilityLevel = 2;
 

@@ -8,8 +8,10 @@
 #include "Subsystems/ChunkPoolSubsystem.h"
 #include "Engine/CollisionProfile.h"
 #include "Engine/World.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "TimerManager.h"
+#include "UObject/ConstructorHelpers.h"
 
 namespace
 {
@@ -24,8 +26,17 @@ ASeveredChunkActor::ASeveredChunkActor()
 	ChunkMeshComponent = CreateDefaultSubobject<UDynamicMeshComponent>(TEXT("ChunkMeshComponent"));
 	SetRootComponent(ChunkMeshComponent);
 
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> FlattenMatFinder(
+		TEXT("/Engine/EngineMaterials/FlattenMaterial.FlattenMaterial"));
+	if (FlattenMatFinder.Succeeded())
+	{
+		BaseRuntimeSurfaceMaterial = FlattenMatFinder.Object;
+	}
+
 	ChunkMeshComponent->PrimaryComponentTick.bCanEverTick = false;
 	ChunkMeshComponent->PrimaryComponentTick.bStartWithTickEnabled = false;
+	ChunkMeshComponent->BodyInstance.bUseCCD = true;
+	ChunkMeshComponent->SetUseCCD(true);
 	ChunkMeshComponent->SetSimulatePhysics(false);
 	ChunkMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	ChunkMeshComponent->SetGenerateOverlapEvents(false);
@@ -39,6 +50,11 @@ void ASeveredChunkActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	ClearInFlightWatchdog();
 	Super::EndPlay(EndPlayReason);
+}
+
+void ASeveredChunkActor::SetMinCollisionThicknessCm(float InMinThicknessCm)
+{
+	MinCollisionThicknessCm = FMath::Clamp(InMinThicknessCm, 0.05f, 2.0f);
 }
 
 void ASeveredChunkActor::ActivateFromSlice(
@@ -64,12 +80,18 @@ void ASeveredChunkActor::ActivateFromSlice(
 
 	if (IsValid(ChunkMeshComponent))
 	{
-		ChunkMeshComponent->SetMaterial(0, OuterMaterial);
-		ChunkMeshComponent->SetMaterial(1, CutCapMaterial);
+		if (!IsValid(OuterMaterial) || !IsValid(CutCapMaterial))
+		{
+			EnsureFallbackChunkMaterialsInitialized();
+		}
+
+		UMaterialInterface* EffectiveOuterMat = IsValid(OuterMaterial) ? OuterMaterial : FallbackChunkOuterMID.Get();
+		UMaterialInterface* EffectiveCutCapMat = IsValid(CutCapMaterial) ? CutCapMaterial : FallbackChunkCutCapMID.Get();
 
 		if (UDynamicMesh* DynMesh = ChunkMeshComponent->GetDynamicMesh())
 		{
 			DynMesh->SetMesh(MoveTemp(InCenteredMesh));
+			ChunkMeshComponent->ConfigureMaterialSet({EffectiveOuterMat, EffectiveCutCapMat});
 
 			FGeometryScriptCollisionFromMeshOptions CollisionOptions;
 			CollisionOptions.bEmitTransaction = false;
@@ -85,7 +107,13 @@ void ASeveredChunkActor::ActivateFromSlice(
 				CollisionOptions,
 				nullptr);
 		}
+		else
+		{
+			ChunkMeshComponent->ConfigureMaterialSet({EffectiveOuterMat, EffectiveCutCapMat});
+		}
 
+		ChunkMeshComponent->BodyInstance.bUseCCD = true;
+		ChunkMeshComponent->SetUseCCD(true);
 		ChunkMeshComponent->SetCollisionProfileName(UCollisionProfile::PhysicsActor_ProfileName);
 		ChunkMeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 		ChunkMeshComponent->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
@@ -182,6 +210,43 @@ void ASeveredChunkActor::ReturnToChunkPool_Implementation()
 	}
 
 	DeactivateToPool();
+}
+
+void ASeveredChunkActor::EnsureFallbackChunkMaterialsInitialized()
+{
+	if (!IsValid(BaseRuntimeSurfaceMaterial))
+	{
+		return;
+	}
+
+	if (!IsValid(FallbackChunkOuterMID))
+	{
+		FallbackChunkOuterMID = UMaterialInstanceDynamic::Create(BaseRuntimeSurfaceMaterial, this);
+		if (IsValid(FallbackChunkOuterMID))
+		{
+			const FLinearColor OuterSlagColor(0.045f, 0.052f, 0.062f, 1.0f);
+			FallbackChunkOuterMID->SetVectorParameterValue(TEXT("BaseColorConst"), OuterSlagColor);
+			FallbackChunkOuterMID->SetVectorParameterValue(TEXT("EmissiveColorConst"), FLinearColor::Black);
+			FallbackChunkOuterMID->SetScalarParameterValue(TEXT("EmissiveScale"), 0.0f);
+			FallbackChunkOuterMID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.78f);
+			FallbackChunkOuterMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.32f);
+		}
+	}
+
+	if (!IsValid(FallbackChunkCutCapMID))
+	{
+		FallbackChunkCutCapMID = UMaterialInstanceDynamic::Create(BaseRuntimeSurfaceMaterial, this);
+		if (IsValid(FallbackChunkCutCapMID))
+		{
+			const FLinearColor MoltenBaseColor(1.00f, 0.32f, 0.02f, 1.0f);
+			const FLinearColor MoltenEmissiveColor(2.25f, 0.58f, 0.03f, 1.0f);
+			FallbackChunkCutCapMID->SetVectorParameterValue(TEXT("BaseColorConst"), MoltenBaseColor);
+			FallbackChunkCutCapMID->SetVectorParameterValue(TEXT("EmissiveColorConst"), MoltenEmissiveColor);
+			FallbackChunkCutCapMID->SetScalarParameterValue(TEXT("EmissiveScale"), 1.0f);
+			FallbackChunkCutCapMID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.28f);
+			FallbackChunkCutCapMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.12f);
+		}
+	}
 }
 
 void ASeveredChunkActor::StartInFlightWatchdog(float DurationSeconds)

@@ -9,6 +9,7 @@
 #include "SeveredChunkActor.generated.h"
 
 class UDynamicMeshComponent;
+class UMaterialInstanceDynamic;
 class UMaterialInterface;
 class ASeveredChunkActor;
 
@@ -28,6 +29,8 @@ public:
 	ASeveredChunkActor();
 
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	void SetMinCollisionThicknessCm(float InMinThicknessCm);
 
 	void ActivateFromSlice(
 		UE::Geometry::FDynamicMesh3&& InCenteredMesh,
@@ -64,15 +67,25 @@ protected:
 	int32 ConvexHullTargetFaceCount = 16;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Chunk|Collision", meta = (ClampMin = "0.05", ClampMax = "2.0"))
-	float MinCollisionThicknessCm = 0.2f;
+	float MinCollisionThicknessCm = 0.30f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Chunk|Safety", meta = (ClampMin = "1.5", ClampMax = "10.0"))
 	float DefaultWatchdogSeconds = 4.0f;
 
 private:
+	void EnsureFallbackChunkMaterialsInitialized();
 	void StartInFlightWatchdog(float DurationSeconds);
 	void ClearInFlightWatchdog();
 	void HandleWatchdogExpired();
+
+	UPROPERTY()
+	TObjectPtr<UMaterialInterface> BaseRuntimeSurfaceMaterial;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> FallbackChunkOuterMID;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> FallbackChunkCutCapMID;
 
 	float AnalyticalMassKg = 0.0f;
 	float ActiveWatchdogSeconds = 4.0f;

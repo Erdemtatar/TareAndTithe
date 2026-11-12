@@ -72,10 +72,13 @@ protected:
 	float AutoFitJawVerticalDepthRatio = 0.175f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Monolith|Defaults", meta = (ClampMin = "5.0", ClampMax = "250.0"))
-	float FallbackMinSliverVolumeCm3 = 25.0f;
+	float FallbackMinSliverVolumeCm3 = 20.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Monolith|Defaults", meta = (ClampMin = "0.2", ClampMax = "5.0"))
-	float FallbackMinChunkAxisThicknessCm = 0.6f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Monolith|Defaults", meta = (ClampMin = "0.1", ClampMax = "5.0"))
+	float FallbackMinChunkAxisThicknessCm = 0.30f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Monolith|Defaults", meta = (ClampMin = "0.01", ClampMax = "2.0"))
+	float MeaningfulChunkMassPreservationKg = 0.15f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Monolith|Defaults", meta = (ClampMin = "1.0", ClampMax = "100.0"))
 	float FallbackChunkSeparationSpeedCmPerSec = 15.0f;

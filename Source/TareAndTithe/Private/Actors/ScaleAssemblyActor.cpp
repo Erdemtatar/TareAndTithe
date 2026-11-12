@@ -17,6 +17,7 @@
 #include "UObject/ConstructorHelpers.h"
 
 AScaleAssemblyActor::AScaleAssemblyActor()
+	: CachedShiftPhase(EShiftPhase::WaitingForStations)
 {
 	PrimaryActorTick.bCanEverTick = false;
 	PrimaryActorTick.bStartWithTickEnabled = false;
@@ -31,11 +32,11 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 		FallbackCubeMesh = CubeMeshFinder.Object;
 	}
 
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> BasicMatFinder(
-		TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
-	if (BasicMatFinder.Succeeded())
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> FlattenMatFinder(
+		TEXT("/Engine/EngineMaterials/FlattenMaterial.FlattenMaterial"));
+	if (FlattenMatFinder.Succeeded())
 	{
-		BaseGreyboxShapeMaterial = BasicMatFinder.Object;
+		BaseGreyboxShapeMaterial = FlattenMatFinder.Object;
 	}
 
 	auto ConfigureSolidKinematicMesh = [this](UStaticMeshComponent* MeshComp)
@@ -121,8 +122,15 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 	PanTriggerBox->SetupAttachment(PanPlatform);
 	PanTriggerBox->PrimaryComponentTick.bCanEverTick = false;
 	PanTriggerBox->SetRelativeScale3D(InvPanScale);
-	PanTriggerBox->SetRelativeLocation(ToPanChildRelLoc(0.0, 0.0, 11.75));
-	PanTriggerBox->InitBoxExtent(FVector(35.0, 28.0, 9.25));
+	// Bottom face at -3.0 cm (6.0 cm below the +3.0 cm top surface of PanPlatform); top face at +19.0 cm (>= 13.8 cm below +45 deg DiverterFlapper ramp).
+	PanTriggerBox->SetRelativeLocation(ToPanChildRelLoc(0.0, 0.0, static_cast<double>(PanTriggerCenterOffsetZCm)));
+	PanTriggerBox->InitBoxExtent(PanTriggerBoxExtentCm);
+	PanTriggerBox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	PanTriggerBox->SetCollisionObjectType(ECC_WorldDynamic);
+	PanTriggerBox->SetCollisionResponseToAllChannels(ECR_Ignore);
+	PanTriggerBox->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Overlap);
+	PanTriggerBox->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Overlap);
+	PanTriggerBox->SetGenerateOverlapEvents(true);
 
 	// Bottom-right intake hinge: 0 deg stands vertically at Y=+34 cm leaving PanPlatform completely unobstructed;
 	// +45 deg swings across the throat to Y=-30.35 cm as an angled ramp channeling falling chunks directly into TareChuteTriggerBox.
@@ -178,23 +186,46 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 
 	HeaderStencilText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("HeaderStencilText"));
 	HeaderStencilText->SetupAttachment(ScaleRoot);
-	ConfigureReadoutText(HeaderStencilText, FVector(-43.0, 0.0, 38.0), 6.5f, FColor(235, 238, 242, 255), TEXT("DIRECTOR'S CUT"));
+	ConfigureReadoutText(HeaderStencilText, FVector(-45.0, 0.0, 45.0), 5.6f, FColor(235, 238, 242, 255), TEXT("DIRECTOR'S CUT"));
 
 	ContractCodeText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("ContractCodeText"));
 	ContractCodeText->SetupAttachment(ScaleRoot);
-	ConfigureReadoutText(ContractCodeText, FVector(-43.0, 0.0, 31.5), 4.0f, ReadoutCyanColor, TEXT("AWAITING CONTRACT"));
+	ConfigureReadoutText(
+		ContractCodeText,
+		FVector(-45.0, 0.0, 38.0),
+		4.3f,
+		ReadoutCyanColor,
+		TEXT("CONTRACT 01/06 | TARGET: 12.00 KG [10.75 - 13.25 KG]"));
+
+	StatusBannerText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("StatusBannerText"));
+	StatusBannerText->SetupAttachment(ScaleRoot);
+	ConfigureReadoutText(
+		StatusBannerText,
+		FVector(-45.0, 0.0, 30.0),
+		5.2f,
+		ReadoutCyanColor,
+		TEXT("HOLD [LMB] TO SLICE MONOLITH INTO TITHE"));
 
 	MassReadoutText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("MassReadoutText"));
 	MassReadoutText->SetupAttachment(ScaleRoot);
-	ConfigureReadoutText(MassReadoutText, FVector(-43.0, 0.0, 23.5), 8.2f, ReadoutAmberColor, TEXT("00.00 / 10.00 KG"));
+	ConfigureReadoutText(MassReadoutText, FVector(-45.0, 0.0, 20.5), 7.8f, ReadoutAmberColor, TEXT("00.00 / 12.00 KG"));
 
 	TareReadoutText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("TareReadoutText"));
 	TareReadoutText->SetupAttachment(ScaleRoot);
-	ConfigureReadoutText(TareReadoutText, FVector(-43.0, 0.0, 15.5), 5.2f, ReadoutAmberColor, TEXT("TARE: 0.0 / 12.0 KG"));
+	ConfigureReadoutText(TareReadoutText, FVector(-45.0, 0.0, 12.5), 4.8f, ReadoutAmberColor, TEXT("TARE: 0.0 / 14.0 KG"));
 
 	RouteReadoutText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("RouteReadoutText"));
 	RouteReadoutText->SetupAttachment(ScaleRoot);
-	ConfigureReadoutText(RouteReadoutText, FVector(-43.0, 0.0, 8.5), 5.2f, ReadoutCyanColor, TEXT("ROUTE: TITHE"));
+	ConfigureReadoutText(RouteReadoutText, FVector(-45.0, 0.0, 5.5), 4.8f, ReadoutCyanColor, TEXT("ROUTE: TITHE"));
+
+	ControlStencilText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("ControlStencilText"));
+	ControlStencilText->SetupAttachment(ScaleRoot);
+	ConfigureReadoutText(
+		ControlStencilText,
+		FVector(-45.0, 0.0, -2.0),
+		3.7f,
+		FColor(206, 218, 228, 255),
+		TEXT("SCROLL: ROTATE | RMB: BEVEL | [SPACE]: TITHE/TARE | [E]: STAMP | HOLD [R]: RESET"));
 }
 
 void AScaleAssemblyActor::BeginPlay()
@@ -202,6 +233,7 @@ void AScaleAssemblyActor::BeginPlay()
 	Super::BeginPlay();
 
 	InitializeGreyboxVisualMaterials();
+	EnforcePanTriggerGeometryAndCollision();
 
 	if (IsValid(ScaleWeighingComponent))
 	{
@@ -230,13 +262,18 @@ void AScaleAssemblyActor::BeginPlay()
 		{
 			ShiftSubsystem->RegisterTelemetryPublisher(this, this);
 			ShiftSubsystem->OnContractSnapshotUpdated.AddUniqueDynamic(this, &AScaleAssemblyActor::HandleContractSnapshotUpdated);
+			ShiftSubsystem->OnShiftVerdict.AddUniqueDynamic(this, &AScaleAssemblyActor::HandleShiftVerdict);
+			ShiftSubsystem->OnShiftPhaseChanged.AddUObject(this, &AScaleAssemblyActor::HandleShiftPhaseChanged);
 			ShiftSubsystem->OnActiveContractLoaded.AddUObject(this, &AScaleAssemblyActor::HandleActiveContractLoaded);
+
+			CachedShiftPhase = ShiftSubsystem->GetCurrentPhase();
 
 			FShiftQuotaReceiverBinding Binding;
 			Binding.QuotaReceiver.SetObject(this);
 			Binding.QuotaReceiver.SetInterface(this);
 			Binding.OnConfigureContract.BindUObject(this, &AScaleAssemblyActor::ConfigureForContract);
 			Binding.OnToggleDiverter.BindUObject(this, &AScaleAssemblyActor::RequestToggleDiverterRoute);
+			Binding.OnReconcileOverlaps.BindUObject(this, &AScaleAssemblyActor::ReconcileScaleOverlaps);
 			Binding.OnQueryWorldLocation.BindUObject(this, &AScaleAssemblyActor::QueryScaleWorldLocation);
 
 			ShiftSubsystem->RegisterQuotaReceiver(Binding);
@@ -244,6 +281,7 @@ void AScaleAssemblyActor::BeginPlay()
 	}
 
 	RefreshRouteReadout();
+	RefreshStatusBannerReadout();
 }
 
 void AScaleAssemblyActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -253,6 +291,8 @@ void AScaleAssemblyActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
 		{
 			ShiftSubsystem->OnContractSnapshotUpdated.RemoveDynamic(this, &AScaleAssemblyActor::HandleContractSnapshotUpdated);
+			ShiftSubsystem->OnShiftVerdict.RemoveDynamic(this, &AScaleAssemblyActor::HandleShiftVerdict);
+			ShiftSubsystem->OnShiftPhaseChanged.RemoveAll(this);
 			ShiftSubsystem->OnActiveContractLoaded.RemoveAll(this);
 			ShiftSubsystem->UnregisterQuotaReceiver(this);
 			ShiftSubsystem->UnregisterTelemetryPublisher(this);
@@ -310,6 +350,7 @@ void AScaleAssemblyActor::ResetReceiverState_Implementation()
 		DiverterGateComponent->SetRoute(EDiverterRoute::TitheScale, true);
 	}
 	RefreshRouteReadout();
+	RefreshStatusBannerReadout();
 }
 
 void AScaleAssemblyActor::ConfigureForContract(const UMonolithContractDataAsset* Contract, EDiverterRoute InitialRoute)
@@ -325,12 +366,28 @@ void AScaleAssemblyActor::ConfigureForContract(const UMonolithContractDataAsset*
 		DiverterGateComponent->ConfigureForContract(bAllowToggle, InitialRoute);
 	}
 
-	if (IsValid(ContractCodeText) && IsValid(Contract))
+	if (IsValid(Contract))
 	{
-		ContractCodeText->SetText(Contract->ContractCode);
+		CachedSnapshot.TargetTitheMassKg = Contract->TargetTitheMassKg;
+		CachedSnapshot.QuotaToleranceKg = Contract->QuotaToleranceKg;
+		CachedSnapshot.MaxAllowedTareWasteKg = Contract->MaxAllowedTareWasteKg;
 	}
 
+	if (UWorld* World = GetWorld())
+	{
+		if (const UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
+		{
+			CachedContractIndex = ShiftSubsystem->GetCurrentContractIndex();
+			CachedTotalContracts = FMath::Max(1, ShiftSubsystem->GetTotalContractCount());
+		}
+	}
+
+	bHasLatchedVerdictBanner = false;
+	LatchedFaultReason = EContractFaultReason::None;
+
+	RefreshContractHeaderReadout();
 	RefreshRouteReadout();
+	RefreshStatusBannerReadout();
 }
 
 bool AScaleAssemblyActor::RequestToggleDiverterRoute()
@@ -345,10 +402,31 @@ bool AScaleAssemblyActor::RequestToggleDiverterRoute()
 	return bToggled;
 }
 
+void AScaleAssemblyActor::ReconcileScaleOverlaps()
+{
+	if (IsValid(ScaleWeighingComponent))
+	{
+		ScaleWeighingComponent->ReconcileOverlappingPayloads(true);
+	}
+}
+
 void AScaleAssemblyActor::HandleContractSnapshotUpdated(const FContractRuntimeSnapshot& Snapshot)
 {
+	CachedSnapshot = Snapshot;
+	CachedContractIndex = Snapshot.ContractIndex;
+
+	if (UWorld* World = GetWorld())
+	{
+		if (const UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
+		{
+			CachedTotalContracts = FMath::Max(1, ShiftSubsystem->GetTotalContractCount());
+		}
+	}
+
 	const bool bContaminated = HasContaminationFault_Implementation();
 	const bool bOvershoot = Snapshot.SettledScaleMassKg > (Snapshot.TargetTitheMassKg + Snapshot.QuotaToleranceKg + 1.0e-3f);
+
+	RefreshContractHeaderReadout();
 
 	if (IsValid(MassReadoutText))
 	{
@@ -387,23 +465,214 @@ void AScaleAssemblyActor::HandleContractSnapshotUpdated(const FContractRuntimeSn
 	}
 
 	RefreshRouteReadout();
+	RefreshStatusBannerReadout();
+}
+
+void AScaleAssemblyActor::HandleShiftVerdict(EShiftVerdictType Verdict, EContractFaultReason FaultReason)
+{
+	LatchedVerdict = Verdict;
+	LatchedFaultReason = FaultReason;
+	bHasLatchedVerdictBanner = true;
+	RefreshStatusBannerReadout();
+}
+
+void AScaleAssemblyActor::HandleShiftPhaseChanged(EShiftPhase NewPhase)
+{
+	CachedShiftPhase = NewPhase;
+	if (NewPhase == EShiftPhase::ContractIntro || NewPhase == EShiftPhase::ActiveInspection)
+	{
+		bHasLatchedVerdictBanner = false;
+		LatchedFaultReason = EContractFaultReason::None;
+	}
+	else if (NewPhase == EShiftPhase::FaultResetDelay)
+	{
+		if (UWorld* World = GetWorld())
+		{
+			if (const UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
+			{
+				LatchedVerdict = EShiftVerdictType::ContractFaultReset;
+				LatchedFaultReason = ShiftSubsystem->GetLastFaultReason();
+				bHasLatchedVerdictBanner = (LatchedFaultReason != EContractFaultReason::None);
+			}
+		}
+	}
+
+	RefreshStatusBannerReadout();
 }
 
 void AScaleAssemblyActor::HandleActiveContractLoaded(
 	const UMonolithContractDataAsset* Contract,
-	const UShiftProgressionDataAsset* /*ShiftConfig*/,
-	int32 /*ContractIndex*/)
+	const UShiftProgressionDataAsset* ShiftConfig,
+	int32 ContractIndex)
 {
-	if (IsValid(ContractCodeText) && IsValid(Contract))
+	CachedContractIndex = ContractIndex;
+	if (IsValid(ShiftConfig))
 	{
-		ContractCodeText->SetText(Contract->ContractCode);
+		CachedTotalContracts = FMath::Max(1, ShiftConfig->OrderedContracts.Num());
 	}
+	if (IsValid(Contract))
+	{
+		CachedSnapshot.TargetTitheMassKg = Contract->TargetTitheMassKg;
+		CachedSnapshot.QuotaToleranceKg = Contract->QuotaToleranceKg;
+		CachedSnapshot.MaxAllowedTareWasteKg = Contract->MaxAllowedTareWasteKg;
+	}
+
+	bHasLatchedVerdictBanner = false;
+	LatchedFaultReason = EContractFaultReason::None;
+
+	RefreshContractHeaderReadout();
 	RefreshRouteReadout();
+	RefreshStatusBannerReadout();
 }
 
 void AScaleAssemblyActor::HandleDiverterRouteChanged(EDiverterRoute /*NewRoute*/)
 {
 	RefreshRouteReadout();
+}
+
+void AScaleAssemblyActor::EnforcePanTriggerGeometryAndCollision()
+{
+	if (!IsValid(PanTriggerBox) || !IsValid(PanPlatform))
+	{
+		return;
+	}
+
+	const FVector PlatformScale = PanPlatform->GetRelativeScale3D();
+	const double SafeScaleX = FMath::Max(0.01, FMath::Abs(PlatformScale.X));
+	const double SafeScaleY = FMath::Max(0.01, FMath::Abs(PlatformScale.Y));
+	const double SafeScaleZ = FMath::Max(0.01, FMath::Abs(PlatformScale.Z));
+
+	if (PanTriggerBox->GetAttachParent() != PanPlatform)
+	{
+		PanTriggerBox->AttachToComponent(PanPlatform, FAttachmentTransformRules::KeepRelativeTransform);
+	}
+
+	PanTriggerBox->SetRelativeScale3D(FVector(1.0 / SafeScaleX, 1.0 / SafeScaleY, 1.0 / SafeScaleZ));
+	PanTriggerBox->SetRelativeLocation(FVector(0.0, 0.0, static_cast<double>(PanTriggerCenterOffsetZCm) / SafeScaleZ));
+	PanTriggerBox->SetBoxExtent(PanTriggerBoxExtentCm, true);
+	PanTriggerBox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	PanTriggerBox->SetCollisionObjectType(ECC_WorldDynamic);
+	PanTriggerBox->SetCollisionResponseToAllChannels(ECR_Ignore);
+	PanTriggerBox->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Overlap);
+	PanTriggerBox->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Overlap);
+	PanTriggerBox->SetGenerateOverlapEvents(true);
+}
+
+void AScaleAssemblyActor::RefreshContractHeaderReadout()
+{
+	if (!IsValid(ContractCodeText))
+	{
+		return;
+	}
+
+	const int32 DisplayIndex = FMath::Clamp(CachedContractIndex + 1, 1, FMath::Max(1, CachedTotalContracts));
+	const int32 DisplayTotal = FMath::Max(1, CachedTotalContracts);
+	const float TargetKg = FMath::Max(0.0f, CachedSnapshot.TargetTitheMassKg);
+	const float MinValidKg = FMath::Max(0.0f, TargetKg - CachedSnapshot.QuotaToleranceKg);
+	const float MaxValidKg = TargetKg + CachedSnapshot.QuotaToleranceKg;
+
+	const FString HeaderLine = FString::Printf(
+		TEXT("CONTRACT %02d/%02d | TARGET: %.2f KG [%.2f - %.2f KG]"),
+		DisplayIndex,
+		DisplayTotal,
+		TargetKg,
+		MinValidKg,
+		MaxValidKg);
+
+	ContractCodeText->SetText(FText::FromString(HeaderLine));
+	ContractCodeText->SetTextRenderColor(ReadoutCyanColor);
+}
+
+void AScaleAssemblyActor::RefreshStatusBannerReadout()
+{
+	if (!IsValid(StatusBannerText))
+	{
+		return;
+	}
+
+	if (bHasLatchedVerdictBanner ||
+		CachedShiftPhase == EShiftPhase::FaultResetDelay ||
+		CachedShiftPhase == EShiftPhase::ContractPassTransition ||
+		CachedShiftPhase == EShiftPhase::ShiftCompleted)
+	{
+		if (LatchedVerdict == EShiftVerdictType::ContractFaultReset || CachedShiftPhase == EShiftPhase::FaultResetDelay)
+		{
+			StatusBannerText->SetTextRenderColor(ReadoutRedColor);
+			StatusBannerText->SetText(FText::FromString(FormatFaultReasonBanner(LatchedFaultReason)));
+			return;
+		}
+		if (LatchedVerdict == EShiftVerdictType::ShiftCompleted || CachedShiftPhase == EShiftPhase::ShiftCompleted)
+		{
+			StatusBannerText->SetTextRenderColor(ReadoutGreenColor);
+			StatusBannerText->SetText(FText::FromString(TEXT("SHIFT COMPLETE - HOLD [R] TO RESTART")));
+			return;
+		}
+		if (LatchedVerdict == EShiftVerdictType::ContractPassed || CachedShiftPhase == EShiftPhase::ContractPassTransition)
+		{
+			StatusBannerText->SetTextRenderColor(ReadoutGreenColor);
+			StatusBannerText->SetText(FText::FromString(TEXT("QUOTA STAMPED - LOADING NEXT CONTRACT")));
+			return;
+		}
+	}
+
+	if (HasContaminationFault_Implementation())
+	{
+		StatusBannerText->SetTextRenderColor(ReadoutRedColor);
+		StatusBannerText->SetText(FText::FromString(TEXT("FAULT: CONTAMINATED CHUNK - ROUTE TO [SPACE] TARE")));
+		return;
+	}
+
+	const bool bChunksInFlight = CachedSnapshot.InFlightMassKg > KINDA_SMALL_NUMBER;
+	const bool bScaleOscillating = !IsReceiverSettled_Implementation();
+	if (bChunksInFlight || bScaleOscillating)
+	{
+		StatusBannerText->SetTextRenderColor(ReadoutAmberColor);
+		StatusBannerText->SetText(FText::FromString(TEXT("WEIGHING / SETTLING...")));
+		return;
+	}
+
+	if (CachedSnapshot.bScaleSettledForStamp || CachedSnapshot.bIsWithinQuotaWindow)
+	{
+		StatusBannerText->SetTextRenderColor(ReadoutGreenColor);
+		StatusBannerText->SetText(FText::FromString(TEXT("QUOTA MET - PRESS [E] TO STAMP")));
+		return;
+	}
+
+	const float MinValidKg = FMath::Max(0.0f, CachedSnapshot.TargetTitheMassKg - CachedSnapshot.QuotaToleranceKg);
+	if (CachedSnapshot.SettledScaleMassKg > KINDA_SMALL_NUMBER && CachedSnapshot.SettledScaleMassKg < MinValidKg)
+	{
+		const float RemainingToWindowKg = FMath::Max(0.01f, MinValidKg - CachedSnapshot.SettledScaleMassKg);
+		StatusBannerText->SetTextRenderColor(ReadoutAmberColor);
+		StatusBannerText->SetText(FText::FromString(
+			FString::Printf(TEXT("UNDER QUOTA - ADD %.2f KG TO MIN WINDOW"), RemainingToWindowKg)));
+		return;
+	}
+
+	StatusBannerText->SetTextRenderColor(ReadoutCyanColor);
+	StatusBannerText->SetText(FText::FromString(TEXT("HOLD [LMB] TO SLICE MONOLITH INTO TITHE")));
+}
+
+FString AScaleAssemblyActor::FormatFaultReasonBanner(EContractFaultReason FaultReason)
+{
+	switch (FaultReason)
+	{
+	case EContractFaultReason::QuotaOvershoot:
+		return TEXT("FAULT: OVERWEIGHT - EXCEEDED MAX QUOTA");
+	case EContractFaultReason::VolatileDetonation:
+		return TEXT("FAULT: VOLATILE VEIN SEVERED");
+	case EContractFaultReason::ClampStructuralSnap:
+		return TEXT("FAULT: CLAMP TORQUE SNAP");
+	case EContractFaultReason::ScaleContaminated:
+		return TEXT("FAULT: CONTAMINATED CHUNK - ROUTE TO [SPACE] TARE");
+	case EContractFaultReason::TareAllowanceExceeded:
+		return TEXT("FAULT: MAX TARE WASTE EXCEEDED");
+	case EContractFaultReason::MathematicallyUnreachable:
+		return TEXT("FAULT: INSUFFICIENT MASS REMAINING");
+	case EContractFaultReason::ManualOperatorReset:
+		return TEXT("MANUAL RESET [R]");
+	default:
+		return TEXT("FAULT: RESETTING INSPECTION CELL");
+	}
 }
 
 void AScaleAssemblyActor::RefreshRouteReadout()
@@ -416,12 +685,12 @@ void AScaleAssemblyActor::RefreshRouteReadout()
 	const EDiverterRoute ActiveRoute = DiverterGateComponent->GetCurrentRoute();
 	if (ActiveRoute == EDiverterRoute::TareChute)
 	{
-		RouteReadoutText->SetText(FText::FromString(TEXT("ROUTE: TARE")));
+		RouteReadoutText->SetText(FText::FromString(TEXT("ROUTE: TARE [SPACE]")));
 		RouteReadoutText->SetTextRenderColor(ReadoutAmberColor);
 	}
 	else
 	{
-		RouteReadoutText->SetText(FText::FromString(TEXT("ROUTE: TITHE")));
+		RouteReadoutText->SetText(FText::FromString(TEXT("ROUTE: TITHE [SPACE]")));
 		RouteReadoutText->SetTextRenderColor(ReadoutCyanColor);
 	}
 }
@@ -433,23 +702,32 @@ void AScaleAssemblyActor::InitializeGreyboxVisualMaterials()
 		return;
 	}
 
-	auto ApplyTintedGreyboxMaterial = [this](UStaticMeshComponent* MeshComp, const FLinearColor& LinearColor)
+	auto ApplyTintedGreyboxMaterial = [this](
+		UStaticMeshComponent* MeshComp,
+		const FLinearColor& LinearColor,
+		float Roughness,
+		float Metallic)
 	{
 		if (IsValid(MeshComp))
 		{
 			if (UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(BaseGreyboxShapeMaterial, this))
 			{
+				MID->SetVectorParameterValue(TEXT("BaseColorConst"), LinearColor);
 				MID->SetVectorParameterValue(TEXT("Color"), LinearColor);
+				MID->SetVectorParameterValue(TEXT("EmissiveColorConst"), FLinearColor::Black);
+				MID->SetScalarParameterValue(TEXT("EmissiveScale"), 0.0f);
+				MID->SetScalarParameterValue(TEXT("RoughnessConst"), Roughness);
+				MID->SetScalarParameterValue(TEXT("MetallicConst"), Metallic);
 				MeshComp->SetMaterial(0, MID);
 			}
 		}
 	};
 
-	ApplyTintedGreyboxMaterial(ScaleBaseVisual, FLinearColor(0.05f, 0.055f, 0.065f, 1.0f));
-	ApplyTintedGreyboxMaterial(LeftHopperGuideVisual, FLinearColor(0.11f, 0.12f, 0.14f, 1.0f));
-	ApplyTintedGreyboxMaterial(PanPlatform, FLinearColor(0.22f, 0.19f, 0.12f, 1.0f));
-	ApplyTintedGreyboxMaterial(DiverterFlapperVisual, FLinearColor(0.26f, 0.14f, 0.04f, 1.0f));
-	ApplyTintedGreyboxMaterial(TareChuteVisual, FLinearColor(0.08f, 0.035f, 0.03f, 1.0f));
+	ApplyTintedGreyboxMaterial(ScaleBaseVisual, FLinearColor(0.05f, 0.055f, 0.065f, 1.0f), 0.72f, 0.45f);
+	ApplyTintedGreyboxMaterial(LeftHopperGuideVisual, FLinearColor(0.11f, 0.12f, 0.14f, 1.0f), 0.64f, 0.50f);
+	ApplyTintedGreyboxMaterial(PanPlatform, FLinearColor(0.22f, 0.19f, 0.12f, 1.0f), 0.48f, 0.62f);
+	ApplyTintedGreyboxMaterial(DiverterFlapperVisual, FLinearColor(0.26f, 0.14f, 0.04f, 1.0f), 0.45f, 0.58f);
+	ApplyTintedGreyboxMaterial(TareChuteVisual, FLinearColor(0.08f, 0.035f, 0.03f, 1.0f), 0.78f, 0.35f);
 }
 
 FVector AScaleAssemblyActor::QueryScaleWorldLocation() const
@@ -512,6 +790,7 @@ void AScaleAssemblyActor::HandleScaleSettledChanged(bool bIsSettled, float Settl
 			ShiftSubsystem->NotifyScaleSettledStateChanged(bIsSettled, SettledPanMassKg);
 		}
 	}
+	RefreshStatusBannerReadout();
 }
 
 void AScaleAssemblyActor::HandleChunkRoutedToTare(AActor* PayloadActor, float MassKg, bool /*bWasContaminated*/)

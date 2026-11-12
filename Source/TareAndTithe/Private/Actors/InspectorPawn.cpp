@@ -24,6 +24,7 @@
 #include "Interfaces/SliceableTargetInterface.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
+#include "Misc/PackageName.h"
 #include "Sound/SoundBase.h"
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
@@ -42,9 +43,9 @@ AInspectorPawn::AInspectorPawn()
 	InspectorCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("InspectorCamera"));
 	InspectorCamera->SetupAttachment(PawnRoot);
 	InspectorCamera->PrimaryComponentTick.bCanEverTick = false;
-	InspectorCamera->SetRelativeLocation(FVector(0.0, 0.0, 0.0));
+	InspectorCamera->SetRelativeLocation(BaselineCameraRelativeLocation);
 	InspectorCamera->SetRelativeRotation(FRotator(BaselineCameraPitchDegrees, 0.0f, 0.0f));
-	InspectorCamera->FieldOfView = 80.0f;
+	InspectorCamera->FieldOfView = DefaultCameraFieldOfView;
 	InspectorCamera->bUsePawnControlRotation = false;
 
 	LaserPlaneVisualPivot = CreateDefaultSubobject<USceneComponent>(TEXT("LaserPlaneVisualPivot"));
@@ -63,11 +64,11 @@ AInspectorPawn::AInspectorPawn()
 		FallbackPlaneMesh = PlaneMeshFinder.Object;
 	}
 
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> BasicMatFinder(
-		TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
-	if (BasicMatFinder.Succeeded())
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> FlattenMatFinder(
+		TEXT("/Engine/EngineMaterials/FlattenMaterial.FlattenMaterial"));
+	if (FlattenMatFinder.Succeeded())
 	{
-		BaseGreyboxPlaneMaterial = BasicMatFinder.Object;
+		BaseGreyboxPlaneMaterial = FlattenMatFinder.Object;
 	}
 
 	auto ConfigureLaserVisualMesh = [this](UStaticMeshComponent* MeshComp, UStaticMesh* AssignedMesh)
@@ -134,6 +135,13 @@ AInspectorPawn::AInspectorPawn()
 void AInspectorPawn::BeginPlay()
 {
 	Super::BeginPlay();
+
+	if (IsValid(InspectorCamera))
+	{
+		InspectorCamera->SetRelativeLocation(BaselineCameraRelativeLocation);
+		InspectorCamera->SetRelativeRotation(FRotator(BaselineCameraPitchDegrees, 0.0f, 0.0f));
+		InspectorCamera->SetFieldOfView(DefaultCameraFieldOfView);
+	}
 
 	EnsureInputActionsAndMappingInitialized();
 	ApplyMappingContextToLocalPlayer();
@@ -457,7 +465,7 @@ void AInspectorPawn::ConfigureLaserFrameGeometry()
 		LaserFrameRightBar->SetRelativeScale3D(FVector(SpanDepthScale, BarWidthScale, BarThickScale));
 	}
 
-	const bool bHasCustomTranslucentSheet = IsValid(LaserSheetOverrideMaterial);
+	const bool bHasCustomTranslucentSheet = IsValid(LaserSheetOverrideMaterial) || IsValid(AutoResolvedLaserSheetMasterMaterial);
 	if (bHasCustomTranslucentSheet)
 	{
 		const FVector FullSheetScale(SafeDepthCm / 100.0, SafeWidthCm / 100.0, 1.0);
@@ -493,10 +501,23 @@ void AInspectorPawn::ConfigureLaserFrameGeometry()
 
 void AInspectorPawn::InitializeLaserSheetDynamicMaterial()
 {
+	if (!IsValid(LaserSheetOverrideMaterial) && !IsValid(AutoResolvedLaserSheetMasterMaterial))
+	{
+		if (FPackageName::DoesPackageExist(TEXT("/Game/Materials/M_LaserSheet_Master")))
+		{
+			AutoResolvedLaserSheetMasterMaterial = LoadObject<UMaterialInterface>(
+				nullptr,
+				TEXT("/Game/Materials/M_LaserSheet_Master.M_LaserSheet_Master"));
+		}
+	}
+
 	ConfigureLaserFrameGeometry();
 
-	UMaterialInterface* SheetSourceMaterial = IsValid(LaserSheetOverrideMaterial)
+	UMaterialInterface* EffectiveCustomSheetMat = IsValid(LaserSheetOverrideMaterial)
 		? LaserSheetOverrideMaterial.Get()
+		: AutoResolvedLaserSheetMasterMaterial.Get();
+	UMaterialInterface* SheetSourceMaterial = IsValid(EffectiveCustomSheetMat)
+		? EffectiveCustomSheetMat
 		: BaseGreyboxPlaneMaterial.Get();
 
 	if (IsValid(SheetSourceMaterial))
@@ -577,8 +598,13 @@ void AInspectorPawn::UpdateLaserSheetMaterialVisuals()
 		{
 			return;
 		}
+		TargetMID->SetVectorParameterValue(TEXT("BaseColorConst"), BaseHue);
+		TargetMID->SetVectorParameterValue(TEXT("EmissiveColorConst"), FinalColor);
+		TargetMID->SetScalarParameterValue(TEXT("EmissiveScale"), 1.0f);
+		TargetMID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.25f);
+		TargetMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.15f);
 		TargetMID->SetVectorParameterValue(TEXT("Color"), FinalColor);
-		TargetMID->SetVectorParameterValue(TEXT("BaseColor"), FinalColor);
+		TargetMID->SetVectorParameterValue(TEXT("BaseColor"), BaseHue);
 		TargetMID->SetVectorParameterValue(TEXT("EmissiveColor"), FinalColor);
 		TargetMID->SetScalarParameterValue(TEXT("Opacity"), OpacityScalar);
 		TargetMID->SetScalarParameterValue(TEXT("VeinProximity"), CachedVeinProximityNormalized);

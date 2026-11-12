@@ -55,6 +55,7 @@ void UScaleWeighingComponent::BindPanContainmentTrigger(UPrimitiveComponent* InT
 
 		PanContainmentTrigger->OnComponentBeginOverlap.AddDynamic(this, &UScaleWeighingComponent::HandlePanTriggerBeginOverlap);
 		PanContainmentTrigger->OnComponentEndOverlap.AddDynamic(this, &UScaleWeighingComponent::HandlePanTriggerEndOverlap);
+		ReconcileOverlappingPayloads();
 	}
 }
 
@@ -152,11 +153,20 @@ void UScaleWeighingComponent::TickComponent(
 		SettleHoldElapsedSeconds += ClampedDelta;
 		if (SettleHoldElapsedSeconds >= SettleHoldRequiredSeconds)
 		{
-			CurrentDisplacementZCm = TargetDisplacementZCm;
-			VelocityZCmPerSec = 0.0;
-			ApplyPanPlatformDisplacement(false);
-			SetSettledState(true);
-			SetComponentTickEnabled(false);
+			if (ReconcileOverlappingPayloads(false))
+			{
+				// A resting or micro-bounced chunk was reconciled into/out of PanMassKg; let the spring converge to the updated target.
+				SettleHoldElapsedSeconds = 0.0f;
+				SetSettledState(false);
+			}
+			else
+			{
+				CurrentDisplacementZCm = TargetDisplacementZCm;
+				VelocityZCmPerSec = 0.0;
+				ApplyPanPlatformDisplacement(false);
+				SetSettledState(true);
+				SetComponentTickEnabled(false);
+			}
 		}
 	}
 	else
@@ -273,6 +283,134 @@ int32 UScaleWeighingComponent::FindTrackedPayloadIndex(const AActor* PayloadActo
 		}
 	}
 	return INDEX_NONE;
+}
+
+bool UScaleWeighingComponent::ReconcileOverlappingPayloads(bool bEnableTickOnChange)
+{
+	if (!IsValid(PanContainmentTrigger))
+	{
+		return false;
+	}
+
+	PanContainmentTrigger->UpdateOverlaps();
+
+	TArray<AActor*> OverlappingActors;
+	PanContainmentTrigger->GetOverlappingActors(OverlappingActors);
+
+	const float PreviousPanMassKg = PanMassKg;
+	bool bMembershipChanged = false;
+
+	struct FBouncedEntry
+	{
+		AActor* Actor = nullptr;
+		float MassKg = 0.0f;
+	};
+	TArray<FBouncedEntry, TInlineAllocator<4>> NewlyBouncedEntries;
+
+	for (int32 Idx = TrackedPayloads.Num() - 1; Idx >= 0; --Idx)
+	{
+		AActor* TrackedActor = TrackedPayloads[Idx].PayloadActor.Get();
+		if (!IsValid(TrackedActor) || !TrackedActor->Implements<UMassPayloadInterface>())
+		{
+			TrackedPayloads.RemoveAtSwap(Idx, EAllowShrinking::No);
+			bMembershipChanged = true;
+			continue;
+		}
+
+		const EChunkRoutingState CurrentState = IMassPayloadInterface::Execute_GetRoutingState(TrackedActor);
+		const bool bStillOverlapping = OverlappingActors.Contains(TrackedActor);
+		if (!bStillOverlapping ||
+			CurrentState == EChunkRoutingState::PooledInactive ||
+			CurrentState == EChunkRoutingState::ConsumedAsTare ||
+			CurrentState == EChunkRoutingState::LostAsStrayTare)
+		{
+			TrackedPayloads.RemoveAtSwap(Idx, EAllowShrinking::No);
+			bMembershipChanged = true;
+
+			if (!bStillOverlapping && CurrentState == EChunkRoutingState::OnScalePan)
+			{
+				const float BouncedMassKg = IMassPayloadInterface::Execute_GetAnalyticalMassKg(TrackedActor);
+				IMassPayloadInterface::Execute_NotifyRoutingStateChanged(TrackedActor, EChunkRoutingState::InFlight);
+				NewlyBouncedEntries.Add({TrackedActor, BouncedMassKg});
+			}
+		}
+	}
+
+	struct FLandedEntry
+	{
+		AActor* Actor = nullptr;
+		float MassKg = 0.0f;
+		bool bContaminated = false;
+	};
+	TArray<FLandedEntry, TInlineAllocator<4>> NewlyLandedEntries;
+
+	for (AActor* OverlappedActor : OverlappingActors)
+	{
+		if (!IsValid(OverlappedActor) || OverlappedActor == GetOwner() || !OverlappedActor->Implements<UMassPayloadInterface>())
+		{
+			continue;
+		}
+
+		const EChunkRoutingState CurrentState = IMassPayloadInterface::Execute_GetRoutingState(OverlappedActor);
+		if (CurrentState == EChunkRoutingState::PooledInactive ||
+			CurrentState == EChunkRoutingState::ConsumedAsTare ||
+			CurrentState == EChunkRoutingState::LostAsStrayTare)
+		{
+			continue;
+		}
+
+		const int32 ExistingIdx = FindTrackedPayloadIndex(OverlappedActor);
+		const bool bWasMissingFromPan = (ExistingIdx == INDEX_NONE) || (CurrentState != EChunkRoutingState::OnScalePan);
+		if (ExistingIdx == INDEX_NONE)
+		{
+			FTrackedPanPayload ReconciledEntry;
+			ReconciledEntry.PayloadActor = OverlappedActor;
+			ReconciledEntry.PayloadPrimitive = Cast<UPrimitiveComponent>(OverlappedActor->GetRootComponent());
+			TrackedPayloads.Add(ReconciledEntry);
+			bMembershipChanged = true;
+		}
+
+		if (CurrentState != EChunkRoutingState::OnScalePan)
+		{
+			IMassPayloadInterface::Execute_NotifyRoutingStateChanged(OverlappedActor, EChunkRoutingState::OnScalePan);
+			bMembershipChanged = true;
+		}
+
+		if (bWasMissingFromPan)
+		{
+			const float ChunkMassKg = IMassPayloadInterface::Execute_GetAnalyticalMassKg(OverlappedActor);
+			const bool bContaminated = IMassPayloadInterface::Execute_IsVolatileContaminated(OverlappedActor);
+			NewlyLandedEntries.Add({OverlappedActor, ChunkMassKg, bContaminated});
+		}
+	}
+
+	if (bMembershipChanged)
+	{
+		RecomputeAnalyticalPanMass();
+
+		if (bEnableTickOnChange)
+		{
+			SettleHoldElapsedSeconds = 0.0f;
+			SetSettledState(false);
+			SetComponentTickEnabled(true);
+		}
+
+		for (const FBouncedEntry& Bounced : NewlyBouncedEntries)
+		{
+			OnChunkBouncedOffScale.Broadcast(Bounced.Actor, Bounced.MassKg, PanMassKg);
+		}
+
+		for (const FLandedEntry& Landed : NewlyLandedEntries)
+		{
+			OnChunkLandedOnScale.Broadcast(Landed.Actor, Landed.MassKg, PanMassKg);
+			if (Landed.bContaminated)
+			{
+				OnScaleContaminationDetected.Broadcast(Landed.Actor);
+			}
+		}
+	}
+
+	return bMembershipChanged || !FMath::IsNearlyEqual(PreviousPanMassKg, PanMassKg, 1.0e-4f);
 }
 
 void UScaleWeighingComponent::RecomputeAnalyticalPanMass()

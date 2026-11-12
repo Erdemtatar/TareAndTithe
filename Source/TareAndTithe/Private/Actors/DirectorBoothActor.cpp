@@ -29,11 +29,11 @@ ADirectorBoothActor::ADirectorBoothActor()
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMeshFinder(TEXT("/Engine/BasicShapes/Cube.Cube"));
 	UStaticMesh* CubeMesh = CubeMeshFinder.Succeeded() ? CubeMeshFinder.Object : nullptr;
 
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> BasicMatFinder(
-		TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
-	if (BasicMatFinder.Succeeded())
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> FlattenMatFinder(
+		TEXT("/Engine/EngineMaterials/FlattenMaterial.FlattenMaterial"));
+	if (FlattenMatFinder.Succeeded())
 	{
-		BaseGreyboxShapeMaterial = BasicMatFinder.Object;
+		BaseGreyboxShapeMaterial = FlattenMatFinder.Object;
 	}
 
 	BoothFrameVisual = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BoothFrameVisual"));
@@ -102,7 +102,13 @@ void ADirectorBoothActor::BeginPlay()
 		{
 			if (UMaterialInstanceDynamic* FrameMID = UMaterialInstanceDynamic::Create(BaseGreyboxShapeMaterial, this))
 			{
-				FrameMID->SetVectorParameterValue(TEXT("Color"), FLinearColor(0.04f, 0.045f, 0.055f, 1.0f));
+				const FLinearColor FrameColor(0.04f, 0.045f, 0.055f, 1.0f);
+				FrameMID->SetVectorParameterValue(TEXT("BaseColorConst"), FrameColor);
+				FrameMID->SetVectorParameterValue(TEXT("Color"), FrameColor);
+				FrameMID->SetVectorParameterValue(TEXT("EmissiveColorConst"), FLinearColor::Black);
+				FrameMID->SetScalarParameterValue(TEXT("EmissiveScale"), 0.0f);
+				FrameMID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.72f);
+				FrameMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.45f);
 				BoothFrameVisual->SetMaterial(0, FrameMID);
 			}
 		}
@@ -110,7 +116,13 @@ void ADirectorBoothActor::BeginPlay()
 		{
 			if (UMaterialInstanceDynamic* ShutterMID = UMaterialInstanceDynamic::Create(BaseGreyboxShapeMaterial, this))
 			{
-				ShutterMID->SetVectorParameterValue(TEXT("Color"), FLinearColor(0.14f, 0.13f, 0.11f, 1.0f));
+				const FLinearColor ShutterColor(0.14f, 0.13f, 0.11f, 1.0f);
+				ShutterMID->SetVectorParameterValue(TEXT("BaseColorConst"), ShutterColor);
+				ShutterMID->SetVectorParameterValue(TEXT("Color"), ShutterColor);
+				ShutterMID->SetVectorParameterValue(TEXT("EmissiveColorConst"), FLinearColor::Black);
+				ShutterMID->SetScalarParameterValue(TEXT("EmissiveScale"), 0.0f);
+				ShutterMID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.58f);
+				ShutterMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.55f);
 				BlastShutterVisual->SetMaterial(0, ShutterMID);
 			}
 		}
@@ -277,19 +289,19 @@ FString ADirectorBoothActor::DescribeFaultReason(EContractFaultReason FaultReaso
 	switch (FaultReason)
 	{
 	case EContractFaultReason::VolatileDetonation:
-		return TEXT("FAULT: VOLATILE VEIN DETONATED");
+		return TEXT("FAULT: VOLATILE VEIN SEVERED");
 	case EContractFaultReason::ClampStructuralSnap:
-		return TEXT("FAULT: OVERHEAD CLAMP BOLT SHEAR");
+		return TEXT("FAULT: CLAMP TORQUE SNAP");
 	case EContractFaultReason::ScaleContaminated:
-		return TEXT("FAULT: ISOTOPE CONTAMINATION ON SCALE");
+		return TEXT("FAULT: CONTAMINATED CHUNK - ROUTE TO [SPACE] TARE");
 	case EContractFaultReason::QuotaOvershoot:
-		return TEXT("FAULT: TITHE QUOTA OVERSHOOT");
+		return TEXT("FAULT: OVERWEIGHT - EXCEEDED MAX QUOTA");
 	case EContractFaultReason::TareAllowanceExceeded:
-		return TEXT("FAULT: TARE WASTE ALLOWANCE EXCEEDED");
+		return TEXT("FAULT: MAX TARE WASTE EXCEEDED");
 	case EContractFaultReason::MathematicallyUnreachable:
-		return TEXT("FAULT: INSUFFICIENT REMAINING MASS");
+		return TEXT("FAULT: INSUFFICIENT MASS REMAINING");
 	case EContractFaultReason::ManualOperatorReset:
-		return TEXT("OPERATOR RESET INITIATED");
+		return TEXT("MANUAL RESET [R]");
 	default:
 		return TEXT("CELL RESETTING");
 	}

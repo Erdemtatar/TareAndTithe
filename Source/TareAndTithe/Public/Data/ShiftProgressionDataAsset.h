@@ -25,10 +25,10 @@ public:
 	float LaserCooldownSeconds = 0.25f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Slicer", meta = (ClampMin = "5.0", ClampMax = "250.0"))
-	float MinSliverVolumeCm3 = 25.0f;
+	float MinSliverVolumeCm3 = 20.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Slicer", meta = (ClampMin = "0.2", ClampMax = "5.0"))
-	float MinChunkAxisThicknessCm = 0.6f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Slicer", meta = (ClampMin = "0.1", ClampMax = "5.0"))
+	float MinChunkAxisThicknessCm = 0.30f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Slicer", meta = (ClampMin = "1.0", ClampMax = "100.0"))
 	float ChunkSeparationSpeedCmPerSec = 15.0f;
@@ -37,7 +37,7 @@ public:
 	float MaxInFlightWatchdogSeconds = 4.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Safety", meta = (ClampMin = "0.2", ClampMax = "3.0"))
-	float FaultAutoResetDelaySeconds = 1.2f;
+	float FaultAutoResetDelaySeconds = 1.8f;
 
 	virtual FPrimaryAssetId GetPrimaryAssetId() const override;
 

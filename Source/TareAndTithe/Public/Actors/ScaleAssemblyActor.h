@@ -20,6 +20,7 @@ class UShiftProgressionDataAsset;
 class UStaticMesh;
 class UStaticMeshComponent;
 class UTextRenderComponent;
+enum class EShiftPhase : uint8;
 
 UCLASS()
 class TAREANDTITHE_API AScaleAssemblyActor
@@ -47,6 +48,7 @@ public:
 
 	void ConfigureForContract(const UMonolithContractDataAsset* Contract, EDiverterRoute InitialRoute);
 	bool RequestToggleDiverterRoute();
+	void ReconcileScaleOverlaps();
 
 	FOnTelemetryStreamSignature OnTelemetryStream;
 	FOnTelemetryImpulseSignature OnTelemetryImpulse;
@@ -114,6 +116,18 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly|Readout")
 	TObjectPtr<UTextRenderComponent> RouteReadoutText;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly|Readout")
+	TObjectPtr<UTextRenderComponent> StatusBannerText;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly|Readout")
+	TObjectPtr<UTextRenderComponent> ControlStencilText;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Trigger", meta = (ClampMin = "4.0", ClampMax = "12.0"))
+	float PanTriggerCenterOffsetZCm = 8.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Trigger")
+	FVector PanTriggerBoxExtentCm = FVector(35.05, 28.05, 11.0);
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Colors")
 	FColor ReadoutAmberColor = FColor(255, 184, 46, 255);
 
@@ -130,13 +144,22 @@ private:
 	UFUNCTION()
 	void HandleContractSnapshotUpdated(const FContractRuntimeSnapshot& Snapshot);
 
+	UFUNCTION()
+	void HandleShiftVerdict(EShiftVerdictType Verdict, EContractFaultReason FaultReason);
+
+	void HandleShiftPhaseChanged(EShiftPhase NewPhase);
+
 	void HandleActiveContractLoaded(
 		const UMonolithContractDataAsset* Contract,
 		const UShiftProgressionDataAsset* ShiftConfig,
 		int32 ContractIndex);
 
 	void HandleDiverterRouteChanged(EDiverterRoute NewRoute);
+	void EnforcePanTriggerGeometryAndCollision();
+	void RefreshContractHeaderReadout();
+	void RefreshStatusBannerReadout();
 	void RefreshRouteReadout();
+	static FString FormatFaultReasonBanner(EContractFaultReason FaultReason);
 	void InitializeGreyboxVisualMaterials();
 	FVector QueryScaleWorldLocation() const;
 
@@ -154,4 +177,12 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<UMaterialInterface> BaseGreyboxShapeMaterial;
+
+	FContractRuntimeSnapshot CachedSnapshot;
+	int32 CachedContractIndex = 0;
+	int32 CachedTotalContracts = 6;
+	EShiftPhase CachedShiftPhase;
+	EShiftVerdictType LatchedVerdict = EShiftVerdictType::ContractPassed;
+	EContractFaultReason LatchedFaultReason = EContractFaultReason::None;
+	bool bHasLatchedVerdictBanner = false;
 };

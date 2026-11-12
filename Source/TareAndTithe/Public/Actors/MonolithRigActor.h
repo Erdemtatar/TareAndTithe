@@ -89,10 +89,13 @@ protected:
 	TObjectPtr<UMaterialInterface> MoltenCutCapOverrideMaterial;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rig|Greybox")
-	FLinearColor GreyboxOuterShellColor = FLinearColor(0.08f, 0.095f, 0.115f, 1.0f);
+	FLinearColor GreyboxOuterShellColor = FLinearColor(0.045f, 0.052f, 0.062f, 1.0f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rig|Greybox")
-	FLinearColor GreyboxMoltenCapColor = FLinearColor(0.95f, 0.26f, 0.03f, 1.0f);
+	FLinearColor GreyboxMoltenCapColor = FLinearColor(1.00f, 0.32f, 0.02f, 1.0f);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rig|Greybox")
+	FLinearColor GreyboxMoltenCapEmissiveColor = FLinearColor(2.25f, 0.58f, 0.03f, 1.0f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rig|Greybox")
 	FLinearColor GreyboxClampJawColor = FLinearColor(0.18f, 0.19f, 0.21f, 1.0f);
@@ -119,6 +122,12 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<UMaterialInterface> BaseGreyboxShapeMaterial;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> AutoResolvedOuterMasterMaterial;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> AutoResolvedCutCapMasterMaterial;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> FallbackOuterMID;

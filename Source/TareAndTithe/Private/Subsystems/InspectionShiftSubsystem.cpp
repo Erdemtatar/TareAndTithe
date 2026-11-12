@@ -14,7 +14,7 @@
 
 namespace
 {
-	constexpr float DefaultTransitionDelaySeconds = 1.2f;
+	constexpr float DefaultTransitionDelaySeconds = 1.8f;
 	constexpr float QuotaBoundaryFloatEpsilonKg = 1.0e-3f;
 }
 
@@ -428,6 +428,7 @@ bool UInspectionShiftSubsystem::TryStampQuotaVerdict()
 		return false;
 	}
 
+	ReceiverBinding.OnReconcileOverlaps.ExecuteIfBound();
 	RecomputeInFlightMassFromSet();
 	if (ActiveInFlightPayloads.Num() > 0)
 	{
@@ -574,11 +575,11 @@ UShiftProgressionDataAsset* UInspectionShiftSubsystem::BuildFallbackGreyboxProgr
 	FallbackGreyboxProgression = NewObject<UShiftProgressionDataAsset>(this, TEXT("DA_FallbackGreyboxShiftProgression"));
 	FallbackGreyboxProgression->LaserCapacitorChargeSeconds = 0.35f;
 	FallbackGreyboxProgression->LaserCooldownSeconds = 0.25f;
-	FallbackGreyboxProgression->MinSliverVolumeCm3 = 25.0f;
-	FallbackGreyboxProgression->MinChunkAxisThicknessCm = 0.6f;
+	FallbackGreyboxProgression->MinSliverVolumeCm3 = 20.0f;
+	FallbackGreyboxProgression->MinChunkAxisThicknessCm = 0.30f;
 	FallbackGreyboxProgression->ChunkSeparationSpeedCmPerSec = 15.0f;
 	FallbackGreyboxProgression->MaxInFlightWatchdogSeconds = 4.0f;
-	FallbackGreyboxProgression->FaultAutoResetDelaySeconds = 1.2f;
+	FallbackGreyboxProgression->FaultAutoResetDelaySeconds = 1.8f;
 
 	auto MakeVein = [](const FVector& StartCm, const FVector& EndCm, float RadiusCm, float WarnCm) -> FVolatileVeinDefinition
 	{
@@ -613,7 +614,7 @@ UShiftProgressionDataAsset* UInspectionShiftSubsystem::BuildFallbackGreyboxProgr
 		C02->DimensionsCm = FVector(32.0f, 24.0f, 80.0f);
 		C02->DensityGramsPerCm3 = 0.85f;
 		C02->TargetTitheMassKg = 14.5f;
-		C02->QuotaToleranceKg = 1.10f;
+		C02->QuotaToleranceKg = 1.35f;
 		C02->MaxAllowedTareWasteKg = 16.0f;
 		C02->bAllowDiverterToggle = true;
 		C02->ClampMaxSafeTorqueNm = 55.0f;
@@ -943,6 +944,8 @@ void UInspectionShiftSubsystem::HandleChunkWatchdogExpired(ASeveredChunkActor* E
 	{
 		return;
 	}
+
+	ReceiverBinding.OnReconcileOverlaps.ExecuteIfBound();
 
 	const EChunkRoutingState CurrentRoutingState = IMassPayloadInterface::Execute_GetRoutingState(ExpiredChunk);
 	if (CurrentRoutingState != EChunkRoutingState::InFlight)

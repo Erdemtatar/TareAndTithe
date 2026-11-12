@@ -113,8 +113,14 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser", meta = (ClampMin = "0.2", ClampMax = "2.0"))
 	float LaserFrameBarThicknessCm = 0.5f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Camera")
+	FVector BaselineCameraRelativeLocation = FVector(-68.0, 0.0, 20.0);
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Camera", meta = (ClampMin = "-25.0", ClampMax = "5.0"))
-	float BaselineCameraPitchDegrees = -7.5f;
+	float BaselineCameraPitchDegrees = -5.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Camera", meta = (ClampMin = "60.0", ClampMax = "115.0"))
+	float DefaultCameraFieldOfView = 96.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Camera", meta = (ClampMin = "0.0", ClampMax = "25.0"))
 	float MaxCameraParallaxYawDegrees = 12.0f;
@@ -220,6 +226,9 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<UMaterialInterface> BaseGreyboxPlaneMaterial;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> AutoResolvedLaserSheetMasterMaterial;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> LaserSheetMID;

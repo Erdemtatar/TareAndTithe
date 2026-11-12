@@ -473,8 +473,7 @@ bool UMonolithSliceComponent::InitializeMonolithFromContract(
 	ActiveCutCapMaterial = Contract->MoltenCutCapMaterial.IsNull()
 		? FallbackCutCapMaterial.Get()
 		: Contract->MoltenCutCapMaterial.LoadSynchronous();
-	RemainderMeshComponent->SetMaterial(0, ActiveOuterMaterial);
-	RemainderMeshComponent->SetMaterial(1, ActiveCutCapMaterial);
+	RemainderMeshComponent->ConfigureMaterialSet({ActiveOuterMaterial.Get(), ActiveCutCapMaterial.Get()});
 
 	if (!InitialLocalBounds.IsEmpty())
 	{
@@ -843,6 +842,7 @@ FSliceResultSummary UMonolithSliceComponent::ExecuteSlice(
 			? FBox(ForceInit)
 			: FBox(static_cast<FVector>(RemBounds.Min), static_cast<FVector>(RemBounds.Max));
 		RemainderDynMesh->SetMesh(MoveTemp(MergedRemainderMesh));
+		RemainderMeshComponent->ConfigureMaterialSet({ActiveOuterMaterial.Get(), ActiveCutCapMaterial.Get()});
 		RemainderMeshComponent->UpdateBounds();
 	}
 	else
@@ -851,6 +851,7 @@ FSliceResultSummary UMonolithSliceComponent::ExecuteSlice(
 		CurrentRemainderLocalCoMCm = FVector::ZeroVector;
 		CurrentRemainderLocalBounds = FBox(ForceInit);
 		RemainderDynMesh->Reset();
+		RemainderMeshComponent->ConfigureMaterialSet({ActiveOuterMaterial.Get(), ActiveCutCapMaterial.Get()});
 		RemainderMeshComponent->UpdateBounds();
 	}
 
@@ -859,9 +860,9 @@ FSliceResultSummary UMonolithSliceComponent::ExecuteSlice(
 	const double MinSliverVolumeCm3 = IsValid(ShiftCfg)
 		? static_cast<double>(ShiftCfg->MinSliverVolumeCm3)
 		: static_cast<double>(FallbackMinSliverVolumeCm3);
-	const double MinAxisThicknessCm = IsValid(ShiftCfg)
-		? static_cast<double>(ShiftCfg->MinChunkAxisThicknessCm)
-		: static_cast<double>(FallbackMinChunkAxisThicknessCm);
+	const float MinAxisThicknessCm = IsValid(ShiftCfg)
+		? FMath::Max(0.10f, ShiftCfg->MinChunkAxisThicknessCm)
+		: FMath::Max(0.10f, FallbackMinChunkAxisThicknessCm);
 	const float SeparationSpeedCmPerSec = IsValid(ShiftCfg)
 		? ShiftCfg->ChunkSeparationSpeedCmPerSec
 		: FallbackChunkSeparationSpeedCmPerSec;
@@ -882,10 +883,8 @@ FSliceResultSummary UMonolithSliceComponent::ExecuteSlice(
 		const float AnalyticalChunkMassKg = static_cast<float>(Island.VolumeCm3 * DensityKgPerCm3);
 		const FVector WorldChunkCoM = RemainderTransform.TransformPosition(static_cast<FVector>(Island.LocalCoMCm));
 
-		const FVector3d BoxDimensionsCm = Island.LocalBounds.Max - Island.LocalBounds.Min;
-		const double MinBoxDimCm = FMath::Min3(BoxDimensionsCm.X, BoxDimensionsCm.Y, BoxDimensionsCm.Z);
-
-		if (Island.VolumeCm3 < MinSliverVolumeCm3 || MinBoxDimCm < MinAxisThicknessCm)
+		// Vaporize ONLY genuinely tiny slivers (< 20 cm^3 and < 0.15 kg); preserve wide, thin slabs carrying real quota mass.
+		if (Island.VolumeCm3 < MinSliverVolumeCm3 && AnalyticalChunkMassKg < MeaningfulChunkMassPreservationKg)
 		{
 			Summary.VaporizedSliverMassKg += AnalyticalChunkMassKg;
 			OnSliverVaporized.Broadcast(AnalyticalChunkMassKg, WorldChunkCoM);
@@ -911,6 +910,7 @@ FSliceResultSummary UMonolithSliceComponent::ExecuteSlice(
 		if (IsValid(SpawnedChunk))
 		{
 			const FTransform ChunkWorldTransform(RemainderTransform.GetRotation(), WorldChunkCoM, FVector::OneVector);
+			SpawnedChunk->SetMinCollisionThicknessCm(MinAxisThicknessCm);
 			SpawnedChunk->ActivateFromSlice(
 				MoveTemp(Island.Mesh),
 				ChunkWorldTransform,
