@@ -3,7 +3,9 @@
 #include "Actors/StrayFloorCatchActor.h"
 #include "Components/BoxComponent.h"
 #include "Engine/HitResult.h"
+#include "Engine/World.h"
 #include "Interfaces/MassPayloadInterface.h"
+#include "Subsystems/InspectionShiftSubsystem.h"
 
 AStrayFloorCatchActor::AStrayFloorCatchActor()
 {
@@ -33,10 +35,28 @@ void AStrayFloorCatchActor::BeginPlay()
 		CatchBoxComponent->SetBoxExtent(CatchBoxHalfExtentCm, true);
 		CatchBoxComponent->OnComponentBeginOverlap.AddUniqueDynamic(this, &AStrayFloorCatchActor::HandleCatchBoxBeginOverlap);
 	}
+
+	if (UWorld* World = GetWorld())
+	{
+		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
+		{
+			ShiftSubsystem->RegisterStrayCatchStation(this);
+			ShiftSubsystem->RegisterTelemetryPublisher(this, this);
+		}
+	}
 }
 
 void AStrayFloorCatchActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (UWorld* World = GetWorld())
+	{
+		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
+		{
+			ShiftSubsystem->UnregisterTelemetryPublisher(this);
+			ShiftSubsystem->UnregisterStrayCatchStation(this);
+		}
+	}
+
 	if (IsValid(CatchBoxComponent))
 	{
 		CatchBoxComponent->OnComponentBeginOverlap.RemoveDynamic(this, &AStrayFloorCatchActor::HandleCatchBoxBeginOverlap);
@@ -74,6 +94,14 @@ void AStrayFloorCatchActor::HandleCatchBoxBeginOverlap(
 
 	const float NormalizedMagnitude = FMath::Clamp(AnalyticalMassKg / FMath::Max(0.5f, ImpulseReferenceMassKg), 0.05f, 1.0f);
 	OnTelemetryImpulse.Broadcast(ETelemetryImpulseId::ChunkTareDisposed, NormalizedMagnitude, CatchLocationWorld);
+
+	if (UWorld* World = GetWorld())
+	{
+		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
+		{
+			ShiftSubsystem->NotifyPayloadLostAsStrayTare(OtherActor, AnalyticalMassKg);
+		}
+	}
 
 	IMassPayloadInterface::Execute_ReturnToChunkPool(OtherActor);
 }

@@ -11,7 +11,7 @@ bool UChunkPoolSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 		return false;
 	}
 
-	const UWorld* World = Cast<UWorld>(Outer);
+	const UWorld* World = IsValid(Outer) ? Outer->GetWorld() : nullptr;
 	return IsValid(World) && World->IsGameWorld();
 }
 
@@ -100,9 +100,13 @@ void UChunkPoolSubsystem::ReclaimAllActiveChunks()
 	for (const TObjectPtr<ASeveredChunkActor>& ChunkPtr : AllPooledChunks)
 	{
 		ASeveredChunkActor* Chunk = ChunkPtr.Get();
-		if (IsValid(Chunk) && IMassPayloadInterface::Execute_GetRoutingState(Chunk) != EChunkRoutingState::PooledInactive)
+		if (IsValid(Chunk))
 		{
-			ReleaseChunk(Chunk);
+			if (IMassPayloadInterface::Execute_GetRoutingState(Chunk) != EChunkRoutingState::PooledInactive)
+			{
+				Chunk->DeactivateToPool();
+			}
+			AvailableChunks.AddUnique(Chunk);
 		}
 	}
 }

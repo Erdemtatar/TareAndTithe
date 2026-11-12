@@ -29,6 +29,8 @@ public:
 	void SetRemainderMeshComponent(UDynamicMeshComponent* InRemainderMeshComponent);
 	UDynamicMeshComponent* GetRemainderMeshComponent() const { return RemainderMeshComponent; }
 
+	void SetFallbackMaterials(UMaterialInterface* InOuterMaterial, UMaterialInterface* InCutCapMaterial);
+
 	void SetClampGripBoxLocal(const FBox& InGripBoxLocal, bool bDisableAutoFit = true);
 	const FBox& GetClampGripBoxLocal() const { return ClampGripBoxLocal; }
 
@@ -91,6 +93,12 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInterface> ActiveCutCapMaterial;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> FallbackOuterMaterial;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> FallbackCutCapMaterial;
 
 	TWeakObjectPtr<const UMonolithContractDataAsset> ActiveContract;
 	TWeakObjectPtr<const UShiftProgressionDataAsset> ActiveShiftConfig;

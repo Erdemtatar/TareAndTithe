@@ -7,7 +7,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 ::   SCRIPTS\PackageBuild.bat [Development|Shipping]
 :: ==============================================================================
 
-:: --- USER ENVIRONMENT CONFIGURATION (Update paths once project is created) ---
+:: --- USER ENVIRONMENT CONFIGURATION (UE 5.8 - TareAndTithe) ---
 if "%UE5_ROOT%"=="" set "UE5_ROOT=C:\Program Files\Epic Games\UE_5.8"
 if "%TEAM_NAME%"=="" set "TEAM_NAME=ErdemTatar"
 if "%GAME_NAME%"=="" set "GAME_NAME=TareAndTithe"

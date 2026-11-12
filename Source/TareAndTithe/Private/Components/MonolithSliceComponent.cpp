@@ -322,6 +322,14 @@ void UMonolithSliceComponent::SetRemainderMeshComponent(UDynamicMeshComponent* I
 	}
 }
 
+void UMonolithSliceComponent::SetFallbackMaterials(
+	UMaterialInterface* InOuterMaterial,
+	UMaterialInterface* InCutCapMaterial)
+{
+	FallbackOuterMaterial = InOuterMaterial;
+	FallbackCutCapMaterial = InCutCapMaterial;
+}
+
 void UMonolithSliceComponent::SetClampGripBoxLocal(const FBox& InGripBoxLocal, bool bDisableAutoFit)
 {
 	ClampGripBoxLocal = InGripBoxLocal;
@@ -459,8 +467,12 @@ bool UMonolithSliceComponent::InitializeMonolithFromContract(
 			*Contract->GetName(), InitialTriCount, MaxProceduralTriangleBudget);
 	}
 
-	ActiveOuterMaterial = Contract->OuterShellMaterial.IsNull() ? nullptr : Contract->OuterShellMaterial.LoadSynchronous();
-	ActiveCutCapMaterial = Contract->MoltenCutCapMaterial.IsNull() ? nullptr : Contract->MoltenCutCapMaterial.LoadSynchronous();
+	ActiveOuterMaterial = Contract->OuterShellMaterial.IsNull()
+		? FallbackOuterMaterial.Get()
+		: Contract->OuterShellMaterial.LoadSynchronous();
+	ActiveCutCapMaterial = Contract->MoltenCutCapMaterial.IsNull()
+		? FallbackCutCapMaterial.Get()
+		: Contract->MoltenCutCapMaterial.LoadSynchronous();
 	RemainderMeshComponent->SetMaterial(0, ActiveOuterMaterial);
 	RemainderMeshComponent->SetMaterial(1, ActiveCutCapMaterial);
 
