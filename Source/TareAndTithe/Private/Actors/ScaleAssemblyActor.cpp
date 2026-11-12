@@ -39,6 +39,13 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 		BaseGreyboxShapeMaterial = FlattenMatFinder.Object;
 	}
 
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> UnlitTextMatFinder(
+		TEXT("/Engine/EngineMaterials/UnlitText.UnlitText"));
+	if (UnlitTextMatFinder.Succeeded())
+	{
+		UnlitReadoutTextMaterial = UnlitTextMatFinder.Object;
+	}
+
 	auto ConfigureSolidKinematicMesh = [this](UStaticMeshComponent* MeshComp)
 	{
 		MeshComp->PrimaryComponentTick.bCanEverTick = false;
@@ -172,7 +179,39 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 	ScaleWeighingComponent = CreateDefaultSubobject<UScaleWeighingComponent>(TEXT("ScaleWeighingComponent"));
 	DiverterGateComponent = CreateDefaultSubobject<UDiverterGateComponent>(TEXT("DiverterGateComponent"));
 
-	auto ConfigureReadoutText = [](UTextRenderComponent* TextComp, const FVector& RelLoc, float WorldSize, const FColor& Color, const TCHAR* DefaultStr)
+	// Front-apron console bezel mounted strictly below PanRimFrontBox top (+37.0 cm) and tilted 10 deg upward toward camera.
+	ReadoutConsolePivot = CreateDefaultSubobject<USceneComponent>(TEXT("ReadoutConsolePivot"));
+	ReadoutConsolePivot->SetupAttachment(ScaleRoot);
+	ReadoutConsolePivot->PrimaryComponentTick.bCanEverTick = false;
+	ReadoutConsolePivot->SetRelativeLocation(FVector(-43.5, 0.0, 18.2));
+	ReadoutConsolePivot->SetRelativeRotation(FRotator(-10.0f, 0.0f, 0.0f));
+
+	ReadoutBackingPlate = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ReadoutBackingPlate"));
+	ReadoutBackingPlate->SetupAttachment(ReadoutConsolePivot);
+	ReadoutBackingPlate->PrimaryComponentTick.bCanEverTick = false;
+	ReadoutBackingPlate->SetSimulatePhysics(false);
+	ReadoutBackingPlate->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ReadoutBackingPlate->SetGenerateOverlapEvents(false);
+	ReadoutBackingPlate->SetCastShadow(false);
+	ReadoutBackingPlate->bReceivesDecals = false;
+	if (IsValid(FallbackCubeMesh))
+	{
+		ReadoutBackingPlate->SetStaticMesh(FallbackCubeMesh);
+	}
+	if (IsValid(BaseGreyboxShapeMaterial))
+	{
+		ReadoutBackingPlate->SetMaterial(0, BaseGreyboxShapeMaterial);
+	}
+	ReadoutBackingPlate->SetRelativeLocation(FVector::ZeroVector);
+	ReadoutBackingPlate->SetRelativeScale3D(FVector(0.016, 2.52, 0.37));
+
+	// Backing plate front face is at local X = -0.8 cm; placing all text at local X = -2.0 cm positions glyphs exactly 1.2 cm in front.
+	auto ConfigureReadoutText = [this](
+		UTextRenderComponent* TextComp,
+		const FVector& RelLoc,
+		float WorldSize,
+		const FColor& Color,
+		const TCHAR* DefaultStr)
 	{
 		TextComp->PrimaryComponentTick.bCanEverTick = false;
 		TextComp->SetRelativeLocation(RelLoc);
@@ -180,51 +219,56 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 		TextComp->SetHorizontalAlignment(EHTA_Center);
 		TextComp->SetVerticalAlignment(EVRTA_TextCenter);
 		TextComp->SetWorldSize(WorldSize);
+		TextComp->SetCastShadow(false);
+		if (IsValid(UnlitReadoutTextMaterial))
+		{
+			TextComp->SetTextMaterial(UnlitReadoutTextMaterial);
+		}
 		TextComp->SetTextRenderColor(Color);
 		TextComp->SetText(FText::FromString(DefaultStr));
 	};
 
 	HeaderStencilText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("HeaderStencilText"));
-	HeaderStencilText->SetupAttachment(ScaleRoot);
-	ConfigureReadoutText(HeaderStencilText, FVector(-45.0, 0.0, 45.0), 5.6f, FColor(235, 238, 242, 255), TEXT("DIRECTOR'S CUT"));
+	HeaderStencilText->SetupAttachment(ReadoutConsolePivot);
+	ConfigureReadoutText(HeaderStencilText, FVector(-2.0, 0.0, 14.8), 5.4f, ReadoutHeaderCyanColor, TEXT("DIRECTOR'S CUT"));
 
 	ContractCodeText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("ContractCodeText"));
-	ContractCodeText->SetupAttachment(ScaleRoot);
+	ContractCodeText->SetupAttachment(ReadoutConsolePivot);
 	ConfigureReadoutText(
 		ContractCodeText,
-		FVector(-45.0, 0.0, 38.0),
-		4.3f,
-		ReadoutCyanColor,
+		FVector(-2.0, 0.0, 9.6),
+		5.2f,
+		ReadoutHeaderCyanColor,
 		TEXT("CONTRACT 01/06 | TARGET: 12.00 KG [10.75 - 13.25 KG]"));
 
 	StatusBannerText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("StatusBannerText"));
-	StatusBannerText->SetupAttachment(ScaleRoot);
+	StatusBannerText->SetupAttachment(ReadoutConsolePivot);
 	ConfigureReadoutText(
 		StatusBannerText,
-		FVector(-45.0, 0.0, 30.0),
-		5.2f,
-		ReadoutCyanColor,
+		FVector(-2.0, 0.0, 3.6),
+		6.2f,
+		ReadoutNormalSkyBlueColor,
 		TEXT("HOLD [LMB] TO SLICE MONOLITH INTO TITHE"));
 
 	MassReadoutText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("MassReadoutText"));
-	MassReadoutText->SetupAttachment(ScaleRoot);
-	ConfigureReadoutText(MassReadoutText, FVector(-45.0, 0.0, 20.5), 7.8f, ReadoutAmberColor, TEXT("00.00 / 12.00 KG"));
+	MassReadoutText->SetupAttachment(ReadoutConsolePivot);
+	ConfigureReadoutText(MassReadoutText, FVector(-2.0, 0.0, -3.8), 9.4f, ReadoutGoldColor, TEXT("00.00 / 12.00 KG"));
 
 	TareReadoutText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("TareReadoutText"));
-	TareReadoutText->SetupAttachment(ScaleRoot);
-	ConfigureReadoutText(TareReadoutText, FVector(-45.0, 0.0, 12.5), 4.8f, ReadoutAmberColor, TEXT("TARE: 0.0 / 14.0 KG"));
+	TareReadoutText->SetupAttachment(ReadoutConsolePivot);
+	ConfigureReadoutText(TareReadoutText, FVector(-2.0, -52.0, -10.6), 5.8f, ReadoutGoldColor, TEXT("TARE: 0.0 / 14.0 KG"));
 
 	RouteReadoutText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("RouteReadoutText"));
-	RouteReadoutText->SetupAttachment(ScaleRoot);
-	ConfigureReadoutText(RouteReadoutText, FVector(-45.0, 0.0, 5.5), 4.8f, ReadoutCyanColor, TEXT("ROUTE: TITHE"));
+	RouteReadoutText->SetupAttachment(ReadoutConsolePivot);
+	ConfigureReadoutText(RouteReadoutText, FVector(-2.0, 52.0, -10.6), 5.8f, ReadoutHeaderCyanColor, TEXT("ROUTE: TITHE [SPACE]"));
 
 	ControlStencilText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("ControlStencilText"));
-	ControlStencilText->SetupAttachment(ScaleRoot);
+	ControlStencilText->SetupAttachment(ReadoutConsolePivot);
 	ConfigureReadoutText(
 		ControlStencilText,
-		FVector(-45.0, 0.0, -2.0),
-		3.7f,
-		FColor(206, 218, 228, 255),
+		FVector(-2.0, 0.0, -15.6),
+		4.5f,
+		ReadoutControlStencilColor,
 		TEXT("SCROLL: ROTATE | RMB: BEVEL | [SPACE]: TITHE/TARE | [E]: STAMP | HOLD [R]: RESET"));
 }
 
@@ -430,25 +474,24 @@ void AScaleAssemblyActor::HandleContractSnapshotUpdated(const FContractRuntimeSn
 
 	if (IsValid(MassReadoutText))
 	{
-		const FString StampSuffix = Snapshot.bScaleSettledForStamp ? TEXT(" [STAMP READY: E]") : TEXT("");
 		const FString MassLine = FString::Printf(
-			TEXT("%05.2f / %05.2f KG%s"),
+			TEXT("%05.2f / %05.2f KG"),
 			Snapshot.SettledScaleMassKg,
-			Snapshot.TargetTitheMassKg,
-			*StampSuffix);
+			Snapshot.TargetTitheMassKg);
 		MassReadoutText->SetText(FText::FromString(MassLine));
 
-		if (bContaminated || bOvershoot)
+		const bool bFaultActive = (CachedShiftPhase == EShiftPhase::FaultResetDelay);
+		if (bContaminated || bOvershoot || bFaultActive)
 		{
-			MassReadoutText->SetTextRenderColor(ReadoutRedColor);
+			MassReadoutText->SetTextRenderColor(ReadoutCrimsonColor);
 		}
 		else if (Snapshot.bIsWithinQuotaWindow)
 		{
-			MassReadoutText->SetTextRenderColor(ReadoutGreenColor);
+			MassReadoutText->SetTextRenderColor(ReadoutEmeraldColor);
 		}
 		else
 		{
-			MassReadoutText->SetTextRenderColor(ReadoutAmberColor);
+			MassReadoutText->SetTextRenderColor(ReadoutGoldColor);
 		}
 	}
 
@@ -461,7 +504,7 @@ void AScaleAssemblyActor::HandleContractSnapshotUpdated(const FContractRuntimeSn
 		TareReadoutText->SetText(FText::FromString(TareLine));
 
 		const bool bTareExceeded = Snapshot.AccumulatedTareWasteKg > (Snapshot.MaxAllowedTareWasteKg + 1.0e-3f);
-		TareReadoutText->SetTextRenderColor(bTareExceeded ? ReadoutRedColor : ReadoutAmberColor);
+		TareReadoutText->SetTextRenderColor(bTareExceeded ? ReadoutCrimsonColor : ReadoutGoldColor);
 	}
 
 	RefreshRouteReadout();
@@ -580,7 +623,15 @@ void AScaleAssemblyActor::RefreshContractHeaderReadout()
 		MaxValidKg);
 
 	ContractCodeText->SetText(FText::FromString(HeaderLine));
-	ContractCodeText->SetTextRenderColor(ReadoutCyanColor);
+	ContractCodeText->SetTextRenderColor(ReadoutHeaderCyanColor);
+	if (IsValid(HeaderStencilText))
+	{
+		HeaderStencilText->SetTextRenderColor(ReadoutHeaderCyanColor);
+	}
+	if (IsValid(ControlStencilText))
+	{
+		ControlStencilText->SetTextRenderColor(ReadoutControlStencilColor);
+	}
 }
 
 void AScaleAssemblyActor::RefreshStatusBannerReadout()
@@ -597,19 +648,19 @@ void AScaleAssemblyActor::RefreshStatusBannerReadout()
 	{
 		if (LatchedVerdict == EShiftVerdictType::ContractFaultReset || CachedShiftPhase == EShiftPhase::FaultResetDelay)
 		{
-			StatusBannerText->SetTextRenderColor(ReadoutRedColor);
+			StatusBannerText->SetTextRenderColor(ReadoutFaultBannerColor);
 			StatusBannerText->SetText(FText::FromString(FormatFaultReasonBanner(LatchedFaultReason)));
 			return;
 		}
 		if (LatchedVerdict == EShiftVerdictType::ShiftCompleted || CachedShiftPhase == EShiftPhase::ShiftCompleted)
 		{
-			StatusBannerText->SetTextRenderColor(ReadoutGreenColor);
+			StatusBannerText->SetTextRenderColor(ReadoutEmeraldColor);
 			StatusBannerText->SetText(FText::FromString(TEXT("SHIFT COMPLETE - HOLD [R] TO RESTART")));
 			return;
 		}
 		if (LatchedVerdict == EShiftVerdictType::ContractPassed || CachedShiftPhase == EShiftPhase::ContractPassTransition)
 		{
-			StatusBannerText->SetTextRenderColor(ReadoutGreenColor);
+			StatusBannerText->SetTextRenderColor(ReadoutEmeraldColor);
 			StatusBannerText->SetText(FText::FromString(TEXT("QUOTA STAMPED - LOADING NEXT CONTRACT")));
 			return;
 		}
@@ -617,7 +668,7 @@ void AScaleAssemblyActor::RefreshStatusBannerReadout()
 
 	if (HasContaminationFault_Implementation())
 	{
-		StatusBannerText->SetTextRenderColor(ReadoutRedColor);
+		StatusBannerText->SetTextRenderColor(ReadoutFaultBannerColor);
 		StatusBannerText->SetText(FText::FromString(TEXT("FAULT: CONTAMINATED CHUNK - ROUTE TO [SPACE] TARE")));
 		return;
 	}
@@ -626,14 +677,14 @@ void AScaleAssemblyActor::RefreshStatusBannerReadout()
 	const bool bScaleOscillating = !IsReceiverSettled_Implementation();
 	if (bChunksInFlight || bScaleOscillating)
 	{
-		StatusBannerText->SetTextRenderColor(ReadoutAmberColor);
+		StatusBannerText->SetTextRenderColor(ReadoutGoldColor);
 		StatusBannerText->SetText(FText::FromString(TEXT("WEIGHING / SETTLING...")));
 		return;
 	}
 
 	if (CachedSnapshot.bScaleSettledForStamp || CachedSnapshot.bIsWithinQuotaWindow)
 	{
-		StatusBannerText->SetTextRenderColor(ReadoutGreenColor);
+		StatusBannerText->SetTextRenderColor(ReadoutEmeraldColor);
 		StatusBannerText->SetText(FText::FromString(TEXT("QUOTA MET - PRESS [E] TO STAMP")));
 		return;
 	}
@@ -642,13 +693,13 @@ void AScaleAssemblyActor::RefreshStatusBannerReadout()
 	if (CachedSnapshot.SettledScaleMassKg > KINDA_SMALL_NUMBER && CachedSnapshot.SettledScaleMassKg < MinValidKg)
 	{
 		const float RemainingToWindowKg = FMath::Max(0.01f, MinValidKg - CachedSnapshot.SettledScaleMassKg);
-		StatusBannerText->SetTextRenderColor(ReadoutAmberColor);
+		StatusBannerText->SetTextRenderColor(ReadoutNormalSkyBlueColor);
 		StatusBannerText->SetText(FText::FromString(
 			FString::Printf(TEXT("UNDER QUOTA - ADD %.2f KG TO MIN WINDOW"), RemainingToWindowKg)));
 		return;
 	}
 
-	StatusBannerText->SetTextRenderColor(ReadoutCyanColor);
+	StatusBannerText->SetTextRenderColor(ReadoutNormalSkyBlueColor);
 	StatusBannerText->SetText(FText::FromString(TEXT("HOLD [LMB] TO SLICE MONOLITH INTO TITHE")));
 }
 
@@ -686,17 +737,38 @@ void AScaleAssemblyActor::RefreshRouteReadout()
 	if (ActiveRoute == EDiverterRoute::TareChute)
 	{
 		RouteReadoutText->SetText(FText::FromString(TEXT("ROUTE: TARE [SPACE]")));
-		RouteReadoutText->SetTextRenderColor(ReadoutAmberColor);
+		RouteReadoutText->SetTextRenderColor(ReadoutTareOrangeColor);
 	}
 	else
 	{
 		RouteReadoutText->SetText(FText::FromString(TEXT("ROUTE: TITHE [SPACE]")));
-		RouteReadoutText->SetTextRenderColor(ReadoutCyanColor);
+		RouteReadoutText->SetTextRenderColor(ReadoutHeaderCyanColor);
 	}
 }
 
 void AScaleAssemblyActor::InitializeGreyboxVisualMaterials()
 {
+	if (IsValid(UnlitReadoutTextMaterial))
+	{
+		UTextRenderComponent* const ReadoutComponents[7] = {
+			HeaderStencilText,
+			ContractCodeText,
+			StatusBannerText,
+			MassReadoutText,
+			TareReadoutText,
+			RouteReadoutText,
+			ControlStencilText
+		};
+		for (UTextRenderComponent* TextComp : ReadoutComponents)
+		{
+			if (IsValid(TextComp))
+			{
+				TextComp->SetTextMaterial(UnlitReadoutTextMaterial);
+				TextComp->SetCastShadow(false);
+			}
+		}
+	}
+
 	if (!IsValid(BaseGreyboxShapeMaterial))
 	{
 		return;
@@ -723,11 +795,12 @@ void AScaleAssemblyActor::InitializeGreyboxVisualMaterials()
 		}
 	};
 
-	ApplyTintedGreyboxMaterial(ScaleBaseVisual, FLinearColor(0.05f, 0.055f, 0.065f, 1.0f), 0.72f, 0.45f);
-	ApplyTintedGreyboxMaterial(LeftHopperGuideVisual, FLinearColor(0.11f, 0.12f, 0.14f, 1.0f), 0.64f, 0.50f);
-	ApplyTintedGreyboxMaterial(PanPlatform, FLinearColor(0.22f, 0.19f, 0.12f, 1.0f), 0.48f, 0.62f);
-	ApplyTintedGreyboxMaterial(DiverterFlapperVisual, FLinearColor(0.26f, 0.14f, 0.04f, 1.0f), 0.45f, 0.58f);
-	ApplyTintedGreyboxMaterial(TareChuteVisual, FLinearColor(0.08f, 0.035f, 0.03f, 1.0f), 0.78f, 0.35f);
+	ApplyTintedGreyboxMaterial(ReadoutBackingPlate, ConsoleBezelLinearColor, 0.96f, 0.02f);
+	ApplyTintedGreyboxMaterial(ScaleBaseVisual, FLinearColor(0.032f, 0.036f, 0.042f, 1.0f), 0.78f, 0.35f);
+	ApplyTintedGreyboxMaterial(LeftHopperGuideVisual, FLinearColor(0.055f, 0.060f, 0.070f, 1.0f), 0.72f, 0.40f);
+	ApplyTintedGreyboxMaterial(PanPlatform, FLinearColor(0.055f, 0.050f, 0.042f, 1.0f), 0.68f, 0.45f);
+	ApplyTintedGreyboxMaterial(DiverterFlapperVisual, FLinearColor(0.14f, 0.075f, 0.020f, 1.0f), 0.56f, 0.48f);
+	ApplyTintedGreyboxMaterial(TareChuteVisual, FLinearColor(0.045f, 0.022f, 0.020f, 1.0f), 0.82f, 0.28f);
 }
 
 FVector AScaleAssemblyActor::QueryScaleWorldLocation() const

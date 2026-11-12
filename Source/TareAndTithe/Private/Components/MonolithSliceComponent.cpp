@@ -128,22 +128,22 @@ namespace
 		return !IsSeparatedOnAxis(Edges[0].Cross(Edges[1]));
 	}
 
-	void BuildWatertightExtrudedProfileY(
+	void BuildWatertightExtrudedProfileX(
 		UE::Geometry::FDynamicMesh3& OutMesh,
-		const TArray<FVector2d>& ProfileXZ,
-		double HalfExtentY)
+		const TArray<FVector2d>& ProfileYZ,
+		double HalfExtentX)
 	{
 		OutMesh.Clear();
 		OutMesh.EnableAttributes();
 		OutMesh.Attributes()->EnableMaterialID();
 
-		const int32 NumProfileVerts = ProfileXZ.Num();
+		const int32 NumProfileVerts = ProfileYZ.Num();
 		if (NumProfileVerts < 3)
 		{
 			return;
 		}
 
-		UE::Geometry::TPolygon2<double> OuterPolygon(ProfileXZ);
+		UE::Geometry::TPolygon2<double> OuterPolygon(ProfileYZ);
 		if (OuterPolygon.SignedArea() < 0.0)
 		{
 			OuterPolygon.Reverse();
@@ -161,14 +161,26 @@ namespace
 		for (int32 i = 0; i < NumProfileVerts; ++i)
 		{
 			const FVector2d& Pt = OrderedVerts[i];
-			FrontVids.Add(OutMesh.AppendVertex(FVector3d(Pt.X, -HalfExtentY, Pt.Y)));
-			BackVids.Add(OutMesh.AppendVertex(FVector3d(Pt.X, +HalfExtentY, Pt.Y)));
+			FrontVids.Add(OutMesh.AppendVertex(FVector3d(-HalfExtentX, Pt.X, Pt.Y)));
+			BackVids.Add(OutMesh.AppendVertex(FVector3d(+HalfExtentX, Pt.X, Pt.Y)));
 		}
 
 		for (const UE::Geometry::FIndex3i& Tri : CapTris)
 		{
-			OutMesh.AppendTriangle(FrontVids[Tri.A], FrontVids[Tri.C], FrontVids[Tri.B]);
-			OutMesh.AppendTriangle(BackVids[Tri.A], BackVids[Tri.B], BackVids[Tri.C]);
+			int32 Ia = Tri.A;
+			int32 Ib = Tri.B;
+			int32 Ic = Tri.C;
+			const FVector2d& Va = OrderedVerts[Ia];
+			const FVector2d& Vb = OrderedVerts[Ib];
+			const FVector2d& Vc = OrderedVerts[Ic];
+			const double SignedCross2D = ((Vb.X - Va.X) * (Vc.Y - Va.Y)) - ((Vb.Y - Va.Y) * (Vc.X - Va.X));
+			if (SignedCross2D < 0.0)
+			{
+				Swap(Ib, Ic);
+			}
+
+			OutMesh.AppendTriangle(FrontVids[Ia], FrontVids[Ic], FrontVids[Ib]);
+			OutMesh.AppendTriangle(BackVids[Ia], BackVids[Ib], BackVids[Ic]);
 		}
 
 		for (int32 i = 0; i < NumProfileVerts; ++i)
@@ -249,21 +261,26 @@ namespace
 		case EMonolithBaseShape::AsymmetricLBlock:
 		{
 			const double Hx = 0.5 * static_cast<double>(DimX);
-			const double Hy = 0.5 * static_cast<double>(DimY);
-			const double Hz = 0.5 * static_cast<double>(DimZ);
+			const double YMin = -0.50 * static_cast<double>(DimY);
+			const double YStemMax = +0.12 * static_cast<double>(DimY);
+			const double YMax = +0.50 * static_cast<double>(DimY);
+			const double ZMin = -0.50 * static_cast<double>(DimZ);
+			const double ZFootTop = -0.12 * static_cast<double>(DimZ);
+			const double ZMax = +0.50 * static_cast<double>(DimZ);
 
-			const TArray<FVector2d> LProfileXZ = {
-				FVector2d(-Hx, -Hz),
-				FVector2d(+Hx, -Hz),
-				FVector2d(+Hx, -0.10 * Hz),
-				FVector2d(+0.15 * Hx, -0.10 * Hz),
-				FVector2d(+0.15 * Hx, +Hz),
-				FVector2d(-Hx, +Hz)
+			// Front-facing YZ L-profile extruded along X: full-height stem grips cleanly around Y=0 while lower L-foot juts right (+Y).
+			const TArray<FVector2d> LProfileYZ = {
+				FVector2d(YMin, ZMin),
+				FVector2d(YMax, ZMin),
+				FVector2d(YMax, ZFootTop),
+				FVector2d(YStemMax, ZFootTop),
+				FVector2d(YStemMax, ZMax),
+				FVector2d(YMin, ZMax)
 			};
 
-			TargetDynMesh->EditMesh([&LProfileXZ, Hy](UE::Geometry::FDynamicMesh3& EditMesh)
+			TargetDynMesh->EditMesh([&LProfileYZ, Hx](UE::Geometry::FDynamicMesh3& EditMesh)
 			{
-				BuildWatertightExtrudedProfileY(EditMesh, LProfileXZ, Hy);
+				BuildWatertightExtrudedProfileX(EditMesh, LProfileYZ, Hx);
 			});
 			break;
 		}
@@ -274,24 +291,25 @@ namespace
 			const double Hy = 0.5 * static_cast<double>(DimY);
 			const double Hz = 0.5 * static_cast<double>(DimZ);
 
-			const TArray<FVector2d> SteppedProfileXZ = {
-				FVector2d(-0.65 * Hx, -Hz),
-				FVector2d(+0.65 * Hx, -Hz),
-				FVector2d(+0.65 * Hx, -0.35 * Hz),
-				FVector2d(+Hx, -0.35 * Hz),
-				FVector2d(+Hx, +0.35 * Hz),
-				FVector2d(+0.55 * Hx, +0.35 * Hz),
-				FVector2d(+0.55 * Hx, +Hz),
-				FVector2d(-0.55 * Hx, +Hz),
-				FVector2d(-0.55 * Hx, +0.35 * Hz),
-				FVector2d(-Hx, +0.35 * Hz),
-				FVector2d(-Hx, -0.35 * Hz),
-				FVector2d(-0.65 * Hx, -0.35 * Hz)
+			// Front-facing YZ stepped profile extruded along X so horizontal multi-tier steps read silhouettes cleanly from +X camera.
+			const TArray<FVector2d> SteppedProfileYZ = {
+				FVector2d(-0.62 * Hy, -Hz),
+				FVector2d(+0.62 * Hy, -Hz),
+				FVector2d(+0.62 * Hy, -0.35 * Hz),
+				FVector2d(+Hy, -0.35 * Hz),
+				FVector2d(+Hy, +0.35 * Hz),
+				FVector2d(+0.52 * Hy, +0.35 * Hz),
+				FVector2d(+0.52 * Hy, +Hz),
+				FVector2d(-0.52 * Hy, +Hz),
+				FVector2d(-0.52 * Hy, +0.35 * Hz),
+				FVector2d(-Hy, +0.35 * Hz),
+				FVector2d(-Hy, -0.35 * Hz),
+				FVector2d(-0.62 * Hy, -0.35 * Hz)
 			};
 
-			TargetDynMesh->EditMesh([&SteppedProfileXZ, Hy](UE::Geometry::FDynamicMesh3& EditMesh)
+			TargetDynMesh->EditMesh([&SteppedProfileYZ, Hx](UE::Geometry::FDynamicMesh3& EditMesh)
 			{
-				BuildWatertightExtrudedProfileY(EditMesh, SteppedProfileXZ, Hy);
+				BuildWatertightExtrudedProfileX(EditMesh, SteppedProfileYZ, Hx);
 			});
 			break;
 		}

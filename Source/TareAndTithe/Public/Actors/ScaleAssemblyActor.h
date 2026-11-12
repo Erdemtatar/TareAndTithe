@@ -102,6 +102,12 @@ protected:
 	TObjectPtr<UDiverterGateComponent> DiverterGateComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly|Readout")
+	TObjectPtr<USceneComponent> ReadoutConsolePivot;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly|Readout")
+	TObjectPtr<UStaticMeshComponent> ReadoutBackingPlate;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly|Readout")
 	TObjectPtr<UTextRenderComponent> HeaderStencilText;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly|Readout")
@@ -129,16 +135,31 @@ protected:
 	FVector PanTriggerBoxExtentCm = FVector(35.05, 28.05, 11.0);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Colors")
-	FColor ReadoutAmberColor = FColor(255, 184, 46, 255);
+	FLinearColor ConsoleBezelLinearColor = FLinearColor(0.005f, 0.006f, 0.008f, 1.0f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Colors")
-	FColor ReadoutGreenColor = FColor(64, 242, 118, 255);
+	FColor ReadoutHeaderCyanColor = FColor(0, 230, 255, 255);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Colors")
-	FColor ReadoutRedColor = FColor(255, 58, 52, 255);
+	FColor ReadoutGoldColor = FColor(255, 195, 0, 255);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Colors")
-	FColor ReadoutCyanColor = FColor(82, 218, 255, 255);
+	FColor ReadoutEmeraldColor = FColor(0, 255, 90, 255);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Colors")
+	FColor ReadoutCrimsonColor = FColor(255, 45, 45, 255);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Colors")
+	FColor ReadoutFaultBannerColor = FColor(255, 55, 35, 255);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Colors")
+	FColor ReadoutNormalSkyBlueColor = FColor(90, 210, 255, 255);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Colors")
+	FColor ReadoutTareOrangeColor = FColor(255, 135, 0, 255);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Colors")
+	FColor ReadoutControlStencilColor = FColor(240, 230, 180, 255);
 
 private:
 	UFUNCTION()
@@ -177,6 +198,9 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<UMaterialInterface> BaseGreyboxShapeMaterial;
+
+	UPROPERTY()
+	TObjectPtr<UMaterialInterface> UnlitReadoutTextMaterial;
 
 	FContractRuntimeSnapshot CachedSnapshot;
 	int32 CachedContractIndex = 0;

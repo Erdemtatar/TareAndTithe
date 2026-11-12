@@ -47,6 +47,7 @@ AInspectorPawn::AInspectorPawn()
 	InspectorCamera->SetRelativeRotation(FRotator(BaselineCameraPitchDegrees, 0.0f, 0.0f));
 	InspectorCamera->FieldOfView = DefaultCameraFieldOfView;
 	InspectorCamera->bUsePawnControlRotation = false;
+	ApplyLockedCameraExposureSettings();
 
 	LaserPlaneVisualPivot = CreateDefaultSubobject<USceneComponent>(TEXT("LaserPlaneVisualPivot"));
 	LaserPlaneVisualPivot->SetupAttachment(PawnRoot);
@@ -141,6 +142,7 @@ void AInspectorPawn::BeginPlay()
 		InspectorCamera->SetRelativeLocation(BaselineCameraRelativeLocation);
 		InspectorCamera->SetRelativeRotation(FRotator(BaselineCameraPitchDegrees, 0.0f, 0.0f));
 		InspectorCamera->SetFieldOfView(DefaultCameraFieldOfView);
+		ApplyLockedCameraExposureSettings();
 	}
 
 	EnsureInputActionsAndMappingInitialized();
@@ -343,6 +345,25 @@ void AInspectorPawn::RefreshAimTargetAndFrameFromShift()
 	}
 
 	LaserPlaneAimComponent->SetFrameBasis(AnchorWorld, GetActorForwardVector());
+}
+
+void AInspectorPawn::ApplyLockedCameraExposureSettings()
+{
+	if (!IsValid(InspectorCamera))
+	{
+		return;
+	}
+
+	InspectorCamera->PostProcessBlendWeight = 1.0f;
+	FPostProcessSettings& PP = InspectorCamera->PostProcessSettings;
+	PP.bOverride_AutoExposureMinBrightness = true;
+	PP.bOverride_AutoExposureMaxBrightness = true;
+	PP.bOverride_AutoExposureBias = true;
+	PP.bOverride_BloomIntensity = true;
+	PP.AutoExposureMinBrightness = LockedAutoExposureMinBrightness;
+	PP.AutoExposureMaxBrightness = LockedAutoExposureMaxBrightness;
+	PP.AutoExposureBias = LockedAutoExposureBias;
+	PP.BloomIntensity = LockedBloomIntensity;
 }
 
 void AInspectorPawn::EnsureInputActionsAndMappingInitialized()
@@ -633,9 +654,10 @@ void AInspectorPawn::UpdateCameraParallaxFromAim()
 
 	const float TargetYawDeg = FMath::Clamp(NormH * MaxCameraParallaxYawDegrees, -MaxCameraParallaxYawDegrees, MaxCameraParallaxYawDegrees);
 	const float TargetPitchDeg = FMath::Clamp(NormV * MaxCameraParallaxPitchDegrees, -MaxCameraParallaxPitchDegrees, MaxCameraParallaxPitchDegrees);
+	const float FinalPitchDeg = FMath::Min(TargetPitchDeg + BaselineCameraPitchDegrees, MaxUpwardCameraPitchCeilingDegrees);
 
-	// Subtle baseline downward look plus clamped aim-tracking parallax.
-	InspectorCamera->SetRelativeRotation(FRotator(TargetPitchDeg + BaselineCameraPitchDegrees, TargetYawDeg, 0.0f));
+	// Subtle baseline downward look plus clamped aim-tracking parallax that never cuts off the bottom console bezel.
+	InspectorCamera->SetRelativeRotation(FRotator(FinalPitchDeg, TargetYawDeg, 0.0f));
 }
 
 void AInspectorPawn::ApplyNativeScalabilityPreset(int32 QualityLevel, float TsrResolutionScalePercent)

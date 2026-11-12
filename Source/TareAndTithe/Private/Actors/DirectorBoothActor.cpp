@@ -36,6 +36,13 @@ ADirectorBoothActor::ADirectorBoothActor()
 		BaseGreyboxShapeMaterial = FlattenMatFinder.Object;
 	}
 
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> UnlitTextMatFinder(
+		TEXT("/Engine/EngineMaterials/UnlitText.UnlitText"));
+	if (UnlitTextMatFinder.Succeeded())
+	{
+		UnlitSignboardTextMaterial = UnlitTextMatFinder.Object;
+	}
+
 	BoothFrameVisual = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BoothFrameVisual"));
 	BoothFrameVisual->SetupAttachment(BoothRoot);
 	BoothFrameVisual->PrimaryComponentTick.bCanEverTick = false;
@@ -44,6 +51,10 @@ ADirectorBoothActor::ADirectorBoothActor()
 	if (IsValid(CubeMesh))
 	{
 		BoothFrameVisual->SetStaticMesh(CubeMesh);
+	}
+	if (IsValid(BaseGreyboxShapeMaterial))
+	{
+		BoothFrameVisual->SetMaterial(0, BaseGreyboxShapeMaterial);
 	}
 	BoothFrameVisual->SetRelativeLocation(FVector::ZeroVector);
 	BoothFrameVisual->SetRelativeScale3D(FVector(0.24, 1.90, 0.85));
@@ -57,37 +68,92 @@ ADirectorBoothActor::ADirectorBoothActor()
 	{
 		BlastShutterVisual->SetStaticMesh(CubeMesh);
 	}
+	if (IsValid(BaseGreyboxShapeMaterial))
+	{
+		BlastShutterVisual->SetMaterial(0, BaseGreyboxShapeMaterial);
+	}
 	BlastShutterVisual->SetRelativeLocation(ClosedShutterRelativeLocation);
 	BlastShutterVisual->SetRelativeScale3D(FVector(0.06, 1.65, 0.62));
 
+	auto ConfigureSignboardPlate = [this, CubeMesh](UStaticMeshComponent* PlateComp, const FVector& Scale3D)
+	{
+		PlateComp->PrimaryComponentTick.bCanEverTick = false;
+		PlateComp->SetSimulatePhysics(false);
+		PlateComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		PlateComp->SetGenerateOverlapEvents(false);
+		PlateComp->SetCastShadow(false);
+		PlateComp->bReceivesDecals = false;
+		if (IsValid(CubeMesh))
+		{
+			PlateComp->SetStaticMesh(CubeMesh);
+		}
+		if (IsValid(BaseGreyboxShapeMaterial))
+		{
+			PlateComp->SetMaterial(0, BaseGreyboxShapeMaterial);
+		}
+		PlateComp->SetRelativeLocation(FVector::ZeroVector);
+		PlateComp->SetRelativeScale3D(Scale3D);
+	};
+
+	// Tilted +10 deg downward toward the lower inspector eye line and away from overhead spotlight glare.
+	BoothHeaderPivot = CreateDefaultSubobject<USceneComponent>(TEXT("BoothHeaderPivot"));
+	BoothHeaderPivot->SetupAttachment(BoothRoot);
+	BoothHeaderPivot->PrimaryComponentTick.bCanEverTick = false;
+	BoothHeaderPivot->SetRelativeLocation(FVector(-15.5, 0.0, 52.0));
+	BoothHeaderPivot->SetRelativeRotation(FRotator(10.0f, 0.0f, 0.0f));
+
+	BoothHeaderBackingPlate = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BoothHeaderBackingPlate"));
+	BoothHeaderBackingPlate->SetupAttachment(BoothHeaderPivot);
+	ConfigureSignboardPlate(BoothHeaderBackingPlate, FVector(0.016, 2.38, 0.16));
+
 	BoothStencilText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("BoothStencilText"));
-	BoothStencilText->SetupAttachment(BoothRoot);
+	BoothStencilText->SetupAttachment(BoothHeaderPivot);
 	BoothStencilText->PrimaryComponentTick.bCanEverTick = false;
-	BoothStencilText->SetRelativeLocation(FVector(-16.0, 0.0, 48.0));
+	BoothStencilText->SetRelativeLocation(FVector(-2.0, 0.0, 0.0));
 	BoothStencilText->SetRelativeRotation(FRotator(0.0f, 180.0f, 0.0f));
 	BoothStencilText->SetHorizontalAlignment(EHTA_Center);
 	BoothStencilText->SetVerticalAlignment(EVRTA_TextCenter);
-	BoothStencilText->SetWorldSize(9.0f);
-	BoothStencilText->SetTextRenderColor(FColor(232, 236, 240, 255));
+	BoothStencilText->SetWorldSize(10.8f);
+	BoothStencilText->SetCastShadow(false);
+	if (IsValid(UnlitSignboardTextMaterial))
+	{
+		BoothStencilText->SetTextMaterial(UnlitSignboardTextMaterial);
+	}
+	BoothStencilText->SetTextRenderColor(BoothHeaderCyanColor);
 	BoothStencilText->SetText(FText::FromString(TEXT("OFFICE OF THE DIRECTOR")));
 
+	BoothVerdictPivot = CreateDefaultSubobject<USceneComponent>(TEXT("BoothVerdictPivot"));
+	BoothVerdictPivot->SetupAttachment(BoothRoot);
+	BoothVerdictPivot->PrimaryComponentTick.bCanEverTick = false;
+	BoothVerdictPivot->SetRelativeLocation(FVector(-15.5, 0.0, -50.0));
+	BoothVerdictPivot->SetRelativeRotation(FRotator(10.0f, 0.0f, 0.0f));
+
+	BoothVerdictBackingPlate = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BoothVerdictBackingPlate"));
+	BoothVerdictBackingPlate->SetupAttachment(BoothVerdictPivot);
+	ConfigureSignboardPlate(BoothVerdictBackingPlate, FVector(0.016, 2.68, 0.15));
+
 	VerdictBannerText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("VerdictBannerText"));
-	VerdictBannerText->SetupAttachment(BoothRoot);
+	VerdictBannerText->SetupAttachment(BoothVerdictPivot);
 	VerdictBannerText->PrimaryComponentTick.bCanEverTick = false;
-	VerdictBannerText->SetRelativeLocation(FVector(-16.0, 0.0, -48.0));
+	VerdictBannerText->SetRelativeLocation(FVector(-2.0, 0.0, 0.0));
 	VerdictBannerText->SetRelativeRotation(FRotator(0.0f, 180.0f, 0.0f));
 	VerdictBannerText->SetHorizontalAlignment(EHTA_Center);
 	VerdictBannerText->SetVerticalAlignment(EVRTA_TextCenter);
-	VerdictBannerText->SetWorldSize(6.5f);
-	VerdictBannerText->SetTextRenderColor(FColor(255, 188, 54, 255));
+	VerdictBannerText->SetWorldSize(7.8f);
+	VerdictBannerText->SetCastShadow(false);
+	if (IsValid(UnlitSignboardTextMaterial))
+	{
+		VerdictBannerText->SetTextMaterial(UnlitSignboardTextMaterial);
+	}
+	VerdictBannerText->SetTextRenderColor(BoothNormalSkyBlueColor);
 	VerdictBannerText->SetText(FText::FromString(TEXT("CELL STANDBY")));
 
 	StatusPointLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("StatusPointLight"));
 	StatusPointLight->SetupAttachment(BoothRoot);
 	StatusPointLight->PrimaryComponentTick.bCanEverTick = false;
-	StatusPointLight->SetRelativeLocation(FVector(-32.0, 0.0, 24.0));
-	StatusPointLight->SetIntensity(3200.0f);
-	StatusPointLight->SetAttenuationRadius(680.0f);
+	StatusPointLight->SetRelativeLocation(FVector(-38.0, 0.0, 18.0));
+	StatusPointLight->SetIntensity(StatusLightIntensity);
+	StatusPointLight->SetAttenuationRadius(480.0f);
 	StatusPointLight->SetCastShadows(false);
 	StatusPointLight->SetLightColor(ActiveInspectionLampColor);
 }
@@ -96,36 +162,52 @@ void ADirectorBoothActor::BeginPlay()
 {
 	Super::BeginPlay();
 
+	if (IsValid(StatusPointLight))
+	{
+		StatusPointLight->SetIntensity(StatusLightIntensity);
+	}
+
+	if (IsValid(UnlitSignboardTextMaterial))
+	{
+		if (IsValid(BoothStencilText))
+		{
+			BoothStencilText->SetTextMaterial(UnlitSignboardTextMaterial);
+			BoothStencilText->SetCastShadow(false);
+		}
+		if (IsValid(VerdictBannerText))
+		{
+			VerdictBannerText->SetTextMaterial(UnlitSignboardTextMaterial);
+			VerdictBannerText->SetCastShadow(false);
+		}
+	}
+
 	if (IsValid(BaseGreyboxShapeMaterial))
 	{
-		if (IsValid(BoothFrameVisual))
+		auto ApplyBoothMaterial = [this](
+			UStaticMeshComponent* TargetMesh,
+			const FLinearColor& Color,
+			float Roughness,
+			float Metallic)
 		{
-			if (UMaterialInstanceDynamic* FrameMID = UMaterialInstanceDynamic::Create(BaseGreyboxShapeMaterial, this))
+			if (IsValid(TargetMesh))
 			{
-				const FLinearColor FrameColor(0.04f, 0.045f, 0.055f, 1.0f);
-				FrameMID->SetVectorParameterValue(TEXT("BaseColorConst"), FrameColor);
-				FrameMID->SetVectorParameterValue(TEXT("Color"), FrameColor);
-				FrameMID->SetVectorParameterValue(TEXT("EmissiveColorConst"), FLinearColor::Black);
-				FrameMID->SetScalarParameterValue(TEXT("EmissiveScale"), 0.0f);
-				FrameMID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.72f);
-				FrameMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.45f);
-				BoothFrameVisual->SetMaterial(0, FrameMID);
+				if (UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(BaseGreyboxShapeMaterial, this))
+				{
+					MID->SetVectorParameterValue(TEXT("BaseColorConst"), Color);
+					MID->SetVectorParameterValue(TEXT("Color"), Color);
+					MID->SetVectorParameterValue(TEXT("EmissiveColorConst"), FLinearColor::Black);
+					MID->SetScalarParameterValue(TEXT("EmissiveScale"), 0.0f);
+					MID->SetScalarParameterValue(TEXT("RoughnessConst"), Roughness);
+					MID->SetScalarParameterValue(TEXT("MetallicConst"), Metallic);
+					TargetMesh->SetMaterial(0, MID);
+				}
 			}
-		}
-		if (IsValid(BlastShutterVisual))
-		{
-			if (UMaterialInstanceDynamic* ShutterMID = UMaterialInstanceDynamic::Create(BaseGreyboxShapeMaterial, this))
-			{
-				const FLinearColor ShutterColor(0.14f, 0.13f, 0.11f, 1.0f);
-				ShutterMID->SetVectorParameterValue(TEXT("BaseColorConst"), ShutterColor);
-				ShutterMID->SetVectorParameterValue(TEXT("Color"), ShutterColor);
-				ShutterMID->SetVectorParameterValue(TEXT("EmissiveColorConst"), FLinearColor::Black);
-				ShutterMID->SetScalarParameterValue(TEXT("EmissiveScale"), 0.0f);
-				ShutterMID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.58f);
-				ShutterMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.55f);
-				BlastShutterVisual->SetMaterial(0, ShutterMID);
-			}
-		}
+		};
+
+		ApplyBoothMaterial(BoothFrameVisual, FLinearColor(0.028f, 0.031f, 0.038f, 1.0f), 0.78f, 0.35f);
+		ApplyBoothMaterial(BlastShutterVisual, FLinearColor(0.060f, 0.062f, 0.068f, 1.0f), 0.66f, 0.45f);
+		ApplyBoothMaterial(BoothHeaderBackingPlate, SignboardBackingColor, 0.96f, 0.02f);
+		ApplyBoothMaterial(BoothVerdictBackingPlate, SignboardBackingColor, 0.96f, 0.02f);
 	}
 
 	SetShutterTargetOpenAlpha(0.0f, true);
@@ -202,7 +284,7 @@ void ADirectorBoothActor::HandleShiftVerdict(EShiftVerdictType Verdict, EContrac
 		}
 		if (IsValid(VerdictBannerText))
 		{
-			VerdictBannerText->SetTextRenderColor(FColor(255, 62, 54, 255));
+			VerdictBannerText->SetTextRenderColor(BoothFaultBannerColor);
 			VerdictBannerText->SetText(FText::FromString(DescribeFaultReason(FaultReason)));
 		}
 		break;
@@ -216,7 +298,7 @@ void ADirectorBoothActor::HandleShiftVerdict(EShiftVerdictType Verdict, EContrac
 		}
 		if (IsValid(VerdictBannerText))
 		{
-			VerdictBannerText->SetTextRenderColor(FColor(64, 242, 118, 255));
+			VerdictBannerText->SetTextRenderColor(BoothApprovedEmeraldColor);
 			VerdictBannerText->SetText(FText::FromString(TEXT("TITHE VERIFIED // ADVANCING")));
 		}
 		break;
@@ -230,7 +312,7 @@ void ADirectorBoothActor::HandleShiftVerdict(EShiftVerdictType Verdict, EContrac
 		}
 		if (IsValid(VerdictBannerText))
 		{
-			VerdictBannerText->SetTextRenderColor(FColor(64, 242, 118, 255));
+			VerdictBannerText->SetTextRenderColor(BoothApprovedEmeraldColor);
 			VerdictBannerText->SetText(FText::FromString(TEXT("SHIFT QUOTA COMPLETE // HOLD [R] TO REPLAY")));
 		}
 		break;
@@ -251,7 +333,7 @@ void ADirectorBoothActor::HandleShiftPhaseChanged(EShiftPhase NewPhase)
 		}
 		if (IsValid(VerdictBannerText))
 		{
-			VerdictBannerText->SetTextRenderColor(FColor(255, 188, 54, 255));
+			VerdictBannerText->SetTextRenderColor(BoothNormalSkyBlueColor);
 			VerdictBannerText->SetText(FText::FromString(TEXT("INSPECTION IN PROGRESS")));
 		}
 	}

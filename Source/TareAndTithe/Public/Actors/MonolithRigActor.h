@@ -89,16 +89,16 @@ protected:
 	TObjectPtr<UMaterialInterface> MoltenCutCapOverrideMaterial;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rig|Greybox")
-	FLinearColor GreyboxOuterShellColor = FLinearColor(0.045f, 0.052f, 0.062f, 1.0f);
+	FLinearColor GreyboxOuterShellColor = FLinearColor(0.018f, 0.020f, 0.024f, 1.0f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rig|Greybox")
-	FLinearColor GreyboxMoltenCapColor = FLinearColor(1.00f, 0.32f, 0.02f, 1.0f);
+	FLinearColor GreyboxMoltenCapColor = FLinearColor(1.00f, 0.30f, 0.015f, 1.0f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rig|Greybox")
-	FLinearColor GreyboxMoltenCapEmissiveColor = FLinearColor(2.25f, 0.58f, 0.03f, 1.0f);
+	FLinearColor GreyboxMoltenCapEmissiveColor = FLinearColor(2.35f, 0.52f, 0.02f, 1.0f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rig|Greybox")
-	FLinearColor GreyboxClampJawColor = FLinearColor(0.18f, 0.19f, 0.21f, 1.0f);
+	FLinearColor GreyboxClampJawColor = FLinearColor(0.075f, 0.080f, 0.090f, 1.0f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rig|Telemetry", meta = (ClampMin = "0.05", ClampMax = "5.0"))
 	float VaporizedImpulseReferenceMassKg = 0.5f;

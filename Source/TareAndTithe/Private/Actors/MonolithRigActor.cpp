@@ -309,7 +309,7 @@ void AMonolithRigActor::EnsureGreyboxMaterialsInitialized()
 			FallbackOuterMID->SetVectorParameterValue(TEXT("EmissiveColorConst"), FLinearColor::Black);
 			FallbackOuterMID->SetScalarParameterValue(TEXT("EmissiveScale"), 0.0f);
 			FallbackOuterMID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.78f);
-			FallbackOuterMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.32f);
+			FallbackOuterMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.25f);
 		}
 	}
 
@@ -323,7 +323,7 @@ void AMonolithRigActor::EnsureGreyboxMaterialsInitialized()
 			FallbackCutCapMID->SetVectorParameterValue(TEXT("EmissiveColorConst"), GreyboxMoltenCapEmissiveColor);
 			FallbackCutCapMID->SetScalarParameterValue(TEXT("EmissiveScale"), 1.0f);
 			FallbackCutCapMID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.28f);
-			FallbackCutCapMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.12f);
+			FallbackCutCapMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.10f);
 		}
 	}
 

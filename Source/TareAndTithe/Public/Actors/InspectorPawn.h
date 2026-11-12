@@ -114,19 +114,34 @@ protected:
 	float LaserFrameBarThicknessCm = 0.5f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Camera")
-	FVector BaselineCameraRelativeLocation = FVector(-68.0, 0.0, 20.0);
+	FVector BaselineCameraRelativeLocation = FVector(-34.0, 0.0, 8.0);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Camera", meta = (ClampMin = "-25.0", ClampMax = "5.0"))
-	float BaselineCameraPitchDegrees = -5.0f;
+	float BaselineCameraPitchDegrees = -4.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Camera", meta = (ClampMin = "60.0", ClampMax = "115.0"))
-	float DefaultCameraFieldOfView = 96.0f;
+	float DefaultCameraFieldOfView = 90.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Camera|Exposure")
+	float LockedAutoExposureMinBrightness = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Camera|Exposure")
+	float LockedAutoExposureMaxBrightness = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Camera|Exposure", meta = (ClampMin = "-5.0", ClampMax = "5.0"))
+	float LockedAutoExposureBias = -0.35f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Camera|Exposure", meta = (ClampMin = "0.0", ClampMax = "2.0"))
+	float LockedBloomIntensity = 0.22f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Camera", meta = (ClampMin = "0.0", ClampMax = "25.0"))
-	float MaxCameraParallaxYawDegrees = 12.0f;
+	float MaxCameraParallaxYawDegrees = 6.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Camera", meta = (ClampMin = "0.0", ClampMax = "25.0"))
-	float MaxCameraParallaxPitchDegrees = 15.0f;
+	float MaxCameraParallaxPitchDegrees = 5.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Camera", meta = (ClampMin = "-15.0", ClampMax = "5.0"))
+	float MaxUpwardCameraPitchCeilingDegrees = -2.2f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Camera", meta = (ClampMin = "20.0", ClampMax = "250.0"))
 	float ParallaxReferenceHorizontalSpanCm = 75.0f;
@@ -177,6 +192,7 @@ protected:
 	TObjectPtr<UInputAction> AssignedScalabilityEpicAction;
 
 private:
+	void ApplyLockedCameraExposureSettings();
 	void EnsureInputActionsAndMappingInitialized();
 	void ApplyMappingContextToLocalPlayer();
 	void ConfigureLaserFrameGeometry();

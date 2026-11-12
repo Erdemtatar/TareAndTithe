@@ -201,8 +201,8 @@ void ATareTitheGameMode::SpawnGreyboxPitEnclosureAndLighting(UWorld* World)
 		PitMID->SetVectorParameterValue(TEXT("Color"), GreyboxPitEnclosureColor);
 		PitMID->SetVectorParameterValue(TEXT("EmissiveColorConst"), FLinearColor::Black);
 		PitMID->SetScalarParameterValue(TEXT("EmissiveScale"), 0.0f);
-		PitMID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.86f);
-		PitMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.22f);
+		PitMID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.88f);
+		PitMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.14f);
 	}
 
 	auto SpawnEnclosureSlab = [&](const FVector& Location, const FVector& Scale3D, bool bEnableSolidCatchCollision)
@@ -282,14 +282,14 @@ void ATareTitheGameMode::SpawnGreyboxPitEnclosureAndLighting(UWorld* World)
 	if (IsValid(CellKeySpotLight) && IsValid(CellKeySpotLight->SpotLightComponent))
 	{
 		CellKeySpotLight->SpotLightComponent->SetMobility(EComponentMobility::Movable);
-		CellKeySpotLight->SpotLightComponent->SetIntensity(8500.0f);
-		CellKeySpotLight->SpotLightComponent->SetAttenuationRadius(1100.0f);
-		CellKeySpotLight->SpotLightComponent->SetInnerConeAngle(30.0f);
-		CellKeySpotLight->SpotLightComponent->SetOuterConeAngle(62.0f);
+		CellKeySpotLight->SpotLightComponent->SetIntensity(KeySpotLightIntensity);
+		CellKeySpotLight->SpotLightComponent->SetAttenuationRadius(1050.0f);
+		CellKeySpotLight->SpotLightComponent->SetInnerConeAngle(26.0f);
+		CellKeySpotLight->SpotLightComponent->SetOuterConeAngle(56.0f);
 		CellKeySpotLight->SpotLightComponent->SetLightColor(FLinearColor(0.95f, 0.96f, 1.0f, 1.0f));
 	}
 
-	// Front fill point light for crisp stencil readout & underside bevel legibility without extra shadow map cost.
+	// Front fill point light for crisp underside bevel legibility without extra shadow map cost or wall washout.
 	APointLight* CellFillLight = World->SpawnActor<APointLight>(
 		APointLight::StaticClass(),
 		FTransform(FRotator::ZeroRotator, FVector(95.0, DropY + 40.0, 215.0), FVector::OneVector),
@@ -297,9 +297,9 @@ void ATareTitheGameMode::SpawnGreyboxPitEnclosureAndLighting(UWorld* World)
 	if (IsValid(CellFillLight) && IsValid(CellFillLight->PointLightComponent))
 	{
 		CellFillLight->PointLightComponent->SetMobility(EComponentMobility::Movable);
-		CellFillLight->PointLightComponent->SetIntensity(4200.0f);
-		CellFillLight->PointLightComponent->SetAttenuationRadius(950.0f);
+		CellFillLight->PointLightComponent->SetIntensity(FillPointLightIntensity);
+		CellFillLight->PointLightComponent->SetAttenuationRadius(880.0f);
 		CellFillLight->PointLightComponent->SetCastShadows(false);
-		CellFillLight->PointLightComponent->SetLightColor(FLinearColor(0.88f, 0.93f, 1.0f, 1.0f));
+		CellFillLight->PointLightComponent->SetLightColor(FLinearColor(0.86f, 0.91f, 1.0f, 1.0f));
 	}
 }

@@ -606,22 +606,22 @@ UShiftProgressionDataAsset* UInspectionShiftSubsystem::BuildFallbackGreyboxProgr
 		FallbackGreyboxContracts.Add(C01);
 	}
 
-	// Contract 02 (Act I-B): Asymmetric L-Block — off-center CoM & bevel/roll (~40.02 kg initial mass).
+	// Contract 02 (Act I-B): Front-facing YZ Asymmetric L-Block (~39.92 kg initial mass, CoM_Y = -3.06 cm -> S_clamp = 0.42 on spawn).
 	{
 		UMonolithContractDataAsset* C02 = NewObject<UMonolithContractDataAsset>(this, TEXT("DA_Fallback_Contract02_LBlock"));
 		C02->ContractCode = FText::FromString(TEXT("ACT I-B // CTR-02: ECCENTRIC L-CASTING"));
 		C02->BaseShape = EMonolithBaseShape::AsymmetricLBlock;
-		C02->DimensionsCm = FVector(32.0f, 24.0f, 80.0f);
+		C02->DimensionsCm = FVector(24.0f, 32.0f, 80.0f);
 		C02->DensityGramsPerCm3 = 0.85f;
 		C02->TargetTitheMassKg = 14.5f;
 		C02->QuotaToleranceKg = 1.35f;
 		C02->MaxAllowedTareWasteKg = 16.0f;
 		C02->bAllowDiverterToggle = true;
-		C02->ClampMaxSafeTorqueNm = 55.0f;
+		C02->ClampMaxSafeTorqueNm = 28.5f;
 		FallbackGreyboxContracts.Add(C02);
 	}
 
-	// Contract 03 (Act II-A): 1-Vein Octagonal Prism + Diverter routing (~50.78 kg initial mass).
+	// Contract 03 (Act II-A): 1-Vein Octagonal Prism + Diverter routing (~50.78 kg initial mass; inscribed apothem 13.86 cm).
 	{
 		UMonolithContractDataAsset* C03 = NewObject<UMonolithContractDataAsset>(this, TEXT("DA_Fallback_Contract03_Octagon1Vein"));
 		C03->ContractCode = FText::FromString(TEXT("ACT II-A // CTR-03: SINGLE-VEIN OCTAGON CORE"));
@@ -633,11 +633,11 @@ UShiftProgressionDataAsset* UInspectionShiftSubsystem::BuildFallbackGreyboxProgr
 		C03->MaxAllowedTareWasteKg = 18.0f;
 		C03->bAllowDiverterToggle = true;
 		C03->ClampMaxSafeTorqueNm = 60.0f;
-		C03->HiddenVeins.Add(MakeVein(FVector(-7.0f, -4.0f, -14.0f), FVector(7.0f, 4.0f, -6.0f), 2.8f, 18.0f));
+		C03->HiddenVeins.Add(MakeVein(FVector(-4.0f, -7.0f, -14.0f), FVector(4.0f, 7.0f, -6.0f), 2.8f, 18.0f));
 		FallbackGreyboxContracts.Add(C03);
 	}
 
-	// Contract 04 (Act II-B): 2-Vein Crossed X-Lattice (~66.53 kg initial mass).
+	// Contract 04 (Act II-B): 2-Vein Crossed Lattice (~66.53 kg initial mass; Box bounds X in [-15,15], Y in [-14,14], Z in [-44,44]).
 	{
 		UMonolithContractDataAsset* C04 = NewObject<UMonolithContractDataAsset>(this, TEXT("DA_Fallback_Contract04_CrossedLattice"));
 		C04->ContractCode = FText::FromString(TEXT("ACT II-B // CTR-04: CROSSED ISOTOPE LATTICE"));
@@ -649,17 +649,17 @@ UShiftProgressionDataAsset* UInspectionShiftSubsystem::BuildFallbackGreyboxProgr
 		C04->MaxAllowedTareWasteKg = 22.0f;
 		C04->bAllowDiverterToggle = true;
 		C04->ClampMaxSafeTorqueNm = 65.0f;
-		C04->HiddenVeins.Add(MakeVein(FVector(-9.0f, -6.0f, 6.0f), FVector(-2.0f, 6.0f, 20.0f), 2.5f, 18.0f));
-		C04->HiddenVeins.Add(MakeVein(FVector(3.0f, 6.0f, -24.0f), FVector(10.0f, -6.0f, -10.0f), 2.5f, 18.0f));
+		C04->HiddenVeins.Add(MakeVein(FVector(-6.0f, -9.0f, 6.0f), FVector(6.0f, -2.0f, 20.0f), 2.5f, 18.0f));
+		C04->HiddenVeins.Add(MakeVein(FVector(6.0f, 3.0f, -24.0f), FVector(-6.0f, 9.0f, -10.0f), 2.5f, 18.0f));
 		FallbackGreyboxContracts.Add(C04);
 	}
 
-	// Contract 05 (Act III-A): High-Density Bismuth-Tungsten Counter-Torque (~69.95 kg initial mass).
+	// Contract 05 (Act III-A): High-Density Bismuth Counter-Torque YZ L-Block (~69.77 kg initial mass, CoM_Y = -2.68 cm -> S_clamp = 0.57 on spawn).
 	{
 		UMonolithContractDataAsset* C05 = NewObject<UMonolithContractDataAsset>(this, TEXT("DA_Fallback_Contract05_BismuthTorque"));
 		C05->ContractCode = FText::FromString(TEXT("ACT III-A // CTR-05: DENSE BISMUTH COUNTER-TORQUE"));
 		C05->BaseShape = EMonolithBaseShape::AsymmetricLBlock;
-		C05->DimensionsCm = FVector(28.0f, 22.0f, 76.0f);
+		C05->DimensionsCm = FVector(22.0f, 28.0f, 76.0f);
 		C05->DensityGramsPerCm3 = 1.95f;
 		C05->TargetTitheMassKg = 21.0f;
 		C05->QuotaToleranceKg = 0.90f;
@@ -670,30 +670,32 @@ UShiftProgressionDataAsset* UInspectionShiftSubsystem::BuildFallbackGreyboxProgr
 		C05->ClampFatigueCooldownSeconds = 3.0f;
 		C05->ClampSpringStiffness = 210.0f;
 		C05->ClampSpringDamping = 28.0f;
-		C05->HiddenVeins.Add(MakeVein(FVector(5.0f, -5.0f, -30.0f), FVector(9.0f, 5.0f, -16.0f), 2.4f, 17.0f));
-		C05->HiddenVeins.Add(MakeVein(FVector(-9.0f, -5.0f, 4.0f), FVector(-4.0f, 5.0f, 18.0f), 2.4f, 17.0f));
+		// Strictly inside lower-right L-foot (Y in [3.36, 14.0], Z in [-38.0, -9.12]) and upper-left stem (Y in [-14.0, 3.36], Z in [-38.0, 38.0]).
+		C05->HiddenVeins.Add(MakeVein(FVector(-4.0f, 4.8f, -29.0f), FVector(4.0f, 9.8f, -16.0f), 2.4f, 17.0f));
+		C05->HiddenVeins.Add(MakeVein(FVector(-4.0f, -9.8f, 4.0f), FVector(4.0f, -3.0f, 18.0f), 2.4f, 17.0f));
 		FallbackGreyboxContracts.Add(C05);
 	}
 
-	// Contract 06 (Act III-B): 3-Vein Stepped Core Finale (~83.56 kg initial mass).
+	// Contract 06 (Act III-B): 3-Vein YZ Stepped Core Finale (~86.44 kg initial mass across 3 front-facing horizontal tiers).
 	{
 		UMonolithContractDataAsset* C06 = NewObject<UMonolithContractDataAsset>(this, TEXT("DA_Fallback_Contract06_SteppedFinale"));
 		C06->ContractCode = FText::FromString(TEXT("ACT III-B // CTR-06: DIRECTORATE STEPPED CORE"));
 		C06->BaseShape = EMonolithBaseShape::SteppedCore;
-		C06->DimensionsCm = FVector(32.0f, 24.0f, 84.0f);
+		C06->DimensionsCm = FVector(24.0f, 34.0f, 84.0f);
 		C06->DensityGramsPerCm3 = 1.75f;
 		C06->TargetTitheMassKg = 24.0f;
-		C06->QuotaToleranceKg = 0.80f;
-		C06->MaxAllowedTareWasteKg = 28.0f;
+		C06->QuotaToleranceKg = 0.85f;
+		C06->MaxAllowedTareWasteKg = 30.0f;
 		C06->bAllowDiverterToggle = true;
 		C06->ClampMaxSafeTorqueNm = 38.0f;
 		C06->ClampFatigueGraceSeconds = 4.2f;
 		C06->ClampFatigueCooldownSeconds = 3.0f;
 		C06->ClampSpringStiffness = 220.0f;
 		C06->ClampSpringDamping = 28.0f;
-		C06->HiddenVeins.Add(MakeVein(FVector(-11.0f, -6.0f, -9.0f), FVector(-7.0f, 6.0f, 7.0f), 2.3f, 16.0f));
-		C06->HiddenVeins.Add(MakeVein(FVector(7.0f, 6.0f, -12.0f), FVector(11.0f, -6.0f, 2.0f), 2.3f, 16.0f));
-		C06->HiddenVeins.Add(MakeVein(FVector(-3.5f, -5.0f, 15.0f), FVector(3.5f, 5.0f, 24.0f), 2.2f, 16.0f));
+		// Strictly inside middle-left flange (Y in [-17,17], Z in [-14.7,14.7]), lower-right base (Y in [-10.54,10.54], Z in [-42,-14.7]), and top collar (Y in [-8.84,8.84], Z in [14.7,42]).
+		C06->HiddenVeins.Add(MakeVein(FVector(-5.0f, -12.5f, -9.0f), FVector(5.0f, -7.5f, 7.0f), 2.3f, 16.0f));
+		C06->HiddenVeins.Add(MakeVein(FVector(5.0f, 2.5f, -31.0f), FVector(-5.0f, 6.8f, -19.0f), 2.3f, 16.0f));
+		C06->HiddenVeins.Add(MakeVein(FVector(-4.5f, -4.5f, 18.5f), FVector(4.5f, 4.5f, 27.0f), 2.2f, 16.0f));
 		FallbackGreyboxContracts.Add(C06);
 	}
 

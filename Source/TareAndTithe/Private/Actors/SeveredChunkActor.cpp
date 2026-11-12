@@ -224,12 +224,13 @@ void ASeveredChunkActor::EnsureFallbackChunkMaterialsInitialized()
 		FallbackChunkOuterMID = UMaterialInstanceDynamic::Create(BaseRuntimeSurfaceMaterial, this);
 		if (IsValid(FallbackChunkOuterMID))
 		{
-			const FLinearColor OuterSlagColor(0.045f, 0.052f, 0.062f, 1.0f);
+			const FLinearColor OuterSlagColor(0.018f, 0.020f, 0.024f, 1.0f);
 			FallbackChunkOuterMID->SetVectorParameterValue(TEXT("BaseColorConst"), OuterSlagColor);
+			FallbackChunkOuterMID->SetVectorParameterValue(TEXT("Color"), OuterSlagColor);
 			FallbackChunkOuterMID->SetVectorParameterValue(TEXT("EmissiveColorConst"), FLinearColor::Black);
 			FallbackChunkOuterMID->SetScalarParameterValue(TEXT("EmissiveScale"), 0.0f);
 			FallbackChunkOuterMID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.78f);
-			FallbackChunkOuterMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.32f);
+			FallbackChunkOuterMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.25f);
 		}
 	}
 
@@ -238,13 +239,14 @@ void ASeveredChunkActor::EnsureFallbackChunkMaterialsInitialized()
 		FallbackChunkCutCapMID = UMaterialInstanceDynamic::Create(BaseRuntimeSurfaceMaterial, this);
 		if (IsValid(FallbackChunkCutCapMID))
 		{
-			const FLinearColor MoltenBaseColor(1.00f, 0.32f, 0.02f, 1.0f);
-			const FLinearColor MoltenEmissiveColor(2.25f, 0.58f, 0.03f, 1.0f);
+			const FLinearColor MoltenBaseColor(1.00f, 0.30f, 0.015f, 1.0f);
+			const FLinearColor MoltenEmissiveColor(2.35f, 0.52f, 0.02f, 1.0f);
 			FallbackChunkCutCapMID->SetVectorParameterValue(TEXT("BaseColorConst"), MoltenBaseColor);
+			FallbackChunkCutCapMID->SetVectorParameterValue(TEXT("Color"), MoltenBaseColor);
 			FallbackChunkCutCapMID->SetVectorParameterValue(TEXT("EmissiveColorConst"), MoltenEmissiveColor);
 			FallbackChunkCutCapMID->SetScalarParameterValue(TEXT("EmissiveScale"), 1.0f);
 			FallbackChunkCutCapMID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.28f);
-			FallbackChunkCutCapMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.12f);
+			FallbackChunkCutCapMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.10f);
 		}
 	}
 }
