@@ -18,6 +18,7 @@ class UMonolithContractDataAsset;
 class UMonolithSliceComponent;
 class USceneComponent;
 class UShiftProgressionDataAsset;
+class UStaticMesh;
 class UStaticMeshComponent;
 class UVeinScannerComponent;
 
@@ -81,6 +82,12 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rig")
 	TObjectPtr<UClampTorqueSolverComponent> ClampTorqueSolverComponent;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rig|Materials", meta = (DisplayName = "Outer Shell Override Material (M_SlagOuter_Master)"))
+	TObjectPtr<UMaterialInterface> OuterShellOverrideMaterial;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rig|Materials", meta = (DisplayName = "Molten Cut Cap Override Material (M_MoltenCutCap_Master)"))
+	TObjectPtr<UMaterialInterface> MoltenCutCapOverrideMaterial;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rig|Greybox")
 	FLinearColor GreyboxOuterShellColor = FLinearColor(0.08f, 0.095f, 0.115f, 1.0f);
 
@@ -95,6 +102,8 @@ protected:
 
 private:
 	void EnsureGreyboxMaterialsInitialized();
+	UMaterialInterface* ResolveEffectiveOuterMaterial() const;
+	UMaterialInterface* ResolveEffectiveCutCapMaterial() const;
 	FVector TransformRemainderCoMToMountLocal(const FVector& RemainderLocalCoMCm) const;
 	float QueryCurrentRemainderMassKg() const;
 	FVector QueryRigWorldLocation() const;
@@ -105,7 +114,10 @@ private:
 	void HandleSliverVaporized(float VaporizedMassKg, const FVector& WorldLocation);
 	void HandleClampStructuralSnap();
 
-	UPROPERTY(Transient)
+	UPROPERTY()
+	TObjectPtr<UStaticMesh> FallbackCubeMesh;
+
+	UPROPERTY()
 	TObjectPtr<UMaterialInterface> BaseGreyboxShapeMaterial;
 
 	UPROPERTY(Transient)

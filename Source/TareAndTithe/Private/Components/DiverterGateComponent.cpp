@@ -41,7 +41,14 @@ void UDiverterGateComponent::SetFlapperComponent(USceneComponent* InFlapperCompo
 
 void UDiverterGateComponent::SetFlapperComponent(UPrimitiveComponent* InFlapperPrimitive)
 {
-	FlapperComponent = InFlapperPrimitive;
+	SetFlapperPivotAndPrimitive(InFlapperPrimitive, InFlapperPrimitive);
+}
+
+void UDiverterGateComponent::SetFlapperPivotAndPrimitive(
+	USceneComponent* InPivotComponent,
+	UPrimitiveComponent* InFlapperPrimitive)
+{
+	FlapperComponent = InPivotComponent;
 	FlapperPrimitiveComponent = InFlapperPrimitive;
 	if (IsValid(FlapperComponent))
 	{
@@ -194,7 +201,7 @@ void UDiverterGateComponent::HandleTareTriggerBeginOverlap(
 	ProcessTareChuteOverlap(OtherActor);
 }
 
-void UDiverterGateComponent::ApplyFlapperRotation(bool bSweep)
+void UDiverterGateComponent::ApplyFlapperRotation(bool /*bSweep*/)
 {
 	if (!IsValid(FlapperComponent))
 	{
@@ -210,17 +217,12 @@ void UDiverterGateComponent::ApplyFlapperRotation(bool bSweep)
 	const FQuat DeltaQuat(SafeAxis, FMath::DegreesToRadians(static_cast<double>(CurrentAngleDegrees)));
 	const FQuat ComposedQuat = BaseFlapperRelativeRotation * DeltaQuat;
 
-	FHitResult SweepHit;
+	// Drive kinematic target pose via ETeleportType::None without sweep-halting so falling chunks never wedge the gate mid-swing.
 	FlapperComponent->SetRelativeRotation(
 		ComposedQuat,
-		bSweep,
-		bSweep ? &SweepHit : nullptr,
+		false,
+		nullptr,
 		ETeleportType::None);
-
-	if (bSweep && SweepHit.Component.IsValid() && SweepHit.Component->IsSimulatingPhysics())
-	{
-		SweepHit.Component->WakeAllRigidBodies();
-	}
 }
 
 void UDiverterGateComponent::WakeTouchingBodies()

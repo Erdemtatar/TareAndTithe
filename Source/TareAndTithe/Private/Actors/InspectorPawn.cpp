@@ -33,6 +33,7 @@ AInspectorPawn::AInspectorPawn()
 	PrimaryActorTick.bCanEverTick = false;
 	PrimaryActorTick.bStartWithTickEnabled = false;
 	AutoPossessPlayer = EAutoReceiveInput::Player0;
+	SetActorEnableCollision(false);
 
 	PawnRoot = CreateDefaultSubobject<USceneComponent>(TEXT("PawnRoot"));
 	SetRootComponent(PawnRoot);
@@ -42,15 +43,25 @@ AInspectorPawn::AInspectorPawn()
 	InspectorCamera->SetupAttachment(PawnRoot);
 	InspectorCamera->PrimaryComponentTick.bCanEverTick = false;
 	InspectorCamera->SetRelativeLocation(FVector(0.0, 0.0, 0.0));
-	InspectorCamera->FieldOfView = 78.0f;
+	InspectorCamera->SetRelativeRotation(FRotator(BaselineCameraPitchDegrees, 0.0f, 0.0f));
+	InspectorCamera->FieldOfView = 80.0f;
 	InspectorCamera->bUsePawnControlRotation = false;
 
 	LaserPlaneVisualPivot = CreateDefaultSubobject<USceneComponent>(TEXT("LaserPlaneVisualPivot"));
 	LaserPlaneVisualPivot->SetupAttachment(PawnRoot);
 	LaserPlaneVisualPivot->PrimaryComponentTick.bCanEverTick = false;
 
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMeshFinder(TEXT("/Engine/BasicShapes/Cube.Cube"));
+	if (CubeMeshFinder.Succeeded())
+	{
+		FallbackCubeMesh = CubeMeshFinder.Object;
+	}
+
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> PlaneMeshFinder(TEXT("/Engine/BasicShapes/Plane.Plane"));
-	UStaticMesh* PlaneMesh = PlaneMeshFinder.Succeeded() ? PlaneMeshFinder.Object : nullptr;
+	if (PlaneMeshFinder.Succeeded())
+	{
+		FallbackPlaneMesh = PlaneMeshFinder.Object;
+	}
 
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> BasicMatFinder(
 		TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
@@ -59,30 +70,51 @@ AInspectorPawn::AInspectorPawn()
 		BaseGreyboxPlaneMaterial = BasicMatFinder.Object;
 	}
 
-	auto ConfigureLaserSheetMesh = [PlaneMesh](UStaticMeshComponent* MeshComp)
+	auto ConfigureLaserVisualMesh = [this](UStaticMeshComponent* MeshComp, UStaticMesh* AssignedMesh)
 	{
 		MeshComp->PrimaryComponentTick.bCanEverTick = false;
 		MeshComp->SetSimulatePhysics(false);
+		MeshComp->SetEnableGravity(false);
 		MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		MeshComp->SetGenerateOverlapEvents(false);
 		MeshComp->SetCastShadow(false);
 		MeshComp->bReceivesDecals = false;
-		if (IsValid(PlaneMesh))
+		if (IsValid(AssignedMesh))
 		{
-			MeshComp->SetStaticMesh(PlaneMesh);
+			MeshComp->SetStaticMesh(AssignedMesh);
+		}
+		if (IsValid(BaseGreyboxPlaneMaterial))
+		{
+			MeshComp->SetMaterial(0, BaseGreyboxPlaneMaterial);
 		}
 	};
 
+	LaserFrameFrontBar = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LaserFrameFrontBar"));
+	LaserFrameFrontBar->SetupAttachment(LaserPlaneVisualPivot);
+	ConfigureLaserVisualMesh(LaserFrameFrontBar, FallbackCubeMesh);
+
+	LaserFrameBackBar = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LaserFrameBackBar"));
+	LaserFrameBackBar->SetupAttachment(LaserPlaneVisualPivot);
+	ConfigureLaserVisualMesh(LaserFrameBackBar, FallbackCubeMesh);
+
+	LaserFrameLeftBar = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LaserFrameLeftBar"));
+	LaserFrameLeftBar->SetupAttachment(LaserPlaneVisualPivot);
+	ConfigureLaserVisualMesh(LaserFrameLeftBar, FallbackCubeMesh);
+
+	LaserFrameRightBar = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LaserFrameRightBar"));
+	LaserFrameRightBar->SetupAttachment(LaserPlaneVisualPivot);
+	ConfigureLaserVisualMesh(LaserFrameRightBar, FallbackCubeMesh);
+
 	LaserSheetVisual = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LaserSheetVisual"));
 	LaserSheetVisual->SetupAttachment(LaserPlaneVisualPivot);
-	ConfigureLaserSheetMesh(LaserSheetVisual);
-	LaserSheetVisual->SetRelativeScale3D(FVector(0.66, 0.72, 1.0));
+	ConfigureLaserVisualMesh(LaserSheetVisual, FallbackPlaneMesh);
 
 	LaserSheetUndersideVisual = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LaserSheetUndersideVisual"));
 	LaserSheetUndersideVisual->SetupAttachment(LaserPlaneVisualPivot);
-	ConfigureLaserSheetMesh(LaserSheetUndersideVisual);
+	ConfigureLaserVisualMesh(LaserSheetUndersideVisual, FallbackPlaneMesh);
 	LaserSheetUndersideVisual->SetRelativeRotation(FRotator(180.0f, 0.0f, 0.0f));
-	LaserSheetUndersideVisual->SetRelativeScale3D(FVector(0.66, 0.72, 1.0));
+
+	ConfigureLaserFrameGeometry();
 
 	LaserPlaneAimComponent = CreateDefaultSubobject<ULaserPlaneAimComponent>(TEXT("LaserPlaneAimComponent"));
 	LaserCapacitorComponent = CreateDefaultSubobject<ULaserCapacitorComponent>(TEXT("LaserCapacitorComponent"));
@@ -390,34 +422,128 @@ void AInspectorPawn::ApplyMappingContextToLocalPlayer()
 	}
 }
 
-void AInspectorPawn::InitializeLaserSheetDynamicMaterial()
+void AInspectorPawn::ConfigureLaserFrameGeometry()
 {
-	UMaterialInterface* SourceMaterial = IsValid(LaserSheetOverrideMaterial)
-		? LaserSheetOverrideMaterial.Get()
-		: BaseGreyboxPlaneMaterial.Get();
+	const double SafeDepthCm = FMath::Max(20.0, static_cast<double>(LaserFrameDepthCm));
+	const double SafeWidthCm = FMath::Max(20.0, static_cast<double>(LaserFrameWidthCm));
+	const double SafeBarWidthCm = FMath::Max(0.2, static_cast<double>(LaserFrameBarWidthCm));
+	const double SafeBarThickCm = FMath::Max(0.2, static_cast<double>(LaserFrameBarThicknessCm));
 
-	if (!IsValid(SourceMaterial))
+	const double HalfDepth = 0.5 * SafeDepthCm;
+	const double HalfWidth = 0.5 * SafeWidthCm;
+	const double BarWidthScale = SafeBarWidthCm / 100.0;
+	const double BarThickScale = SafeBarThickCm / 100.0;
+	const double SpanWidthScale = (SafeWidthCm + SafeBarWidthCm) / 100.0;
+	const double SpanDepthScale = (SafeDepthCm + SafeBarWidthCm) / 100.0;
+
+	if (IsValid(LaserFrameFrontBar))
 	{
-		return;
+		LaserFrameFrontBar->SetRelativeLocation(FVector(-HalfDepth, 0.0, 0.0));
+		LaserFrameFrontBar->SetRelativeScale3D(FVector(BarWidthScale, SpanWidthScale, BarThickScale));
+	}
+	if (IsValid(LaserFrameBackBar))
+	{
+		LaserFrameBackBar->SetRelativeLocation(FVector(+HalfDepth, 0.0, 0.0));
+		LaserFrameBackBar->SetRelativeScale3D(FVector(BarWidthScale, SpanWidthScale, BarThickScale));
+	}
+	if (IsValid(LaserFrameLeftBar))
+	{
+		LaserFrameLeftBar->SetRelativeLocation(FVector(0.0, -HalfWidth, 0.0));
+		LaserFrameLeftBar->SetRelativeScale3D(FVector(SpanDepthScale, BarWidthScale, BarThickScale));
+	}
+	if (IsValid(LaserFrameRightBar))
+	{
+		LaserFrameRightBar->SetRelativeLocation(FVector(0.0, +HalfWidth, 0.0));
+		LaserFrameRightBar->SetRelativeScale3D(FVector(SpanDepthScale, BarWidthScale, BarThickScale));
 	}
 
-	LaserSheetMID = UMaterialInstanceDynamic::Create(SourceMaterial, this);
-	if (IsValid(LaserSheetMID))
+	const bool bHasCustomTranslucentSheet = IsValid(LaserSheetOverrideMaterial);
+	if (bHasCustomTranslucentSheet)
 	{
+		const FVector FullSheetScale(SafeDepthCm / 100.0, SafeWidthCm / 100.0, 1.0);
 		if (IsValid(LaserSheetVisual))
 		{
-			LaserSheetVisual->SetMaterial(0, LaserSheetMID);
+			LaserSheetVisual->SetRelativeLocation(FVector(0.0, 0.0, 0.02));
+			LaserSheetVisual->SetRelativeScale3D(FullSheetScale);
 		}
 		if (IsValid(LaserSheetUndersideVisual))
 		{
-			LaserSheetUndersideVisual->SetMaterial(0, LaserSheetMID);
+			LaserSheetUndersideVisual->SetRelativeLocation(FVector(0.0, 0.0, -0.02));
+			LaserSheetUndersideVisual->SetRelativeScale3D(FullSheetScale);
+		}
+	}
+	else
+	{
+		// Zero-asset fallback: thin two-sided front guide ribbon behind the front frame bar so opaque BasicShapeMaterial never occludes the monolith.
+		const double GuideStripDepthCm = 1.6;
+		const double GuideStripX = -HalfDepth + (0.5 * SafeBarWidthCm) + (0.5 * GuideStripDepthCm);
+		const FVector GuideRibbonScale(GuideStripDepthCm / 100.0, SafeWidthCm / 100.0, 1.0);
+		if (IsValid(LaserSheetVisual))
+		{
+			LaserSheetVisual->SetRelativeLocation(FVector(GuideStripX, 0.0, 0.02));
+			LaserSheetVisual->SetRelativeScale3D(GuideRibbonScale);
+		}
+		if (IsValid(LaserSheetUndersideVisual))
+		{
+			LaserSheetUndersideVisual->SetRelativeLocation(FVector(GuideStripX, 0.0, -0.02));
+			LaserSheetUndersideVisual->SetRelativeScale3D(GuideRibbonScale);
+		}
+	}
+}
+
+void AInspectorPawn::InitializeLaserSheetDynamicMaterial()
+{
+	ConfigureLaserFrameGeometry();
+
+	UMaterialInterface* SheetSourceMaterial = IsValid(LaserSheetOverrideMaterial)
+		? LaserSheetOverrideMaterial.Get()
+		: BaseGreyboxPlaneMaterial.Get();
+
+	if (IsValid(SheetSourceMaterial))
+	{
+		LaserSheetMID = UMaterialInstanceDynamic::Create(SheetSourceMaterial, this);
+		if (IsValid(LaserSheetMID))
+		{
+			if (IsValid(LaserSheetVisual))
+			{
+				LaserSheetVisual->SetMaterial(0, LaserSheetMID);
+			}
+			if (IsValid(LaserSheetUndersideVisual))
+			{
+				LaserSheetUndersideVisual->SetMaterial(0, LaserSheetMID);
+			}
+		}
+	}
+
+	UMaterialInterface* FrameSourceMaterial = IsValid(BaseGreyboxPlaneMaterial)
+		? BaseGreyboxPlaneMaterial.Get()
+		: SheetSourceMaterial;
+
+	if (IsValid(FrameSourceMaterial))
+	{
+		LaserFrameMID = UMaterialInstanceDynamic::Create(FrameSourceMaterial, this);
+		if (IsValid(LaserFrameMID))
+		{
+			UStaticMeshComponent* const FrameBars[4] = {
+				LaserFrameFrontBar,
+				LaserFrameBackBar,
+				LaserFrameLeftBar,
+				LaserFrameRightBar
+			};
+			for (UStaticMeshComponent* BarComp : FrameBars)
+			{
+				if (IsValid(BarComp))
+				{
+					BarComp->SetMaterial(0, LaserFrameMID);
+				}
+			}
 		}
 	}
 }
 
 void AInspectorPawn::UpdateLaserSheetMaterialVisuals()
 {
-	if (!IsValid(LaserSheetMID))
+	if (!IsValid(LaserSheetMID) && !IsValid(LaserFrameMID))
 	{
 		return;
 	}
@@ -445,12 +571,22 @@ void AInspectorPawn::UpdateLaserSheetMaterialVisuals()
 	const float EmissiveBoost = 1.0f + (CachedVeinProximityNormalized * 1.25f) + (CachedLaserChargeNormalized * 3.0f);
 	const FLinearColor FinalColor = FMath::Lerp(BaseHue, CapacitorHotWhiteColor, ChargeBlend) * EmissiveBoost;
 
-	LaserSheetMID->SetVectorParameterValue(TEXT("Color"), FinalColor);
-	LaserSheetMID->SetVectorParameterValue(TEXT("BaseColor"), FinalColor);
-	LaserSheetMID->SetVectorParameterValue(TEXT("EmissiveColor"), FinalColor);
-	LaserSheetMID->SetScalarParameterValue(TEXT("Opacity"), bCachedIntersectsMonolith ? 0.42f : 0.18f);
-	LaserSheetMID->SetScalarParameterValue(TEXT("VeinProximity"), CachedVeinProximityNormalized);
-	LaserSheetMID->SetScalarParameterValue(TEXT("LaserCharge"), CachedLaserChargeNormalized);
+	auto ApplyParameters = [&](UMaterialInstanceDynamic* TargetMID, float OpacityScalar)
+	{
+		if (!IsValid(TargetMID))
+		{
+			return;
+		}
+		TargetMID->SetVectorParameterValue(TEXT("Color"), FinalColor);
+		TargetMID->SetVectorParameterValue(TEXT("BaseColor"), FinalColor);
+		TargetMID->SetVectorParameterValue(TEXT("EmissiveColor"), FinalColor);
+		TargetMID->SetScalarParameterValue(TEXT("Opacity"), OpacityScalar);
+		TargetMID->SetScalarParameterValue(TEXT("VeinProximity"), CachedVeinProximityNormalized);
+		TargetMID->SetScalarParameterValue(TEXT("LaserCharge"), CachedLaserChargeNormalized);
+	};
+
+	ApplyParameters(LaserSheetMID, bCachedIntersectsMonolith ? 0.42f : 0.18f);
+	ApplyParameters(LaserFrameMID, 1.0f);
 }
 
 void AInspectorPawn::UpdateCameraParallaxFromAim()
@@ -472,8 +608,8 @@ void AInspectorPawn::UpdateCameraParallaxFromAim()
 	const float TargetYawDeg = FMath::Clamp(NormH * MaxCameraParallaxYawDegrees, -MaxCameraParallaxYawDegrees, MaxCameraParallaxYawDegrees);
 	const float TargetPitchDeg = FMath::Clamp(NormV * MaxCameraParallaxPitchDegrees, -MaxCameraParallaxPitchDegrees, MaxCameraParallaxPitchDegrees);
 
-	// Subtle baseline downward look (-6 deg) plus clamped aim-tracking parallax.
-	InspectorCamera->SetRelativeRotation(FRotator(TargetPitchDeg - 6.0f, TargetYawDeg, 0.0f));
+	// Subtle baseline downward look plus clamped aim-tracking parallax.
+	InspectorCamera->SetRelativeRotation(FRotator(TargetPitchDeg + BaselineCameraPitchDegrees, TargetYawDeg, 0.0f));
 }
 
 void AInspectorPawn::ApplyNativeScalabilityPreset(int32 QualityLevel, float TsrResolutionScalePercent)

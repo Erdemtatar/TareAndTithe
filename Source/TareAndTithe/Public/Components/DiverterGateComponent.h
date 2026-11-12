@@ -27,6 +27,7 @@ public:
 
 	void SetFlapperComponent(USceneComponent* InFlapperComponent);
 	void SetFlapperComponent(UPrimitiveComponent* InFlapperPrimitive);
+	void SetFlapperPivotAndPrimitive(USceneComponent* InPivotComponent, UPrimitiveComponent* InFlapperPrimitive);
 	USceneComponent* GetFlapperComponent() const { return FlapperComponent; }
 
 	void BindTareChuteTrigger(UPrimitiveComponent* InTareTriggerComponent);

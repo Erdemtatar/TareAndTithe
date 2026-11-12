@@ -476,18 +476,31 @@ bool UMonolithSliceComponent::InitializeMonolithFromContract(
 	RemainderMeshComponent->SetMaterial(0, ActiveOuterMaterial);
 	RemainderMeshComponent->SetMaterial(1, ActiveCutCapMaterial);
 
+	if (!InitialLocalBounds.IsEmpty())
+	{
+		CurrentRemainderLocalBounds = FBox(
+			static_cast<FVector>(InitialLocalBounds.Min),
+			static_cast<FVector>(InitialLocalBounds.Max));
+	}
+	else
+	{
+		CurrentRemainderLocalBounds = FBox(ForceInit);
+	}
+
 	if (bAutoFitClampGripBoxToTopOfContract && !InitialLocalBounds.IsEmpty())
 	{
 		const FVector3d BoxSize = InitialLocalBounds.Max - InitialLocalBounds.Min;
 		const FVector3d BoxCenter = InitialLocalBounds.Center();
 		const double HalfJawX = FMath::Max(4.0, 0.5 * BoxSize.X * static_cast<double>(AutoFitJawHorizontalCoverageRatio));
 		const double HalfJawY = FMath::Max(4.0, 0.5 * BoxSize.Y * static_cast<double>(AutoFitJawHorizontalCoverageRatio));
-		const double JawEmbedZ = FMath::Max(3.0, BoxSize.Z * static_cast<double>(AutoFitJawVerticalDepthRatio));
+		const double JawEmbedZ = FMath::Max(5.0, BoxSize.Z * static_cast<double>(AutoFitJawVerticalDepthRatio));
 
 		ClampGripBoxLocal = FBox(
 			FVector(BoxCenter.X - HalfJawX, BoxCenter.Y - HalfJawY, InitialLocalBounds.Max.Z - JawEmbedZ),
 			FVector(BoxCenter.X + HalfJawX, BoxCenter.Y + HalfJawY, InitialLocalBounds.Max.Z + 8.0));
 	}
+
+	RemainderMeshComponent->UpdateBounds();
 
 	const double ClampedVolumeCm3 = FMath::Max(0.0, InitialVolumeCm3);
 	const double DensityKgPerCm3 = static_cast<double>(Contract->DensityGramsPerCm3) * 1.0e-3;
@@ -821,17 +834,24 @@ FSliceResultSummary UMonolithSliceComponent::ExecuteSlice(
 		const FVector2d RemVolArea = UE::Geometry::TMeshQueries<UE::Geometry::FDynamicMesh3>::GetVolumeAreaCenter(
 			MergedRemainderMesh,
 			RemLocalCoMCm);
+		const UE::Geometry::FAxisAlignedBox3d RemBounds = MergedRemainderMesh.GetBounds();
 
 		const double RemVolumeCm3 = FMath::Max(0.0, RemVolArea.X);
 		CurrentRemainderMassKg = static_cast<float>(RemVolumeCm3 * DensityKgPerCm3);
 		CurrentRemainderLocalCoMCm = static_cast<FVector>(RemLocalCoMCm);
+		CurrentRemainderLocalBounds = RemBounds.IsEmpty()
+			? FBox(ForceInit)
+			: FBox(static_cast<FVector>(RemBounds.Min), static_cast<FVector>(RemBounds.Max));
 		RemainderDynMesh->SetMesh(MoveTemp(MergedRemainderMesh));
+		RemainderMeshComponent->UpdateBounds();
 	}
 	else
 	{
 		CurrentRemainderMassKg = 0.0f;
 		CurrentRemainderLocalCoMCm = FVector::ZeroVector;
+		CurrentRemainderLocalBounds = FBox(ForceInit);
 		RemainderDynMesh->Reset();
+		RemainderMeshComponent->UpdateBounds();
 	}
 
 	// Step 8: Sliver Vaporization vs. CoM-Recentered Pooled Chaos Chunk Spawn.

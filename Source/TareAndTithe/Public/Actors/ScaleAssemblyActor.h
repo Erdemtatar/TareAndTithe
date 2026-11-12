@@ -17,6 +17,7 @@ class UMonolithContractDataAsset;
 class UScaleWeighingComponent;
 class USceneComponent;
 class UShiftProgressionDataAsset;
+class UStaticMesh;
 class UStaticMeshComponent;
 class UTextRenderComponent;
 
@@ -66,7 +67,22 @@ protected:
 	TObjectPtr<UStaticMeshComponent> PanPlatform;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly")
+	TObjectPtr<UBoxComponent> PanRimFrontBox;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly")
+	TObjectPtr<UBoxComponent> PanRimBackBox;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly")
+	TObjectPtr<UBoxComponent> PanRimLeftBox;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly")
+	TObjectPtr<UBoxComponent> PanRimRightBox;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly")
 	TObjectPtr<UBoxComponent> PanTriggerBox;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly")
+	TObjectPtr<USceneComponent> DiverterFlapperPivot;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly")
 	TObjectPtr<UStaticMeshComponent> DiverterFlapperVisual;
@@ -133,6 +149,9 @@ private:
 	void HandleScaleSettledChanged(bool bIsSettled, float SettledPanMassKg);
 	void HandleChunkRoutedToTare(AActor* PayloadActor, float MassKg, bool bWasContaminated);
 
-	UPROPERTY(Transient)
+	UPROPERTY()
+	TObjectPtr<UStaticMesh> FallbackCubeMesh;
+
+	UPROPERTY()
 	TObjectPtr<UMaterialInterface> BaseGreyboxShapeMaterial;
 };

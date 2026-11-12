@@ -46,6 +46,7 @@ public:
 
 	bool DoesPlaneIntersectRemainder(const FVector& PlaneOriginWorld, const FVector& PlaneNormalWorld) const;
 	FBox GetRemainderWorldBounds() const;
+	FBox GetRemainderLocalBounds() const { return CurrentRemainderLocalBounds; }
 
 	float GetRemainderMassKg() const { return CurrentRemainderMassKg; }
 	FVector GetRemainderLocalCoMCm() const { return CurrentRemainderLocalCoMCm; }
@@ -59,16 +60,16 @@ protected:
 	virtual void BeginPlay() override;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monolith|Clamp")
-	FBox ClampGripBoxLocal = FBox(FVector(-12.0, -12.0, 42.0), FVector(12.0, 12.0, 58.0));
+	FBox ClampGripBoxLocal = FBox(FVector(-12.0, -12.0, 24.0), FVector(12.0, 12.0, 44.0));
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monolith|Clamp")
 	bool bAutoFitClampGripBoxToTopOfContract = true;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Monolith|Clamp", meta = (ClampMin = "0.10", ClampMax = "0.90"))
-	float AutoFitJawHorizontalCoverageRatio = 0.50f;
+	float AutoFitJawHorizontalCoverageRatio = 0.65f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Monolith|Clamp", meta = (ClampMin = "0.02", ClampMax = "0.35"))
-	float AutoFitJawVerticalDepthRatio = 0.08f;
+	float AutoFitJawVerticalDepthRatio = 0.175f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Monolith|Defaults", meta = (ClampMin = "5.0", ClampMax = "250.0"))
 	float FallbackMinSliverVolumeCm3 = 25.0f;
@@ -105,4 +106,5 @@ private:
 
 	float CurrentRemainderMassKg = 0.0f;
 	FVector CurrentRemainderLocalCoMCm = FVector::ZeroVector;
+	FBox CurrentRemainderLocalBounds = FBox(ForceInit);
 };

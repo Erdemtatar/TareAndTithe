@@ -6,7 +6,9 @@
 #include "GameFramework/GameModeBase.h"
 #include "TareTitheGameMode.generated.h"
 
+class UMaterialInterface;
 class UShiftProgressionDataAsset;
+class UStaticMesh;
 
 UCLASS()
 class TAREANDTITHE_API ATareTitheGameMode : public AGameModeBase
@@ -27,19 +29,22 @@ protected:
 	bool bSpawnGreyboxCellIfStationsMissing = true;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell")
-	FVector DefaultInspectorLocation = FVector(0.0, 0.0, 150.0);
+	FVector DefaultInspectorLocation = FVector(0.0, 0.0, 160.0);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell")
-	FVector DefaultMonolithRigLocation = FVector(220.0, 0.0, 235.0);
+	FVector DefaultMonolithRigLocation = FVector(260.0, 0.0, 236.0);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell")
-	FVector DefaultScaleAssemblyLocation = FVector(220.0, 0.0, 20.0);
+	FVector DefaultScaleAssemblyLocation = FVector(260.0, 0.0, 14.0);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell")
-	FVector DefaultStrayCatchLocation = FVector(220.0, 0.0, -35.0);
+	FVector DefaultStrayCatchLocation = FVector(260.0, 0.0, -35.0);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell")
-	FVector DefaultDirectorBoothLocation = FVector(410.0, 0.0, 255.0);
+	FVector DefaultDirectorBoothLocation = FVector(430.0, 0.0, 258.0);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell")
+	FLinearColor GreyboxPitEnclosureColor = FLinearColor(0.025f, 0.028f, 0.034f, 1.0f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Scalability", meta = (ClampMin = "0", ClampMax = "3"))
 	int32 BaselineScalabilityLevel = 2;
@@ -50,4 +55,11 @@ protected:
 private:
 	void ApplyBaseline6GbVramScalability();
 	void SpawnMissingGreyboxStationsIfNeeded();
+	void SpawnGreyboxPitEnclosureAndLighting(UWorld* World);
+
+	UPROPERTY()
+	TObjectPtr<UStaticMesh> GreyboxCellCubeMesh;
+
+	UPROPERTY()
+	TObjectPtr<UMaterialInterface> GreyboxCellBaseMaterial;
 };

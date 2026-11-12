@@ -23,6 +23,7 @@ class UMonolithContractDataAsset;
 class USceneComponent;
 class UShiftProgressionDataAsset;
 class USoundBase;
+class UStaticMesh;
 class UStaticMeshComponent;
 
 UCLASS()
@@ -59,6 +60,18 @@ protected:
 	TObjectPtr<USceneComponent> LaserPlaneVisualPivot;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inspector|Laser")
+	TObjectPtr<UStaticMeshComponent> LaserFrameFrontBar;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inspector|Laser")
+	TObjectPtr<UStaticMeshComponent> LaserFrameBackBar;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inspector|Laser")
+	TObjectPtr<UStaticMeshComponent> LaserFrameLeftBar;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inspector|Laser")
+	TObjectPtr<UStaticMeshComponent> LaserFrameRightBar;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inspector|Laser")
 	TObjectPtr<UStaticMeshComponent> LaserSheetVisual;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inspector|Laser")
@@ -85,8 +98,23 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Audio")
 	TObjectPtr<USoundBase> ImpulseMetaSoundAsset;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inspector|Laser", meta = (DisplayName = "Laser Sheet Override Material (M_LaserSheet_Master)"))
 	TObjectPtr<UMaterialInterface> LaserSheetOverrideMaterial;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser", meta = (ClampMin = "20.0", ClampMax = "120.0"))
+	float LaserFrameDepthCm = 54.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser", meta = (ClampMin = "20.0", ClampMax = "120.0"))
+	float LaserFrameWidthCm = 58.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser", meta = (ClampMin = "0.2", ClampMax = "3.0"))
+	float LaserFrameBarWidthCm = 0.8f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser", meta = (ClampMin = "0.2", ClampMax = "2.0"))
+	float LaserFrameBarThicknessCm = 0.5f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Camera", meta = (ClampMin = "-25.0", ClampMax = "5.0"))
+	float BaselineCameraPitchDegrees = -7.5f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Camera", meta = (ClampMin = "0.0", ClampMax = "25.0"))
 	float MaxCameraParallaxYawDegrees = 12.0f;
@@ -145,6 +173,7 @@ protected:
 private:
 	void EnsureInputActionsAndMappingInitialized();
 	void ApplyMappingContextToLocalPlayer();
+	void ConfigureLaserFrameGeometry();
 	void InitializeLaserSheetDynamicMaterial();
 	void UpdateLaserSheetMaterialVisuals();
 	void UpdateCameraParallaxFromAim();
@@ -183,11 +212,20 @@ private:
 	void Input_ScalabilityHigh(const FInputActionValue& Value);
 	void Input_ScalabilityEpic(const FInputActionValue& Value);
 
-	UPROPERTY(Transient)
+	UPROPERTY()
+	TObjectPtr<UStaticMesh> FallbackCubeMesh;
+
+	UPROPERTY()
+	TObjectPtr<UStaticMesh> FallbackPlaneMesh;
+
+	UPROPERTY()
 	TObjectPtr<UMaterialInterface> BaseGreyboxPlaneMaterial;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> LaserSheetMID;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> LaserFrameMID;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputMappingContext> ActiveMappingContext;

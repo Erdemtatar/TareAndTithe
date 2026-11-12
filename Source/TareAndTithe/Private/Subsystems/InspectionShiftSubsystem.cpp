@@ -662,7 +662,7 @@ UShiftProgressionDataAsset* UInspectionShiftSubsystem::BuildFallbackGreyboxProgr
 		C05->DensityGramsPerCm3 = 1.95f;
 		C05->TargetTitheMassKg = 21.0f;
 		C05->QuotaToleranceKg = 0.90f;
-		C05->MaxAllowedTareWasteKg = 24.0f;
+		C05->MaxAllowedTareWasteKg = 28.0f;
 		C05->bAllowDiverterToggle = true;
 		C05->ClampMaxSafeTorqueNm = 32.0f;
 		C05->ClampFatigueGraceSeconds = 4.5f;

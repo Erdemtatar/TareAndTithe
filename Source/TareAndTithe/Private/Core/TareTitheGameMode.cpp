@@ -6,20 +6,42 @@
 #include "Actors/MonolithRigActor.h"
 #include "Actors/ScaleAssemblyActor.h"
 #include "Actors/StrayFloorCatchActor.h"
+#include "Components/PointLightComponent.h"
+#include "Components/SpotLightComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Data/ShiftProgressionDataAsset.h"
 #include "Engine/PointLight.h"
+#include "Engine/SpotLight.h"
+#include "Engine/StaticMesh.h"
+#include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
-#include "Components/PointLightComponent.h"
 #include "GameFramework/GameUserSettings.h"
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "Materials/MaterialInterface.h"
+#include "Math/RotationMatrix.h"
 #include "Subsystems/InspectionShiftSubsystem.h"
+#include "UObject/ConstructorHelpers.h"
 
 ATareTitheGameMode::ATareTitheGameMode()
 {
 	PrimaryActorTick.bCanEverTick = false;
 	PrimaryActorTick.bStartWithTickEnabled = false;
 	DefaultPawnClass = AInspectorPawn::StaticClass();
+
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMeshFinder(TEXT("/Engine/BasicShapes/Cube.Cube"));
+	if (CubeMeshFinder.Succeeded())
+	{
+		GreyboxCellCubeMesh = CubeMeshFinder.Object;
+	}
+
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> BasicMatFinder(
+		TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
+	if (BasicMatFinder.Succeeded())
+	{
+		GreyboxCellBaseMaterial = BasicMatFinder.Object;
+	}
 }
 
 void ATareTitheGameMode::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)
@@ -152,20 +174,116 @@ void ATareTitheGameMode::SpawnMissingGreyboxStationsIfNeeded()
 			SpawnParams);
 	}
 
-	// Provide overhead industrial cell illumination when launching in an unlit blank map.
-	APointLight* CellWorkLight = World->SpawnActor<APointLight>(
-		APointLight::StaticClass(),
-		FTransform(FRotator::ZeroRotator, FVector(120.0, -40.0, 290.0), FVector::OneVector),
-		SpawnParams);
-	if (IsValid(CellWorkLight) && IsValid(CellWorkLight->PointLightComponent))
-	{
-		CellWorkLight->PointLightComponent->SetIntensity(6500.0f);
-		CellWorkLight->PointLightComponent->SetAttenuationRadius(950.0f);
-		CellWorkLight->PointLightComponent->SetLightColor(FLinearColor(0.92f, 0.95f, 1.0f, 1.0f));
-	}
+	SpawnGreyboxPitEnclosureAndLighting(World);
 
 	if (ShiftSubsystem->GetCurrentPhase() == EShiftPhase::WaitingForStations)
 	{
 		ShiftSubsystem->StartShiftFromContract(0);
+	}
+}
+
+void ATareTitheGameMode::SpawnGreyboxPitEnclosureAndLighting(UWorld* World)
+{
+	if (!IsValid(World))
+	{
+		return;
+	}
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	UMaterialInstanceDynamic* PitMID = IsValid(GreyboxCellBaseMaterial)
+		? UMaterialInstanceDynamic::Create(GreyboxCellBaseMaterial, this)
+		: nullptr;
+	if (IsValid(PitMID))
+	{
+		PitMID->SetVectorParameterValue(TEXT("Color"), GreyboxPitEnclosureColor);
+	}
+
+	auto SpawnEnclosureSlab = [&](const FVector& Location, const FVector& Scale3D, bool bEnableSolidCatchCollision)
+	{
+		if (!IsValid(GreyboxCellCubeMesh))
+		{
+			return;
+		}
+
+		AStaticMeshActor* SlabActor = World->SpawnActor<AStaticMeshActor>(
+			AStaticMeshActor::StaticClass(),
+			FTransform(FRotator::ZeroRotator, Location, FVector::OneVector),
+			SpawnParams);
+		if (!IsValid(SlabActor))
+		{
+			return;
+		}
+
+		UStaticMeshComponent* MeshComp = SlabActor->GetStaticMeshComponent();
+		if (!IsValid(MeshComp))
+		{
+			return;
+		}
+
+		MeshComp->PrimaryComponentTick.bCanEverTick = false;
+		MeshComp->SetMobility(EComponentMobility::Movable);
+		MeshComp->SetStaticMesh(GreyboxCellCubeMesh);
+		MeshComp->SetWorldScale3D(Scale3D);
+		MeshComp->SetGenerateOverlapEvents(false);
+		if (bEnableSolidCatchCollision)
+		{
+			MeshComp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			MeshComp->SetCollisionObjectType(ECC_WorldStatic);
+			MeshComp->SetCollisionResponseToAllChannels(ECR_Block);
+		}
+		else
+		{
+			MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		}
+
+		if (IsValid(PitMID))
+		{
+			MeshComp->SetMaterial(0, PitMID);
+		}
+	};
+
+	const double DropX = DefaultScaleAssemblyLocation.X;
+	const double DropY = DefaultScaleAssemblyLocation.Y;
+
+	// Solid pit floor sits well below AStrayFloorCatchActor (-35 cm) so stray chunks trigger StrayFloorCatch first while snapped remainders land solidly.
+	SpawnEnclosureSlab(FVector(DropX, DropY, -95.0), FVector(9.0, 6.0, 0.20), true);
+	SpawnEnclosureSlab(FVector(DropX + 270.0, DropY, 150.0), FVector(0.20, 6.0, 5.20), false);
+	SpawnEnclosureSlab(FVector(DropX, DropY - 260.0, 150.0), FVector(9.0, 0.20, 5.20), false);
+	SpawnEnclosureSlab(FVector(DropX, DropY + 260.0, 150.0), FVector(9.0, 0.20, 5.20), false);
+	SpawnEnclosureSlab(FVector(DropX, DropY, 395.0), FVector(9.0, 6.0, 0.20), false);
+
+	// Overhead key spotlight aimed directly down the monolith & scale drop column.
+	const FVector KeySpotLocation(DropX - 85.0, DropY - 25.0, 335.0);
+	const FVector KeySpotTarget(DropX, DropY, 120.0);
+	const FRotator KeySpotRotation = FRotationMatrix::MakeFromX(KeySpotTarget - KeySpotLocation).Rotator();
+
+	ASpotLight* CellKeySpotLight = World->SpawnActor<ASpotLight>(
+		ASpotLight::StaticClass(),
+		FTransform(KeySpotRotation, KeySpotLocation, FVector::OneVector),
+		SpawnParams);
+	if (IsValid(CellKeySpotLight) && IsValid(CellKeySpotLight->SpotLightComponent))
+	{
+		CellKeySpotLight->SpotLightComponent->SetMobility(EComponentMobility::Movable);
+		CellKeySpotLight->SpotLightComponent->SetIntensity(8500.0f);
+		CellKeySpotLight->SpotLightComponent->SetAttenuationRadius(1100.0f);
+		CellKeySpotLight->SpotLightComponent->SetInnerConeAngle(30.0f);
+		CellKeySpotLight->SpotLightComponent->SetOuterConeAngle(62.0f);
+		CellKeySpotLight->SpotLightComponent->SetLightColor(FLinearColor(0.95f, 0.96f, 1.0f, 1.0f));
+	}
+
+	// Front fill point light for crisp stencil readout & underside bevel legibility without extra shadow map cost.
+	APointLight* CellFillLight = World->SpawnActor<APointLight>(
+		APointLight::StaticClass(),
+		FTransform(FRotator::ZeroRotator, FVector(95.0, DropY + 40.0, 215.0), FVector::OneVector),
+		SpawnParams);
+	if (IsValid(CellFillLight) && IsValid(CellFillLight->PointLightComponent))
+	{
+		CellFillLight->PointLightComponent->SetMobility(EComponentMobility::Movable);
+		CellFillLight->PointLightComponent->SetIntensity(4200.0f);
+		CellFillLight->PointLightComponent->SetAttenuationRadius(950.0f);
+		CellFillLight->PointLightComponent->SetCastShadows(false);
+		CellFillLight->PointLightComponent->SetLightColor(FLinearColor(0.88f, 0.93f, 1.0f, 1.0f));
 	}
 }

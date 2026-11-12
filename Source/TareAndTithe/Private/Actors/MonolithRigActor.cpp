@@ -36,13 +36,14 @@ AMonolithRigActor::AMonolithRigActor()
 	ClampJawVisual->PrimaryComponentTick.bCanEverTick = false;
 	ClampJawVisual->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	ClampJawVisual->SetGenerateOverlapEvents(false);
-	ClampJawVisual->SetRelativeLocation(FVector(0.0, 0.0, 2.0));
-	ClampJawVisual->SetRelativeScale3D(FVector(0.30, 0.30, 0.14));
+	ClampJawVisual->SetRelativeLocation(FVector(0.0, 0.0, -2.0));
+	ClampJawVisual->SetRelativeScale3D(FVector(0.30, 0.30, 0.16));
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMeshFinder(TEXT("/Engine/BasicShapes/Cube.Cube"));
 	if (CubeMeshFinder.Succeeded())
 	{
-		ClampJawVisual->SetStaticMesh(CubeMeshFinder.Object);
+		FallbackCubeMesh = CubeMeshFinder.Object;
+		ClampJawVisual->SetStaticMesh(FallbackCubeMesh);
 	}
 
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> BasicMatFinder(
@@ -50,6 +51,7 @@ AMonolithRigActor::AMonolithRigActor()
 	if (BasicMatFinder.Succeeded())
 	{
 		BaseGreyboxShapeMaterial = BasicMatFinder.Object;
+		ClampJawVisual->SetMaterial(0, BaseGreyboxShapeMaterial);
 	}
 
 	RemainderMeshComponent = CreateDefaultSubobject<UDynamicMeshComponent>(TEXT("RemainderMeshComponent"));
@@ -74,7 +76,7 @@ void AMonolithRigActor::BeginPlay()
 	if (IsValid(MonolithSliceComponent))
 	{
 		MonolithSliceComponent->SetRemainderMeshComponent(RemainderMeshComponent);
-		MonolithSliceComponent->SetFallbackMaterials(FallbackOuterMID, FallbackCutCapMID);
+		MonolithSliceComponent->SetFallbackMaterials(ResolveEffectiveOuterMaterial(), ResolveEffectiveCutCapMaterial());
 		MonolithSliceComponent->OnChunkSpawnedFromSlice.AddUObject(this, &AMonolithRigActor::HandleChunkSpawnedFromSlice);
 		MonolithSliceComponent->OnSliverVaporized.AddUObject(this, &AMonolithRigActor::HandleSliverVaporized);
 	}
@@ -216,27 +218,17 @@ bool AMonolithRigActor::LoadContractOnRig(
 	}
 
 	EnsureGreyboxMaterialsInitialized();
-	MonolithSliceComponent->SetFallbackMaterials(FallbackOuterMID, FallbackCutCapMID);
+	MonolithSliceComponent->SetFallbackMaterials(ResolveEffectiveOuterMaterial(), ResolveEffectiveCutCapMaterial());
 
 	// Restore kinematic hierarchy in case previous contract ended via ClampStructuralSnap freefall.
 	RemainderMeshComponent->SetSimulatePhysics(false);
+	RemainderMeshComponent->SetEnableGravity(false);
 	RemainderMeshComponent->SetGenerateOverlapEvents(false);
 	RemainderMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	RemainderMeshComponent->AttachToComponent(
 		TiltingMountComponent,
 		FAttachmentTransformRules::SnapToTargetNotIncludingScale);
-
-	const double HalfHeightCm = 0.5 * FMath::Max(5.0, static_cast<double>(Contract->DimensionsCm.Z));
-	RemainderMeshComponent->SetRelativeLocationAndRotation(FVector(0.0, 0.0, -HalfHeightCm), FQuat::Identity);
 	RemainderMeshComponent->SetRelativeScale3D(FVector::OneVector);
-
-	if (IsValid(ClampJawVisual))
-	{
-		const double JawScaleX = FMath::Max(0.12, (static_cast<double>(Contract->DimensionsCm.X) * 0.62) / 100.0);
-		const double JawScaleY = FMath::Max(0.12, (static_cast<double>(Contract->DimensionsCm.Y) * 0.62) / 100.0);
-		ClampJawVisual->SetRelativeLocation(FVector(0.0, 0.0, 2.0));
-		ClampJawVisual->SetRelativeScale3D(FVector(JawScaleX, JawScaleY, 0.14));
-	}
 
 	ClampTorqueSolverComponent->SetNeutralPivotTransform(ClampPivotRoot->GetComponentTransform());
 	ClampTorqueSolverComponent->ResetClampState();
@@ -244,6 +236,22 @@ bool AMonolithRigActor::LoadContractOnRig(
 	if (!MonolithSliceComponent->InitializeMonolithFromContract(Contract, ShiftConfig))
 	{
 		return false;
+	}
+
+	// Align top of generated/imported mesh (whether Center or Base origin) cleanly inside TiltingMountComponent's clamp jaws.
+	const FBox LocalBounds = MonolithSliceComponent->GetRemainderLocalBounds();
+	const double TopLocalZ = LocalBounds.IsValid
+		? LocalBounds.Max.Z
+		: (0.5 * FMath::Max(5.0, static_cast<double>(Contract->DimensionsCm.Z)));
+	RemainderMeshComponent->SetRelativeLocationAndRotation(FVector(0.0, 0.0, -TopLocalZ), FQuat::Identity);
+	RemainderMeshComponent->UpdateBounds();
+
+	if (IsValid(ClampJawVisual))
+	{
+		const double JawScaleX = FMath::Max(0.14, (static_cast<double>(Contract->DimensionsCm.X) * 0.68) / 100.0);
+		const double JawScaleY = FMath::Max(0.14, (static_cast<double>(Contract->DimensionsCm.Y) * 0.68) / 100.0);
+		ClampJawVisual->SetRelativeLocation(FVector(0.0, 0.0, -2.0));
+		ClampJawVisual->SetRelativeScale3D(FVector(JawScaleX, JawScaleY, 0.16));
 	}
 
 	VeinScannerComponent->InitializeFromContract(Contract);
@@ -290,6 +298,16 @@ void AMonolithRigActor::EnsureGreyboxMaterialsInitialized()
 			ClampJawVisual->SetMaterial(0, ClampJawMID);
 		}
 	}
+}
+
+UMaterialInterface* AMonolithRigActor::ResolveEffectiveOuterMaterial() const
+{
+	return IsValid(OuterShellOverrideMaterial) ? OuterShellOverrideMaterial.Get() : FallbackOuterMID.Get();
+}
+
+UMaterialInterface* AMonolithRigActor::ResolveEffectiveCutCapMaterial() const
+{
+	return IsValid(MoltenCutCapOverrideMaterial) ? MoltenCutCapOverrideMaterial.Get() : FallbackCutCapMID.Get();
 }
 
 FVector AMonolithRigActor::TransformRemainderCoMToMountLocal(const FVector& RemainderLocalCoMCm) const
@@ -357,15 +375,17 @@ void AMonolithRigActor::HandleSliverVaporized(float VaporizedMassKg, const FVect
 
 void AMonolithRigActor::HandleClampStructuralSnap()
 {
-	// Drop snapped remainder under Chaos freefall without overlap generation during the 1.2s fault reset window.
+	// Detach and drop snapped remainder under bounded convex Chaos freefall without overlap generation during the fault reset window.
 	if (IsValid(RemainderMeshComponent))
 	{
+		RemainderMeshComponent->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+
 		FGeometryScriptCollisionFromMeshOptions SnapCollisionOptions;
 		SnapCollisionOptions.bEmitTransaction = false;
 		SnapCollisionOptions.Method = EGeometryScriptCollisionGenerationMethod::ConvexHulls;
 		SnapCollisionOptions.bSimplifyHulls = true;
-		SnapCollisionOptions.MaxConvexHullsPerMesh = 1;
-		SnapCollisionOptions.ConvexHullTargetFaceCount = 12;
+		SnapCollisionOptions.MaxConvexHullsPerMesh = 2;
+		SnapCollisionOptions.ConvexHullTargetFaceCount = 16;
 
 		UGeometryScriptLibrary_CollisionFunctions::SetDynamicMeshCollisionFromMesh(
 			RemainderMeshComponent->GetDynamicMesh(),
@@ -376,9 +396,14 @@ void AMonolithRigActor::HandleClampStructuralSnap()
 		RemainderMeshComponent->SetComplexAsSimpleCollisionEnabled(false, true);
 		RemainderMeshComponent->SetGenerateOverlapEvents(false);
 		RemainderMeshComponent->SetCollisionProfileName(TEXT("PhysicsActor"));
+		RemainderMeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		RemainderMeshComponent->SetEnableGravity(true);
+		RemainderMeshComponent->RecreatePhysicsState();
+
 		const float SafeMassKg = FMath::Max(1.0f, QueryCurrentRemainderMassKg());
 		RemainderMeshComponent->SetMassOverrideInKg(NAME_None, SafeMassKg, true);
 		RemainderMeshComponent->SetSimulatePhysics(true);
+		RemainderMeshComponent->WakeAllRigidBodies();
 	}
 
 	if (UWorld* World = GetWorld())
