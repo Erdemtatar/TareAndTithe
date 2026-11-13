@@ -274,6 +274,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio")
 	TMap<ETelemetryImpulseId, TObjectPtr<USoundBase>> SpatialImpulseSounds;
 
+	/** Cold magnetic relay latch + two-tone metallic PA carrier chime + radio squelch tail (~0.45s) for shift/contract directives. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|DirectorIntercom")
+	TObjectPtr<USoundBase> DirectorIntercomDirectiveSound = nullptr;
+
+	/** Heavy resonant pneumatic approval chime + harmonic PA triad (~0.50s) for valid stamps & precision Director's Cut. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|DirectorIntercom")
+	TObjectPtr<USoundBase> DirectorIntercomApproveSound = nullptr;
+
+	/** Brutal overdriven PA klaxon horn + harsh speaker-cabinet buzz & mic-cut click (~0.70s) for fault reprimands & reject buzz. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|DirectorIntercom")
+	TObjectPtr<USoundBase> DirectorIntercomReprimandSound = nullptr;
+
 	// ============================================================================
 	// Core Materials
 	// ============================================================================

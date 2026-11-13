@@ -282,7 +282,7 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 		FVector(-2.0, 0.0, 14.8),
 		4.8f,
 		ReadoutHeaderCyanColor,
-		TEXT("SHIFT 01/03 | SCRIP: 00 || [1]HYD L0(2) [2]TARE L0(2) [3]SCAN L0(2)"));
+		TEXT("TITHE WEIGHING CONSOLE // DIRECTOR'S CUT: +-0.31 KG (+2 SCRIP)"));
 
 	ContractCodeText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("ContractCodeText"));
 	ContractCodeText->SetupAttachment(ScaleConsoleRoot);
@@ -291,7 +291,7 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 		FVector(-2.0, 0.0, 9.6),
 		4.6f,
 		ReadoutHeaderCyanColor,
-		TEXT("CONTRACT 01/06 | TARGET: 12.00 KG [10.75 - 13.25]"));
+		TEXT("TARGET QUOTA: 12.00 KG  [VALID WINDOW: 10.75 - 13.25 KG]"));
 
 	StatusBannerText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("StatusBannerText"));
 	StatusBannerText->SetupAttachment(ScaleConsoleRoot);
@@ -321,7 +321,7 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 		FVector(-2.0, 0.0, -15.6),
 		ControlStencilDefaultWorldSize,
 		ReadoutControlStencilColor,
-		TEXT("SCROLL: ROLL | RMB: BEVEL | [SPACE]: ROUTE | [E]: STAMP | [1-3]: UPGRADE | HOLD [R]: RESET"));
+		TEXT("LMB: SLICE | SCROLL: ROLL | RMB: BEVEL | [SPACE]: ROUTE | [E]: STAMP | HOLD [R]: RESET"));
 }
 
 void AScaleAssemblyActor::BeginPlay()
@@ -927,21 +927,18 @@ void AScaleAssemblyActor::RefreshContractHeaderReadout()
 		return;
 	}
 
-	const int32 DisplayIndex = FMath::Clamp(CachedContractIndex + 1, 1, FMath::Max(1, CachedTotalContracts));
-	const int32 DisplayTotal = FMath::Max(1, CachedTotalContracts);
 	const float TargetKg = FMath::Max(0.0f, CachedSnapshot.TargetTitheMassKg);
 	const float MinValidKg = FMath::Max(0.0f, TargetKg - CachedSnapshot.QuotaToleranceKg);
 	const float MaxValidKg = TargetKg + CachedSnapshot.QuotaToleranceKg;
 	const float DirCutTolKg = FMath::Max(0.15f, CachedSnapshot.DirectorsCutToleranceKg);
+	const float DirCutMinKg = FMath::Max(0.0f, TargetKg - DirCutTolKg);
+	const float DirCutMaxKg = TargetKg + DirCutTolKg;
 
 	const FString HeaderLine = FString::Printf(
-		TEXT("CTR %02d/%02d | TARGET: %.2f KG [%.2f-%.2f] | DIR.CUT +-%.2f KG"),
-		DisplayIndex,
-		DisplayTotal,
+		TEXT("TARGET QUOTA: %.2f KG  [VALID WINDOW: %.2f - %.2f KG]"),
 		TargetKg,
 		MinValidKg,
-		MaxValidKg,
-		DirCutTolKg);
+		MaxValidKg);
 
 	ContractCodeText->SetText(FText::FromString(HeaderLine));
 	ContractCodeText->SetTextRenderColor(ReadoutHeaderCyanColor);
@@ -949,29 +946,10 @@ void AScaleAssemblyActor::RefreshContractHeaderReadout()
 
 	if (IsValid(HeaderStencilText))
 	{
-		auto FormatUpgradeSlot = [](const TCHAR* KeyLabel, uint8 Level) -> FString
-		{
-			const int32 ClampedLv = FMath::Clamp(static_cast<int32>(Level), 0, 3);
-			if (ClampedLv >= 3)
-			{
-				return FString::Printf(TEXT("%s L3(MAX)"), KeyLabel);
-			}
-			return FString::Printf(TEXT("%s L%d(%d)"), KeyLabel, ClampedLv, ClampedLv + 2);
-		};
-
-		const int32 ShiftNum = FMath::Max(1, CachedSnapshot.CurrentShiftNumber);
-		const int32 TargetShifts = FMath::Max(1, CachedSnapshot.TargetBondShifts);
-		const FString ShiftTag = (ShiftNum <= TargetShifts)
-			? FString::Printf(TEXT("SHIFT %02d/%02d"), ShiftNum, TargetShifts)
-			: FString::Printf(TEXT("OVT S%02d"), ShiftNum);
-
 		const FString TopStencilLine = FString::Printf(
-			TEXT("%s | SCRIP: %02d || %s %s %s"),
-			*ShiftTag,
-			FMath::Max(0, CachedSnapshot.ScripBalance),
-			*FormatUpgradeSlot(TEXT("[1]HYD"), CachedSnapshot.ClampHydraulicsLevel),
-			*FormatUpgradeSlot(TEXT("[2]TARE"), CachedSnapshot.TareHopperLevel),
-			*FormatUpgradeSlot(TEXT("[3]SCAN"), CachedSnapshot.VeinScannerDamperLevel));
+			TEXT("TITHE WEIGHING CONSOLE // DIRECTOR'S CUT: %.2f - %.2f KG (+2 SCRIP)"),
+			DirCutMinKg,
+			DirCutMaxKg);
 
 		HeaderStencilText->SetText(FText::FromString(TopStencilLine));
 		HeaderStencilText->SetTextRenderColor(ReadoutHeaderCyanColor);
@@ -998,15 +976,6 @@ void AScaleAssemblyActor::RefreshStatusBannerReadout()
 		return;
 	}
 
-	// Guard 1: Immediate crisp console feedback on [1] [2] [3] requisition purchase / insufficient Scrip / max level.
-	if (!CachedSnapshot.TransientRequisitionFeedback.IsEmpty())
-	{
-		SetStatusBannerTextFitted(
-			CachedSnapshot.TransientRequisitionFeedback,
-			CachedSnapshot.bLastRequisitionSucceeded ? ReadoutEmeraldColor : ReadoutBriefAmberColor);
-		return;
-	}
-
 	if (bHasLatchedVerdictBanner ||
 		CachedShiftPhase == EShiftPhase::ContractPassTransition ||
 		CachedShiftPhase == EShiftPhase::ShiftCompleted ||
@@ -1015,7 +984,7 @@ void AScaleAssemblyActor::RefreshStatusBannerReadout()
 		if (LatchedVerdict == EShiftVerdictType::BondCleared || CachedShiftPhase == EShiftPhase::BondCleared)
 		{
 			SetStatusBannerTextFitted(
-				TEXT("BOND CLEARED - #409 RELEASED | [E] OVERTIME S04+ | [1-3] UPGRADE | HOLD [R] CAREER RESET"),
+				TEXT("BOND CLEARED - #409 RELEASED | PRESS [E] OVERTIME | HOLD [R] CAREER RESET"),
 				ReadoutGoldColor);
 			return;
 		}
@@ -1026,13 +995,13 @@ void AScaleAssemblyActor::RefreshStatusBannerReadout()
 			const int32 TargetShifts = FMath::Max(1, CachedSnapshot.TargetBondShifts);
 			const FString ShiftBanner = (NextShift <= TargetShifts)
 				? FString::Printf(
-					TEXT("SHIFT %02d/%02d COMPLETE | [E] BEGIN SHIFT %02d/%02d | [1-3] REQUISITION | HOLD [R] CAREER RESET"),
+					TEXT("SHIFT %02d/%02d COMPLETE | PRESS [E] BEGIN SHIFT %02d/%02d | HOLD [R] CAREER RESET"),
 					CurShift,
 					TargetShifts,
 					NextShift,
 					TargetShifts)
 				: FString::Printf(
-					TEXT("OVERTIME S%02d COMPLETE | [E] BEGIN OVT S%02d | [1-3] REQUISITION | HOLD [R] CAREER RESET"),
+					TEXT("OVERTIME S%02d COMPLETE | PRESS [E] BEGIN OVT S%02d | HOLD [R] CAREER RESET"),
 					CurShift,
 					NextShift);
 			SetStatusBannerTextFitted(ShiftBanner, ReadoutEmeraldColor);
@@ -1119,15 +1088,7 @@ void AScaleAssemblyActor::RefreshStatusBannerReadout()
 		return;
 	}
 
-	if (CachedShiftPhase == EShiftPhase::ActiveInspection &&
-		CachedSnapshot.bIsContractBriefActive &&
-		!CachedSnapshot.ContractBriefText.IsEmpty())
-	{
-		SetStatusBannerTextFitted(CachedSnapshot.ContractBriefText, ReadoutBriefAmberColor);
-		return;
-	}
-
-	SetStatusBannerTextFitted(TEXT("HOLD [LMB] TO SLICE MONOLITH INTO TITHE"), ReadoutNormalSkyBlueColor);
+	SetStatusBannerTextFitted(TEXT("SCALE READY - AWAITING TITHE PAYLOAD"), ReadoutNormalSkyBlueColor);
 }
 
 void AScaleAssemblyActor::SetStatusBannerTextFitted(const FString& BannerString, const FColor& BannerColor)

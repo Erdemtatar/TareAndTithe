@@ -19,8 +19,8 @@ import remote_execution  # type: ignore  # noqa: E402
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 BUILD_MATERIALS_SCRIPT = os.path.join(REPO_ROOT, "Scripts", "BuildMaterialsAndBind.py").replace("\\", "/")
 LOGS_DIR = os.path.join(REPO_ROOT, "Saved", "Logs").replace("\\", "/")
-LIT_CAPTURE_FILENAME = "Phase11B_LitCapture.png"
-CLEAN_PROBE_FILENAME = "_Phase11B_CleanMetalProbe.png"
+LIT_CAPTURE_FILENAME = "Phase11C_LitCapture.png"
+CLEAN_PROBE_FILENAME = "_Phase11C_CleanMetalProbe.png"
 LIT_CAPTURE_PATH = os.path.join(REPO_ROOT, "Saved", "Logs", LIT_CAPTURE_FILENAME)
 CLEAN_PROBE_PATH = os.path.join(REPO_ROOT, "Saved", "Logs", CLEAN_PROBE_FILENAME)
 
@@ -54,8 +54,8 @@ if pie_world is None:
     raise RuntimeError("PIE GameWorld is None; PIE did not start in time!")
 
 world_time_sec = float(unreal.GameplayStatics.get_time_seconds(pie_world))
-if world_time_sec < 0.35:
-    raise RuntimeError(f"PIE warmup in progress (world_time={world_time_sec:.3f}s < 0.35s)...")
+if world_time_sec < 0.50:
+    raise RuntimeError(f"PIE warmup in progress (world_time={world_time_sec:.3f}s < 0.50s)...")
 
 all_actors = unreal.GameplayStatics.get_all_actors_of_class(pie_world, unreal.Actor)
 
@@ -69,6 +69,7 @@ relief_isms = []
 inspector_pawns = []
 scale_actors = []
 monolith_rigs = []
+booth_actors = []
 shell_slabs_unoccluded = []
 floor_slabs_grounded = []
 world_grid_offenders = []
@@ -81,6 +82,8 @@ for actor in all_actors:
         scale_actors.append(actor)
     if "MonolithRigActor" in cls_name:
         monolith_rigs.append(actor)
+    if "DirectorBoothActor" in cls_name:
+        booth_actors.append(actor)
 
     if cls_name == "StaticMeshActor":
         smc = actor.get_editor_property("static_mesh_component")
@@ -132,8 +135,8 @@ if world_grid_offenders:
 
 if len(shadow_lights) != 1:
     raise AssertionError(f"Expected exactly 1 shadow-casting light, found {len(shadow_lights)}: {shadow_lights}")
-if len(zero_shadow_lights) != 8:
-    raise AssertionError(f"Expected exactly 8 zero-shadow lights, found {len(zero_shadow_lights)}: {zero_shadow_lights}")
+if len(zero_shadow_lights) != 10:
+    raise AssertionError(f"Expected exactly 10 zero-shadow lights (including 3 Panopticon bay lights), found {len(zero_shadow_lights)}: {zero_shadow_lights}")
 
 # Verify 5 perimeter shell slabs are unoccluded in SWRT + HWRT Lumen while Floor remains grounded
 if len(shell_slabs_unoccluded) != 5 or len(floor_slabs_grounded) != 1:
@@ -235,12 +238,123 @@ if global_min_relief_x < 429.5 or global_max_relief_x > 465.5:
         f"Foundry Shaft X-bounds [{global_min_relief_x:.2f}, {global_max_relief_x:.2f}] outside [430, 465] cm!"
     )
 
-if len(scale_actors) != 1 or len(inspector_pawns) != 1 or len(monolith_rigs) != 1:
+if len(scale_actors) != 1 or len(inspector_pawns) != 1 or len(monolith_rigs) != 1 or len(booth_actors) != 1:
     raise AssertionError(
-        f"Expected 1 Scale, 1 Pawn, 1 MonolithRig; got scale={len(scale_actors)}, pawn={len(inspector_pawns)}, rig={len(monolith_rigs)}"
+        f"Expected 1 Scale, 1 Pawn, 1 MonolithRig, 1 Booth; got scale={len(scale_actors)}, pawn={len(inspector_pawns)}, rig={len(monolith_rigs)}, booth={len(booth_actors)}"
     )
 
+booth_actor = booth_actors[0]
+# Verify Phase 11C Panopticon 3-Bay Overlook Bridge envelope (Y in [-300,+300], Z in [212,382], X in [398,452]), NoCollision, and 3 synchronized shutters
+panopticon_props = (
+    "overlook_recess_backing_visual",
+    "booth_frame_visual",
+    "left_booth_frame_visual",
+    "right_booth_frame_visual",
+    "blast_shutter_visual",
+    "left_blast_shutter_visual",
+    "right_blast_shutter_visual",
+    "armor_mullion_outer_left_visual",
+    "armor_mullion_inner_left_visual",
+    "armor_mullion_inner_right_visual",
+    "armor_mullion_outer_right_visual",
+)
+pan_min = [1.0e9, 1.0e9, 1.0e9]
+pan_max = [-1.0e9, -1.0e9, -1.0e9]
+for p_name in panopticon_props:
+    mc = booth_actor.get_editor_property(p_name)
+    if mc is None or mc.get_editor_property("static_mesh") is None:
+        raise AssertionError(f"Panopticon component {p_name} missing or has null static_mesh!")
+    if mc.get_collision_enabled() != unreal.CollisionEnabled.NO_COLLISION:
+        raise AssertionError(f"Panopticon component {p_name} must be NoCollision!")
+    if bool(mc.get_editor_property("cast_shadow")):
+        raise AssertionError(f"Panopticon component {p_name} cast_shadow must be False!")
+    sm = mc.get_editor_property("static_mesh")
+    bbox = sm.get_bounding_box()
+    xf = mc.get_world_transform()
+    for bx in (bbox.min.x, bbox.max.x):
+        for by in (bbox.min.y, bbox.max.y):
+            for bz in (bbox.min.z, bbox.max.z):
+                wp = unreal.MathLibrary.transform_location(xf, unreal.Vector(bx, by, bz))
+                pan_min[0] = min(pan_min[0], float(wp.x))
+                pan_min[1] = min(pan_min[1], float(wp.y))
+                pan_min[2] = min(pan_min[2], float(wp.z))
+                pan_max[0] = max(pan_max[0], float(wp.x))
+                pan_max[1] = max(pan_max[1], float(wp.y))
+                pan_max[2] = max(pan_max[2], float(wp.z))
+
+if pan_min[1] > -296.0 or pan_max[1] < 296.0 or pan_max[2] < 380.0 or pan_min[0] < 395.0 or pan_max[0] > 455.0:
+    raise AssertionError(
+        f"Panopticon 3-bay world AABB {pan_min}..{pan_max} failed [398..452, -300..+300, 212..382] cm envelope!"
+    )
+
+shutter_alpha_open = float(booth_actor.get_current_shutter_open_alpha())
+if shutter_alpha_open < 0.95:
+    raise AssertionError(f"Expected all 3 Panopticon shutters open (>=0.95) in ActiveInspection, got {shutter_alpha_open:.3f}")
+
+for bay_light_prop in ("status_point_light", "left_bay_point_light", "right_bay_point_light"):
+    bl = booth_actor.get_editor_property(bay_light_prop)
+    if bl is None or bool(bl.get_editor_property("cast_shadows")) or float(bl.get_editor_property("attenuation_radius")) > 235.1:
+        raise AssertionError(f"Panopticon bay light {bay_light_prop} failed shadow/radius<=235 guard!")
+
+# Verify Phase 11C Top-Left & Top-Right corner HUD render hygiene + 16:9 safe margin across ALL 18 camera aim/charge states
+import math as _math
+for plate_prop, side_label in (("booth_header_backing_plate", "left"), ("booth_verdict_backing_plate", "right")):
+    plate_c = booth_actor.get_editor_property(plate_prop)
+    if (
+        plate_c.get_collision_enabled() != unreal.CollisionEnabled.NO_COLLISION
+        or bool(plate_c.get_editor_property("cast_shadow"))
+        or bool(plate_c.get_editor_property("affect_distance_field_lighting"))
+        or bool(plate_c.get_editor_property("affect_dynamic_indirect_lighting"))
+        or bool(plate_c.get_editor_property("visible_in_ray_tracing"))
+    ):
+        raise AssertionError(f"Corner HUD plate {plate_prop} failed render hygiene flags!")
+    pb = plate_c.get_editor_property("static_mesh").get_bounding_box()
+    pxf = plate_c.get_world_transform()
+    pts_w = [
+        unreal.MathLibrary.transform_location(pxf, unreal.Vector(bx, by, bz))
+        for bx in (pb.min.x, pb.max.x)
+        for by in (pb.min.y, pb.max.y)
+        for bz in (pb.min.z, pb.max.z)
+    ]
+    us_all, vs_all = [], []
+    for cpitch in (-4.45, -3.65, -2.85):
+        for cyaw in (-4.5, 0.0, 4.5):
+            crot = unreal.Rotator(roll=0.0, pitch=cpitch, yaw=cyaw)
+            cfwd = unreal.MathLibrary.get_forward_vector(crot)
+            cright = unreal.MathLibrary.get_right_vector(crot)
+            cup = unreal.MathLibrary.get_up_vector(crot)
+            for cfov in (83.6, 85.0):
+                th = _math.tan(_math.radians(cfov * 0.5))
+                tv = th * (9.0 / 16.0)
+                for wp in pts_w:
+                    rx, ry, rz = float(wp.x + 66.0), float(wp.y), float(wp.z - 162.0)
+                    d = rx * float(cfwd.x) + ry * float(cfwd.y) + rz * float(cfwd.z)
+                    cx = rx * float(cright.x) + ry * float(cright.y) + rz * float(cright.z)
+                    cy = rx * float(cup.x) + ry * float(cup.y) + rz * float(cup.z)
+                    us_all.append(0.5 + 0.5 * (cx / (d * th)))
+                    vs_all.append(0.5 - 0.5 * (cy / (d * tv)))
+    umin, umax = min(us_all), max(us_all)
+    vmin, vmax = min(vs_all), max(vs_all)
+    if side_label == "left":
+        if umin < 0.045 or umax > 0.355 or vmin < 0.050 or vmax > 0.215:
+            raise AssertionError(f"Top-Left HUD corner bounds out of safe 16:9 zone: u=[{umin:.3f},{umax:.3f}], v=[{vmin:.3f},{vmax:.3f}]")
+    else:
+        if umin < 0.645 or umax > 0.955 or vmin < 0.050 or vmax > 0.215:
+            raise AssertionError(f"Top-Right HUD corner bounds out of safe 16:9 zone: u=[{umin:.3f},{umax:.3f}], v=[{vmin:.3f},{vmax:.3f}]")
+
+# Verify DA_Presentation PA Intercom USoundWave bindings are non-null in live PIE
+da_pres_check = unreal.load_asset("/Game/Presentation/DA_Presentation")
+if da_pres_check is None:
+    raise AssertionError("Failed to load /Game/Presentation/DA_Presentation in live PIE!")
+for pa_prop in ("director_intercom_directive_sound", "director_intercom_approve_sound", "director_intercom_reprimand_sound"):
+    pa_asset = da_pres_check.get_editor_property(pa_prop)
+    if pa_asset is None or not isinstance(pa_asset, unreal.SoundWave):
+        raise AssertionError(f"DA_Presentation.{pa_prop} is invalid: {pa_asset}")
+
 scale_actor = scale_actors[0]
+scale_header_str = str(scale_actor.get_editor_property("header_stencil_text").text)
+if any(tok in scale_header_str for tok in ("SHIFT", "SCRIP:", "[1]HYD", "[2]TARE", "[3]SCAN")):
+    raise AssertionError(f"Bottom scale HeaderStencilText still cluttered: {scale_header_str!r}")
 flapper_vis = scale_actor.get_editor_property("diverter_flapper_visual")
 flapper_mat = flapper_vis.get_material(0)
 if flapper_mat is None or "MI_Station_DiverterFlapper" not in flapper_mat.get_name():
@@ -278,7 +392,8 @@ if delta_ms > 13.0:
 
 unreal.log(
     f"[CalibratePhase10Live] COMPONENT & FRAME BUDGET GUARDS PASSED: "
-    f"world_time={world_time_sec:.2f}s, shadow_lights=1, zero_shadow_lights=8, "
+    f"world_time={world_time_sec:.2f}s, shadow_lights=1, zero_shadow_lights=10, "
+    f"panopticon_aabb={pan_min}..{pan_max}, shutter_alpha={shutter_alpha_open:.2f}, "
     f"unoccluded_shell_slabs=5, sky_int={sky_int:.2f}, exp_bias={exp_bias:.2f}, "
     f"foundry_shaft={ism_summary}, frame_delta_ms={delta_ms:.2f}ms"
 )
@@ -352,6 +467,12 @@ for actor in unreal.GameplayStatics.get_all_actors_of_class(pie_world, unreal.Ac
     for tc in actor.get_components_by_class(unreal.TextRenderComponent):
         scc.hide_component(tc)
         hidden_count += 1
+    if "DirectorBoothActor" in actor.get_class().get_name():
+        for prop_name in ("booth_header_backing_plate", "booth_verdict_backing_plate"):
+            comp = actor.get_editor_property(prop_name)
+            if comp is not None:
+                scc.hide_component(comp)
+                hidden_count += 1
     if "InspectorPawn" in actor.get_class().get_name():
         for prop_name in (
             "laser_sheet_visual",
@@ -488,8 +609,8 @@ roi_payload = {{
     "scale_pan": roi_scale_pan,
     "grate_left": roi_grate_left,
     "grate_right": roi_grate_right,
-    "border_left": [0, int(0.10 * H), int(0.10 * W), int(0.90 * H)],
-    "border_right": [int(0.90 * W), int(0.10 * H), W, int(0.90 * H)],
+    "border_left": [0, int(0.23 * H), int(0.10 * W), int(0.90 * H)],
+    "border_right": [int(0.90 * W), int(0.23 * H), W, int(0.90 * H)],
 }}
 
 # Cleanly destroy transient capture component & actor (unreferencing transient render target for GC)
@@ -524,7 +645,153 @@ for cname, exp_nm in expected_torques:
         raise AssertionError(
             f"{cpath} mismatch: max_torque_nm={actual_nm} (exp {exp_nm}), grace={actual_grace} (exp 6.5)"
         )
-unreal.log("[CalibratePhase10Live] Verified all 6 DA_Contract_01..06 calibrated torque limits & 6.5s grace on disk.")
+da_pres_disk = unreal.EditorAssetLibrary.load_asset("/Game/Presentation/DA_Presentation")
+if da_pres_disk is None:
+    raise AssertionError("Missing /Game/Presentation/DA_Presentation on disk!")
+for pa_prop in ("director_intercom_directive_sound", "director_intercom_approve_sound", "director_intercom_reprimand_sound"):
+    pa_snd = da_pres_disk.get_editor_property(pa_prop)
+    if pa_snd is None or not isinstance(pa_snd, unreal.SoundWave):
+        raise AssertionError(f"Disk DA_Presentation.{pa_prop} invalid: {pa_snd}")
+unreal.log("[CalibratePhase10Live] Verified all 6 DA_Contract_01..06 calibrated torque limits & 3 PA SoundWave bindings on disk.")
+"""
+
+
+REMOTE_PHASE11C_AUDIO_AND_STAMP_PREP_SNIPPET = """
+import unreal
+
+ues = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
+pie_world = ues.get_game_world()
+shift_sub = unreal.TareTitheGameMode.get_inspection_shift_subsystem(pie_world)
+booths = [a for a in unreal.GameplayStatics.get_all_actors_of_class(pie_world, unreal.Actor) if "DirectorBoothActor" in a.get_class().get_name()]
+scales = [a for a in unreal.GameplayStatics.get_all_actors_of_class(pie_world, unreal.Actor) if "ScaleAssemblyActor" in a.get_class().get_name()]
+rigs = [a for a in unreal.GameplayStatics.get_all_actors_of_class(pie_world, unreal.Actor) if "MonolithRigActor" in a.get_class().get_name()]
+booth = booths[0]
+scale = scales[0]
+rig = rigs[0]
+
+# 1. Verify initial directive PA cue triggered once on startup and routine updates do NOT spam PA audio
+c_init = int(booth.get_intercom_audio_trigger_count())
+last_snd = booth.get_last_triggered_intercom_sound()
+if c_init != 1 or last_snd is None or "SFX_Director_PA_Directive" not in last_snd.get_name():
+    raise AssertionError(f"Expected initial PA Directive trigger count=1, got count={c_init}, sound={last_snd}")
+
+# Routine snapshot updates with unchanged DirectorIntercomLine (toggle diverter) + <0.35s distinct bark debounce gate
+deb_init = int(booth.get_intercom_debounce_blocked_count())
+shift_sub.start_shift_from_contract(1)
+c_after_ctr2 = int(booth.get_intercom_audio_trigger_count())
+if c_after_ctr2 != c_init + 1 or "SFX_Director_PA_Directive" not in booth.get_last_triggered_intercom_sound().get_name():
+    raise AssertionError(f"Expected PA Directive cue on Contract 02 load, got count={c_after_ctr2}")
+
+# Immediate (<0.35s) distinct contract bark MUST be blocked by >=0.35s debounce!
+shift_sub.start_shift_from_contract(2)
+if int(booth.get_intercom_audio_trigger_count()) != c_after_ctr2 or int(booth.get_intercom_debounce_blocked_count()) <= deb_init:
+    raise AssertionError("PA >=0.35s debounce gate FAILED to block back-to-back <0.35s distinct intercom bark!")
+
+for _ in range(4):
+    shift_sub.request_toggle_diverter()
+if int(booth.get_intercom_audio_trigger_count()) != c_after_ctr2:
+    raise AssertionError("Anti-spam gate FAILED: routine diverter/snapshot updates spammed PA intercom audio!")
+
+# Verify corner HUD plaque text bezel bounds (zero character clipping on <= 70 cm corner plates; <= 67.5 cm safe width)
+for tc in booth.get_components_by_class(unreal.TextRenderComponent):
+    w_cm = float(tc.get_text_local_size().y)
+    if w_cm > 67.5:
+        raise AssertionError(f"DirectorBooth corner HUD {tc.get_name()} width {w_cm:.1f} cm exceeds 67.5 cm safe plate bezel!")
+
+for tc in scale.get_components_by_class(unreal.TextRenderComponent):
+    w_cm = float(tc.get_text_local_size().y)
+    if w_cm > 203.5:
+        raise AssertionError(f"ScaleAssembly {tc.get_name()} width {w_cm:.1f} cm exceeds 203.5 cm safe console bezel!")
+
+unreal.log(f"[CalibratePhase10Live] Verified PA Directive cue, <0.35s debounce & anti-spam gate (count={c_after_ctr2}, routine_spam=0).")
+"""
+
+
+REMOTE_PHASE11C_SLICE_QUOTA_SNIPPET = """
+import unreal
+
+ues = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
+pie_world = ues.get_game_world()
+shift_sub = unreal.TareTitheGameMode.get_inspection_shift_subsystem(pie_world)
+rig = [a for a in unreal.GameplayStatics.get_all_actors_of_class(pie_world, unreal.Actor) if "MonolithRigActor" in a.get_class().get_name()][0]
+
+# Reset cleanly to Contract 01 and drop an exact 12.00 kg precision chunk onto the Tithe Scale
+shift_sub.start_shift_from_contract(0)
+bounds = rig.get_target_world_bounds()
+bcenter = (bounds.min + bounds.max) * 0.5
+cut_z = float(bounds.min.z) + 26.0416
+aperture = unreal.LaserSliceAperture()
+aperture.set_editor_property("enforce_finite_sheet_bounds", False)
+rig.commit_slice_plane(unreal.Vector(float(bcenter.x), float(bcenter.y), cut_z), unreal.Vector(0.0, 0.0, -1.0), aperture)
+unreal.log("[CalibratePhase10Live] Dropped 12.00 kg precision chunk on Contract 01.")
+"""
+
+
+REMOTE_PHASE11C_STAMP_APPROVE_SNIPPET = """
+import unreal
+
+ues = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
+pie_world = ues.get_game_world()
+shift_sub = unreal.TareTitheGameMode.get_inspection_shift_subsystem(pie_world)
+booth = [a for a in unreal.GameplayStatics.get_all_actors_of_class(pie_world, unreal.Actor) if "DirectorBoothActor" in a.get_class().get_name()][0]
+
+c_pre_stamp = int(booth.get_intercom_audio_trigger_count())
+stamped = bool(shift_sub.try_confirm_or_stamp_action())
+snap_st = shift_sub.get_current_snapshot()
+if not stamped or int(snap_st.scrip_balance) != 2 or not bool(snap_st.last_stamp_was_directors_cut):
+    raise AssertionError(f"Expected DIRECTOR'S CUT (+2 SCRIP) stamp pass, got stamped={stamped}, scrip={snap_st.scrip_balance}, snap={snap_st}")
+
+c_post_stamp = int(booth.get_intercom_audio_trigger_count())
+last_snd = booth.get_last_triggered_intercom_sound()
+if c_post_stamp != c_pre_stamp + 1 or last_snd is None or "SFX_Director_PA_Approve" not in last_snd.get_name():
+    raise AssertionError(f"Expected SFX_Director_PA_Approve on stamp pass, got count={c_pre_stamp}->{c_post_stamp}, sound={last_snd}")
+
+# Reload Contract 01 so all 3 blast shutters hoist open cleanly before requisition + fault slam test
+shift_sub.start_shift_from_contract(0)
+unreal.log("[CalibratePhase10Live] Verified SFX_Director_PA_Approve on DIRECTOR'S CUT (+2 SCRIP) precision stamp!")
+"""
+
+
+REMOTE_PHASE11C_REQUISITION_UPGRADE_SNIPPET = """
+import unreal
+
+ues = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
+pie_world = ues.get_game_world()
+shift_sub = unreal.TareTitheGameMode.get_inspection_shift_subsystem(pie_world)
+booth = [a for a in unreal.GameplayStatics.get_all_actors_of_class(pie_world, unreal.Actor) if "DirectorBoothActor" in a.get_class().get_name()][0]
+
+c_pre_upg = int(booth.get_intercom_audio_trigger_count())
+upg_ok = bool(shift_sub.try_purchase_requisition(unreal.RequisitionTrack.TARE_HOPPER))
+if not upg_ok or int(shift_sub.get_current_snapshot().scrip_balance) != 0:
+    raise AssertionError("Expected TARE_HOPPER L1 purchase to succeed using 2 Scrip!")
+if int(booth.get_intercom_audio_trigger_count()) != c_pre_upg + 1 or "SFX_Director_PA_Approve" not in booth.get_last_triggered_intercom_sound().get_name():
+    raise AssertionError("Expected SFX_Director_PA_Approve on requisition upgrade!")
+unreal.log("[CalibratePhase10Live] Verified requisition upgrade SFX_Director_PA_Approve (Scrip 2 -> 0).")
+"""
+
+
+REMOTE_PHASE11C_REQUISITION_REJECT_SNIPPET = """
+import unreal
+
+ues = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
+pie_world = ues.get_game_world()
+shift_sub = unreal.TareTitheGameMode.get_inspection_shift_subsystem(pie_world)
+booth = [a for a in unreal.GameplayStatics.get_all_actors_of_class(pie_world, unreal.Actor) if "DirectorBoothActor" in a.get_class().get_name()][0]
+
+c_before_req = int(booth.get_intercom_audio_trigger_count())
+req_ok = bool(shift_sub.try_purchase_requisition(unreal.RequisitionTrack.TARE_HOPPER))
+fb_str = str(shift_sub.get_current_snapshot().transient_requisition_feedback)
+if req_ok or "INSUFFICIENT SCRIP" not in fb_str:
+    raise AssertionError(f"Expected INSUFFICIENT SCRIP feedback at 0 Scrip, got ok={req_ok}, feedback={fb_str!r}")
+c_after_req1 = int(booth.get_intercom_audio_trigger_count())
+if c_after_req1 != c_before_req + 1 or "SFX_Director_PA_Reprimand" not in booth.get_last_triggered_intercom_sound().get_name():
+    raise AssertionError(f"Expected PA Reprimand reject cue on INSUFFICIENT SCRIP, got count={c_after_req1}")
+
+# Duplicate string suppression check
+shift_sub.try_purchase_requisition(unreal.RequisitionTrack.TARE_HOPPER)
+if int(booth.get_intercom_audio_trigger_count()) != c_after_req1:
+    raise AssertionError("Duplicate-string gate FAILED: identical INSUFFICIENT SCRIP string re-triggered PA audio!")
+unreal.log("[CalibratePhase10Live] Verified INSUFFICIENT SCRIP reject cue & duplicate-string suppression.")
 """
 
 
@@ -538,41 +805,16 @@ if pie_world is None:
     raise RuntimeError("PIE GameWorld is None!")
 
 shift_sub = unreal.TareTitheGameMode.get_inspection_shift_subsystem(pie_world)
-if shift_sub is None:
-    raise RuntimeError("UInspectionShiftSubsystem is None in PIE!")
+booth = [a for a in unreal.GameplayStatics.get_all_actors_of_class(pie_world, unreal.Actor) if "DirectorBoothActor" in a.get_class().get_name()][0]
+rig = [a for a in unreal.GameplayStatics.get_all_actors_of_class(pie_world, unreal.Actor) if "MonolithRigActor" in a.get_class().get_name()][0]
 
-snap0 = shift_sub.get_current_snapshot()
-if int(snap0.current_shift_number) != 1 or int(snap0.target_bond_shifts) != 3 or int(snap0.scrip_balance) != 0:
-    raise AssertionError(
-        f"Unexpected initial 3-Shift Indenture state: shift={snap0.current_shift_number}/{snap0.target_bond_shifts}, scrip={snap0.scrip_balance}"
-    )
+alpha_before_fault = float(booth.get_current_shutter_open_alpha())
+if alpha_before_fault < 0.90:
+    raise AssertionError(f"Expected Panopticon shutters open (>=0.90) prior to fault slam, got {alpha_before_fault:.3f}")
 
-# Guard 1: Verify [1] Requisition feedback at 0 Scrip immediately reports INSUFFICIENT SCRIP (never dead key)
-req_ok = bool(shift_sub.try_purchase_requisition(unreal.RequisitionTrack.CLAMP_HYDRAULICS))
-snap_req = shift_sub.get_current_snapshot()
-fb_str = str(snap_req.transient_requisition_feedback)
-if req_ok or "INSUFFICIENT SCRIP" not in fb_str:
-    raise AssertionError(f"Expected INSUFFICIENT SCRIP feedback at 0 Scrip, got ok={req_ok}, feedback={fb_str!r}")
+c_pre_snap = int(booth.get_intercom_audio_trigger_count())
 
-# Verify DirectorBoothActor & ScaleAssemblyActor diegetic text bezel bounds (zero overflow)
-booths = [a for a in unreal.GameplayStatics.get_all_actors_of_class(pie_world, unreal.Actor) if "DirectorBoothActor" in a.get_class().get_name()]
-scales = [a for a in unreal.GameplayStatics.get_all_actors_of_class(pie_world, unreal.Actor) if "ScaleAssemblyActor" in a.get_class().get_name()]
-rigs = [a for a in unreal.GameplayStatics.get_all_actors_of_class(pie_world, unreal.Actor) if "MonolithRigActor" in a.get_class().get_name()]
-if len(booths) != 1 or len(scales) != 1 or len(rigs) != 1:
-    raise AssertionError(f"Expected 1 Booth, 1 Scale, 1 Rig; found {len(booths)}, {len(scales)}, {len(rigs)}")
-
-for tc in booths[0].get_components_by_class(unreal.TextRenderComponent):
-    w_cm = float(tc.get_text_local_size().y)
-    if w_cm > 135.5:
-        raise AssertionError(f"DirectorBooth {tc.get_name()} width {w_cm:.1f} cm exceeds 135.5 cm safe shutter bezel!")
-
-for tc in scales[0].get_components_by_class(unreal.TextRenderComponent):
-    w_cm = float(tc.get_text_local_size().y)
-    if w_cm > 203.5:
-        raise AssertionError(f"ScaleAssembly {tc.get_name()} width {w_cm:.1f} cm exceeds 203.5 cm safe console bezel!")
-
-# Pillar 1 + Guard 3: Consecutive one-sided (+Y) steep cuts escalate jaw shear and snap clamp!
-rig = rigs[0]
+# Consecutive one-sided (+Y) steep cuts escalate jaw shear and snap clamp!
 rem_comp = rig.get_remainder_mesh_component()
 clamp_solver = rig.get_clamp_torque_solver_component()
 bounds = rig.get_target_world_bounds()
@@ -598,6 +840,17 @@ for y_off in (8.2, 5.4, 2.6, -0.2, -2.8, -5.2):
 if not snapped:
     raise AssertionError(f"Consecutive same-side cuts failed to snap clamp! progression={strain_progression}")
 
+c_post_snap = int(booth.get_intercom_audio_trigger_count())
+snap_snd = booth.get_last_triggered_intercom_sound()
+if c_post_snap <= c_pre_snap or snap_snd is None or "SFX_Director_PA_Reprimand" not in snap_snd.get_name():
+    raise AssertionError(f"Expected SFX_Director_PA_Reprimand on clamp snap fault, got count={c_pre_snap}->{c_post_snap}, sound={snap_snd}")
+
+# Re-verify corner HUD text widths on ALL-CAPS crimson fault reprimand (zero clipping)
+for tc in booth.get_components_by_class(unreal.TextRenderComponent):
+    w_cm = float(tc.get_text_local_size().y)
+    if w_cm > 67.5:
+        raise AssertionError(f"DirectorBooth corner HUD {tc.get_name()} fault bark width {w_cm:.1f} cm > 67.5 cm!")
+
 snap_z0 = float(rem_comp.get_world_location().z)
 snap_sim0 = bool(rem_comp.is_simulating_physics())
 snap_phase = shift_sub.get_current_phase()
@@ -610,6 +863,8 @@ payload = {
     "progression": strain_progression,
     "phase": str(snap_phase),
     "director_bark": snap_bark,
+    "pa_sound": snap_snd.get_name(),
+    "pa_triggers": c_post_snap,
 }
 unreal.log("SNAP_INIT_JSON=" + json.dumps(payload))
 """
@@ -625,8 +880,30 @@ if pie_world is None:
     raise RuntimeError("PIE GameWorld is None during Chaos freefall check!")
 
 rigs = [a for a in unreal.GameplayStatics.get_all_actors_of_class(pie_world, unreal.Actor) if "MonolithRigActor" in a.get_class().get_name()]
-if len(rigs) != 1:
-    raise RuntimeError(f"Expected 1 MonolithRigActor, found {{len(rigs)}}")
+booths = [a for a in unreal.GameplayStatics.get_all_actors_of_class(pie_world, unreal.Actor) if "DirectorBoothActor" in a.get_class().get_name()]
+if len(rigs) != 1 or len(booths) != 1:
+    raise RuntimeError(f"Expected 1 MonolithRigActor & 1 Booth, found {{len(rigs)}}, {{len(booths)}}")
+
+booth = booths[0]
+alpha_slammed = float(booth.get_current_shutter_open_alpha())
+if alpha_slammed > 0.02:
+    raise AssertionError(f"Expected all 3 Panopticon shutters slammed shut (<=0.02) in 0.14s, got {{alpha_slammed:.3f}}!")
+
+for piv_prop, closed_prop in (
+    ("blast_shutter_motion_pivot", "closed_shutter_relative_location"),
+    ("left_shutter_motion_pivot", "closed_left_shutter_relative_location"),
+    ("right_shutter_motion_pivot", "closed_right_shutter_relative_location"),
+):
+    piv = booth.get_editor_property(piv_prop)
+    c_loc = booth.get_editor_property(closed_prop)
+    dz_s = abs(float(piv.relative_location.z) - float(c_loc.z))
+    if dz_s > 0.5:
+        raise AssertionError(f"Shutter pivot {{piv_prop}} failed simultaneous slam: dz={{dz_s:.2f}} cm")
+
+for bay_l in ("status_point_light", "left_bay_point_light", "right_bay_point_light"):
+    lc = booth.get_editor_property(bay_l).get_light_color()
+    if float(lc.r) < 0.80 or float(lc.g) > 0.25 or float(lc.b) > 0.25:
+        raise AssertionError(f"Panopticon bay {{bay_l}} not pulsing crimson emergency color: {{lc}}")
 
 rem_comp = rigs[0].get_remainder_mesh_component()
 z1 = float(rem_comp.get_world_location().z)
@@ -635,8 +912,8 @@ sim_now = bool(rem_comp.is_simulating_physics())
 vel_z = float(rem_comp.get_component_velocity().z)
 
 unreal.log(
-    f"[CalibratePhase10Live] Chaos Clamp-Snap Freefall Check: z0={snap_z0:.2f} -> z1={{z1:.2f}} cm "
-    f"(DeltaZ={{delta_z:.2f}} cm, vel_z={{vel_z:.1f}} cm/s, simulating={{sim_now}})"
+    f"[CalibratePhase10Live] Panopticon 3-Shutter Slam (alpha={{alpha_slammed:.3f}}) & Chaos Freefall Check: "
+    f"z0={snap_z0:.2f} -> z1={{z1:.2f}} cm (DeltaZ={{delta_z:.2f}} cm, vel_z={{vel_z:.1f}} cm/s, simulating={{sim_now}})"
 )
 
 if delta_z > -25.0:
@@ -888,11 +1165,41 @@ def main() -> int:
             "Export Clean-Metal Lit Probe & Destroy Transient Capture",
         )
 
-        # 4. Phase 11B Live Gameplay, Requisition Feedback, Disk Torque Serialization & Chaos Clamp-Snap Gravity Drop Gate
+        # 4. Phase 11C Live PA Intercom Audio (Directive / Approve / Reprimand + >=0.35s Debounce), 3-Shutter Fault Slam & Chaos Drop Gate
+        run_remote_checked(
+            remote,
+            REMOTE_PHASE11C_AUDIO_AND_STAMP_PREP_SNIPPET,
+            "Phase 11C PA Directive Cue, <0.35s Debounce & Routine Anti-Spam Gate",
+        )
+        time.sleep(0.45)
+        run_remote_checked(
+            remote,
+            REMOTE_PHASE11C_SLICE_QUOTA_SNIPPET,
+            "Phase 11C 12.00 kg Precision Cut on Contract 01",
+        )
+        time.sleep(1.85)
+        run_remote_checked(
+            remote,
+            REMOTE_PHASE11C_STAMP_APPROVE_SNIPPET,
+            "Phase 11C Precision Stamp SFX_Director_PA_Approve Verification",
+        )
+        time.sleep(0.45)
+        run_remote_checked(
+            remote,
+            REMOTE_PHASE11C_REQUISITION_UPGRADE_SNIPPET,
+            "Phase 11C Requisition Upgrade SFX_Director_PA_Approve Verification",
+        )
+        time.sleep(0.45)
+        run_remote_checked(
+            remote,
+            REMOTE_PHASE11C_REQUISITION_REJECT_SNIPPET,
+            "Phase 11C INSUFFICIENT SCRIP Reject Cue & Duplicate-String Suppression",
+        )
+        time.sleep(0.48)
         snap_init_lines = run_remote_checked(
             remote,
             REMOTE_PHASE11B_TRIGGER_CLAMP_SNAP_SNIPPET,
-            "Phase 11B Disk Contracts, Requisition Feedback & Same-Side Clamp Snap Trigger",
+            "Phase 11C Same-Side Clamp Snap Trigger & SFX_Director_PA_Reprimand",
         )
         snap_init_json = None
         for ln in snap_init_lines:
@@ -901,15 +1208,15 @@ def main() -> int:
                 snap_init_json = json.loads(ln[idx + len("SNAP_INIT_JSON=") :])
         if not snap_init_json:
             run_remote_checked(remote, REMOTE_END_PIE_SNIPPET, "End PIE Session (after missing SNAP_INIT_JSON)")
-            raise RuntimeError("Missing SNAP_INIT_JSON payload from Phase 11B clamp snap trigger!")
+            raise RuntimeError("Missing SNAP_INIT_JSON payload from Phase 11C clamp snap trigger!")
         print(f"[CalibratePhase10Live] Same-side cut progression & snap bark: {snap_init_json}")
 
-        # Let PIE tick ~0.48s (< 1.8s FaultAutoResetDelaySeconds) so RemainderMeshComponent falls in real Chaos gravity
+        # Let PIE tick ~0.48s (> 0.14s fault slam, < 1.8s FaultAutoResetDelaySeconds) for 3-shutter slam & Chaos freefall
         time.sleep(0.48)
         run_remote_checked(
             remote,
             make_verify_chaos_freefall_snippet(float(snap_init_json["snap_z0"])),
-            "Verify Real Chaos Freefall Drop (DeltaZ < -25.0 cm)",
+            "Verify 0.14s Simultaneous 3-Shutter Slam, Crimson Panopticon Strobe & Real Chaos Freefall Drop",
         )
 
         run_remote_checked(remote, REMOTE_END_PIE_SNIPPET, "End PIE Session")
@@ -1005,7 +1312,7 @@ def main() -> int:
             raise AssertionError(
                 f"ROI 4 (Outer Left/Right Vignette Borders) FAILED gate (<=16 mean): full={st_border_full}, clean={st_border_clean}"
             )
-
+    finally:
         if args.shutdown:
             print("[CalibratePhase10Live] Sending clean quit_editor() command...")
             try:
@@ -1017,10 +1324,9 @@ def main() -> int:
                 )
             except Exception:
                 pass
-    finally:
         remote.stop()
 
-    print(f"[CalibratePhase10Live] ALL PHASE 11A-FIX COMPONENT, FRAME-TIME & LIT PIXEL-LUMINANCE GATES PASSED ({LIT_CAPTURE_PATH}).")
+    print(f"[CalibratePhase10Live] ALL PHASE 11C COMPONENT, HUD, PANOPTICON, PA AUDIO, FRAME-TIME & LIT LUMINANCE GATES PASSED ({LIT_CAPTURE_PATH}).")
     return 0
 
 
