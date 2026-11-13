@@ -1154,9 +1154,26 @@ FSliceResultSummary UMonolithSliceComponent::ExecuteSlice(
 		CurrentRemainderMassKg = 0.0f;
 		CurrentRemainderLocalCoMCm = FVector::ZeroVector;
 		CurrentRemainderLocalBounds = FBox(ForceInit);
+		InOutActiveVeins.Reset();
 		RemainderDynMesh->Reset();
 		RemainderMeshComponent->ConfigureMaterialSet({ActiveOuterMaterial.Get(), ActiveCutCapMaterial.Get()});
 		RemainderMeshComponent->UpdateBounds();
+	}
+
+	if (!InOutActiveVeins.IsEmpty())
+	{
+		if (!CurrentRemainderLocalBounds.IsValid)
+		{
+			InOutActiveVeins.Reset();
+		}
+		else
+		{
+			const FBox SafeSurvivingBounds = CurrentRemainderLocalBounds.ExpandBy(2.0);
+			InOutActiveVeins.RemoveAll([&SafeSurvivingBounds](const FVolatileVeinDefinition& CandidateVein)
+			{
+				return !SafeSurvivingBounds.IsInsideOrOn(CandidateVein.GetMidpointCm());
+			});
+		}
 	}
 
 	// Step 8: Sliver Vaporization vs. CoM-Recentered Pooled Chaos Chunk Spawn.
@@ -1292,23 +1309,16 @@ bool UMonolithSliceComponent::DoesPlaneIntersectRemainder(
 	return bIntersects;
 }
 
-bool UMonolithSliceComponent::EstimateSeveredMassKg(
+bool UMonolithSliceComponent::ComputeSeveredHalfSpacePlaneLocal(
 	const FVector& PlaneOriginWorld,
 	const FVector& PlaneNormalWorld,
-	float& OutSeveredMassKg,
-	float& OutRemainderMassKg) const
+	FVector& OutLocalOrigin,
+	FVector& OutSeveredLocalNormal) const
 {
-	OutSeveredMassKg = 0.0f;
-	OutRemainderMassKg = CurrentRemainderMassKg;
+	OutLocalOrigin = FVector::ZeroVector;
+	OutSeveredLocalNormal = FVector::ZeroVector;
 
-	const UMonolithContractDataAsset* Contract = ActiveContract.Get();
-	if (!IsValid(Contract) || CurrentRemainderMassKg <= 0.0f || !IsValid(RemainderMeshComponent))
-	{
-		return false;
-	}
-
-	const UDynamicMesh* RemainderDynMesh = RemainderMeshComponent->GetDynamicMesh();
-	if (!IsValid(RemainderDynMesh))
+	if (CurrentRemainderMassKg <= 0.0f || !IsValid(RemainderMeshComponent))
 	{
 		return false;
 	}
@@ -1341,6 +1351,42 @@ bool UMonolithSliceComponent::EstimateSeveredMassKg(
 	{
 		SeveredNormal = (LocalNormal.Z >= 0.0) ? -LocalNormal : LocalNormal;
 	}
+
+	OutLocalOrigin = static_cast<FVector>(LocalOrigin);
+	OutSeveredLocalNormal = static_cast<FVector>(SeveredNormal);
+	return true;
+}
+
+bool UMonolithSliceComponent::EstimateSeveredMassKg(
+	const FVector& PlaneOriginWorld,
+	const FVector& PlaneNormalWorld,
+	float& OutSeveredMassKg,
+	float& OutRemainderMassKg) const
+{
+	OutSeveredMassKg = 0.0f;
+	OutRemainderMassKg = CurrentRemainderMassKg;
+
+	const UMonolithContractDataAsset* Contract = ActiveContract.Get();
+	if (!IsValid(Contract) || CurrentRemainderMassKg <= 0.0f || !IsValid(RemainderMeshComponent))
+	{
+		return false;
+	}
+
+	const UDynamicMesh* RemainderDynMesh = RemainderMeshComponent->GetDynamicMesh();
+	if (!IsValid(RemainderDynMesh))
+	{
+		return false;
+	}
+
+	FVector ComputedLocalOrigin = FVector::ZeroVector;
+	FVector ComputedSeveredNormal = FVector::ZeroVector;
+	if (!ComputeSeveredHalfSpacePlaneLocal(PlaneOriginWorld, PlaneNormalWorld, ComputedLocalOrigin, ComputedSeveredNormal))
+	{
+		return false;
+	}
+
+	const FVector3d LocalOrigin = static_cast<FVector3d>(ComputedLocalOrigin);
+	const FVector3d SeveredNormal = static_cast<FVector3d>(ComputedSeveredNormal);
 
 	// Zero-allocation Planar-Origin Divergence Theorem half-space clipped volume integration.
 	// Shifting vertices by -LocalOrigin places the cut plane through (0,0,0), making planar cap volume identically 0.

@@ -25,11 +25,25 @@ public:
 
 	void InitializeFromContract(const UMonolithContractDataAsset* Contract);
 	void SetActiveVeins(const TArray<FVolatileVeinDefinition>& InVeins);
+	void SyncPostSliceActiveVeins(const FBox& RemainderLocalBounds, float BoundsSafetyToleranceCm = 2.0f);
 	void ClearActiveVeins();
 
 	const TArray<FVolatileVeinDefinition>& GetActiveVeins() const { return ActiveVeins; }
 	TArray<FVolatileVeinDefinition>& GetMutableActiveVeins() { return ActiveVeins; }
 	int32 GetActiveVeinCount() const { return ActiveVeins.Num(); }
+
+	static bool DoesLocalHalfSpaceContainVein(
+		const FVector& LocalPlaneOrigin,
+		const FVector& SeveredLocalUnitNormal,
+		const TArray<FVolatileVeinDefinition>& Veins,
+		const FBox& RemainderLocalBounds,
+		float BoundsSafetyToleranceCm = 2.0f);
+
+	bool DoesSeveredHalfSpaceContainActiveVein(
+		const FVector& LocalPlaneOrigin,
+		const FVector& SeveredLocalUnitNormal,
+		const FBox& RemainderLocalBounds,
+		float BoundsSafetyToleranceCm = 2.0f) const;
 
 	static FSlicePreviewTelemetry EvaluateVeinsAgainstLocalPlane(
 		const FVector& LocalPlaneOrigin,

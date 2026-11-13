@@ -21,7 +21,7 @@ namespace
 
 ADirectorBoothActor::ADirectorBoothActor()
 {
-	// Tier 2: Strictly disabled while idle; active ONLY during 0.35s kinematic blast shutter motion.
+	// Tier 2: Strictly disabled while idle (0.0 ms); active ONLY during bounded 0.35s shutter motion and 3.5s brief pulse + 0.35s fade.
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = false;
 
@@ -286,11 +286,20 @@ void ADirectorBoothActor::BeginPlay()
 
 			CachedContractIndex = ShiftSubsystem->GetCurrentContractIndex();
 			CachedTotalContracts = FMath::Max(1, ShiftSubsystem->GetTotalContractCount());
+			CachedShiftPhase = ShiftSubsystem->GetCurrentPhase();
 			const FContractRuntimeSnapshot InitialSnapshot = ShiftSubsystem->GetCurrentSnapshot();
 			CachedDirectiveText = InitialSnapshot.ContractDirectiveText;
-			RefreshContractDirectiveWingReadout();
+			CachedBriefText = InitialSnapshot.ContractBriefText;
+			bIsBriefPulseActive = (CachedShiftPhase == EShiftPhase::ActiveInspection) &&
+				InitialSnapshot.bIsContractBriefActive &&
+				!CachedBriefText.IsEmpty();
+			bIsBriefFadingOut = false;
+			BriefPulseElapsedSeconds = 0.0f;
+			BriefFadeElapsedSeconds = 0.0f;
 
-			HandleShiftPhaseChanged(ShiftSubsystem->GetCurrentPhase());
+			HandleShiftPhaseChanged(CachedShiftPhase);
+			RefreshContractDirectiveWingReadout();
+			UpdateBoothTickEnabled();
 		}
 	}
 }
@@ -344,31 +353,73 @@ void ADirectorBoothActor::Tick(float DeltaSeconds)
 		return;
 	}
 
-	const float SafeDuration = FMath::Max(0.05f, ShutterTransitionDurationSeconds);
-	const float AlphaSpeedPerSec = 1.0f / SafeDuration;
-
-	CurrentShutterOpenAlpha = FMath::FInterpConstantTo(
-		CurrentShutterOpenAlpha,
-		TargetShutterOpenAlpha,
-		DeltaSeconds,
-		AlphaSpeedPerSec);
-
-	const bool bConverged = FMath::IsNearlyEqual(CurrentShutterOpenAlpha, TargetShutterOpenAlpha, ShutterAlphaConvergenceEpsilon);
-	if (bConverged)
+	if (!FMath::IsNearlyEqual(CurrentShutterOpenAlpha, TargetShutterOpenAlpha, ShutterAlphaConvergenceEpsilon))
 	{
-		CurrentShutterOpenAlpha = TargetShutterOpenAlpha;
+		const float SafeDuration = FMath::Max(0.05f, ShutterTransitionDurationSeconds);
+		const float AlphaSpeedPerSec = 1.0f / SafeDuration;
+
+		CurrentShutterOpenAlpha = FMath::FInterpConstantTo(
+			CurrentShutterOpenAlpha,
+			TargetShutterOpenAlpha,
+			DeltaSeconds,
+			AlphaSpeedPerSec);
+
+		if (FMath::IsNearlyEqual(CurrentShutterOpenAlpha, TargetShutterOpenAlpha, ShutterAlphaConvergenceEpsilon))
+		{
+			CurrentShutterOpenAlpha = TargetShutterOpenAlpha;
+		}
+
+		ApplyShutterPositionFromAlpha();
 	}
 
-	ApplyShutterPositionFromAlpha();
-
-	if (bConverged)
+	// Guard 2: Mutate ONLY SetTextRenderColor during bounded Tier 2 brief pulse/fade (NEVER SetText or SetWorldSize in Tick).
+	if (bIsBriefPulseActive)
 	{
-		SetActorTickEnabled(false);
+		BriefPulseElapsedSeconds += DeltaSeconds;
+		LastBriefDisplayColor = ComputeBriefPulseColor();
+		if (IsValid(ContractDirectiveReadoutText))
+		{
+			ContractDirectiveReadoutText->SetTextRenderColor(LastBriefDisplayColor);
+		}
 	}
+	else if (bIsBriefFadingOut)
+	{
+		BriefFadeElapsedSeconds += DeltaSeconds;
+		const float SafeFadeDuration = FMath::Max(0.05f, BriefFadeOutDurationSeconds);
+		const float FadeAlpha = FMath::Clamp(BriefFadeElapsedSeconds / SafeFadeDuration, 0.0f, 1.0f);
+		const FLinearColor BlendedLinear = FMath::Lerp(
+			FLinearColor(LastBriefDisplayColor),
+			FLinearColor(BoothDirectiveGoldColor),
+			FadeAlpha);
+		const FColor FinalColor = (FadeAlpha >= 1.0f - KINDA_SMALL_NUMBER)
+			? BoothDirectiveGoldColor
+			: BlendedLinear.ToFColor(true);
+
+		if (IsValid(ContractDirectiveReadoutText))
+		{
+			ContractDirectiveReadoutText->SetTextRenderColor(FinalColor);
+		}
+
+		if (FadeAlpha >= 1.0f - KINDA_SMALL_NUMBER)
+		{
+			bIsBriefFadingOut = false;
+			BriefFadeElapsedSeconds = 0.0f;
+		}
+	}
+
+	UpdateBoothTickEnabled();
 }
 
 void ADirectorBoothActor::HandleShiftVerdict(EShiftVerdictType Verdict, EContractFaultReason FaultReason)
 {
+	if (bIsBriefPulseActive || bIsBriefFadingOut)
+	{
+		bIsBriefPulseActive = false;
+		bIsBriefFadingOut = false;
+		BriefFadeElapsedSeconds = 0.0f;
+		RefreshContractDirectiveWingReadout();
+	}
+
 	switch (Verdict)
 	{
 	case EShiftVerdictType::ContractFaultReset:
@@ -381,7 +432,12 @@ void ADirectorBoothActor::HandleShiftVerdict(EShiftVerdictType Verdict, EContrac
 		if (IsValid(VerdictBannerText))
 		{
 			VerdictBannerText->SetTextRenderColor(BoothFaultBannerColor);
-			VerdictBannerText->SetText(FText::FromString(DescribeFaultReason(FaultReason)));
+			ApplyFittedWingText(
+				VerdictBannerText,
+				DescribeFaultReason(FaultReason),
+				WingVerdictWorldSize,
+				WingDirectiveMinWorldSize,
+				WingDirectiveMaxSafeWidthCm);
 		}
 		break;
 	}
@@ -395,7 +451,12 @@ void ADirectorBoothActor::HandleShiftVerdict(EShiftVerdictType Verdict, EContrac
 		if (IsValid(VerdictBannerText))
 		{
 			VerdictBannerText->SetTextRenderColor(BoothApprovedEmeraldColor);
-			VerdictBannerText->SetText(FText::FromString(TEXT("TITHE VERIFIED // ADVANCING")));
+			ApplyFittedWingText(
+				VerdictBannerText,
+				TEXT("TITHE VERIFIED // ADVANCING"),
+				WingVerdictWorldSize,
+				WingDirectiveMinWorldSize,
+				WingDirectiveMaxSafeWidthCm);
 		}
 		break;
 	}
@@ -409,13 +470,20 @@ void ADirectorBoothActor::HandleShiftVerdict(EShiftVerdictType Verdict, EContrac
 		if (IsValid(VerdictBannerText))
 		{
 			VerdictBannerText->SetTextRenderColor(BoothApprovedEmeraldColor);
-			VerdictBannerText->SetText(FText::FromString(TEXT("SHIFT COMPLETE // HOLD [R] TO REPLAY")));
+			ApplyFittedWingText(
+				VerdictBannerText,
+				TEXT("SHIFT COMPLETE // HOLD [R] TO REPLAY"),
+				WingVerdictWorldSize,
+				WingDirectiveMinWorldSize,
+				WingDirectiveMaxSafeWidthCm);
 		}
 		break;
 	}
 	default:
 		break;
 	}
+
+	UpdateBoothTickEnabled();
 }
 
 void ADirectorBoothActor::HandleContractSnapshotUpdated(const FContractRuntimeSnapshot& Snapshot)
@@ -431,14 +499,48 @@ void ADirectorBoothActor::HandleContractSnapshotUpdated(const FContractRuntimeSn
 		if (const UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
 		{
 			CachedTotalContracts = FMath::Max(1, ShiftSubsystem->GetTotalContractCount());
+			CachedShiftPhase = ShiftSubsystem->GetCurrentPhase();
+		}
+	}
+
+	const bool bShouldShowBrief = (CachedShiftPhase == EShiftPhase::ActiveInspection) &&
+		Snapshot.bIsContractBriefActive &&
+		!Snapshot.ContractBriefText.IsEmpty();
+
+	if (bShouldShowBrief)
+	{
+		const bool bBriefJustStartedOrChanged = !bIsBriefPulseActive || (CachedBriefText != Snapshot.ContractBriefText);
+		CachedBriefText = Snapshot.ContractBriefText;
+		if (bBriefJustStartedOrChanged)
+		{
+			BriefPulseElapsedSeconds = 0.0f;
+		}
+		bIsBriefPulseActive = true;
+		bIsBriefFadingOut = false;
+		BriefFadeElapsedSeconds = 0.0f;
+	}
+	else if (bIsBriefPulseActive)
+	{
+		bIsBriefPulseActive = false;
+		if (CachedShiftPhase == EShiftPhase::ActiveInspection)
+		{
+			bIsBriefFadingOut = true;
+			BriefFadeElapsedSeconds = 0.0f;
+		}
+		else
+		{
+			bIsBriefFadingOut = false;
 		}
 	}
 
 	RefreshContractDirectiveWingReadout();
+	UpdateBoothTickEnabled();
 }
 
 void ADirectorBoothActor::HandleShiftPhaseChanged(EShiftPhase NewPhase)
 {
+	CachedShiftPhase = NewPhase;
+
 	if (NewPhase == EShiftPhase::ActiveInspection)
 	{
 		SetShutterTargetOpenAlpha(1.0f, false);
@@ -449,9 +551,23 @@ void ADirectorBoothActor::HandleShiftPhaseChanged(EShiftPhase NewPhase)
 		if (IsValid(VerdictBannerText))
 		{
 			VerdictBannerText->SetTextRenderColor(BoothNormalSkyBlueColor);
-			VerdictBannerText->SetText(FText::FromString(TEXT("INSPECTION IN PROGRESS")));
+			ApplyFittedWingText(
+				VerdictBannerText,
+				TEXT("INSPECTION IN PROGRESS"),
+				WingVerdictWorldSize,
+				WingDirectiveMinWorldSize,
+				WingDirectiveMaxSafeWidthCm);
 		}
 	}
+	else if (bIsBriefPulseActive || bIsBriefFadingOut)
+	{
+		bIsBriefPulseActive = false;
+		bIsBriefFadingOut = false;
+		BriefFadeElapsedSeconds = 0.0f;
+		RefreshContractDirectiveWingReadout();
+	}
+
+	UpdateBoothTickEnabled();
 }
 
 void ADirectorBoothActor::HandleActiveContractLoaded(
@@ -470,6 +586,7 @@ void ADirectorBoothActor::HandleActiveContractLoaded(
 	}
 
 	RefreshContractDirectiveWingReadout();
+	UpdateBoothTickEnabled();
 }
 
 void ADirectorBoothActor::RefreshContractDirectiveWingReadout()
@@ -486,11 +603,31 @@ void ADirectorBoothActor::RefreshContractDirectiveWingReadout()
 
 	if (IsValid(ContractDirectiveReadoutText))
 	{
-		const FString EffectiveDirective = CachedDirectiveText.IsEmpty()
-			? TEXT("CUT TO QUOTA | STAMP [E]")
-			: CachedDirectiveText;
-		ContractDirectiveReadoutText->SetTextRenderColor(BoothDirectiveGoldColor);
-		ContractDirectiveReadoutText->SetText(FText::FromString(EffectiveDirective));
+		if (bIsBriefPulseActive && !CachedBriefText.IsEmpty())
+		{
+			LastBriefDisplayColor = ComputeBriefPulseColor();
+			ContractDirectiveReadoutText->SetTextRenderColor(LastBriefDisplayColor);
+			ApplyFittedWingText(
+				ContractDirectiveReadoutText,
+				CachedBriefText,
+				WingDirectiveWorldSize,
+				WingDirectiveMinWorldSize,
+				WingDirectiveMaxSafeWidthCm);
+		}
+		else
+		{
+			const FString EffectiveDirective = CachedDirectiveText.IsEmpty()
+				? TEXT("CUT TO QUOTA | STAMP [E]")
+				: CachedDirectiveText;
+			ContractDirectiveReadoutText->SetTextRenderColor(
+				bIsBriefFadingOut ? LastBriefDisplayColor : BoothDirectiveGoldColor);
+			ApplyFittedWingText(
+				ContractDirectiveReadoutText,
+				EffectiveDirective,
+				WingDirectiveWorldSize,
+				WingDirectiveMinWorldSize,
+				WingDirectiveMaxSafeWidthCm);
+		}
 	}
 }
 
@@ -502,14 +639,11 @@ void ADirectorBoothActor::SetShutterTargetOpenAlpha(float InTargetOpenAlpha, boo
 	{
 		CurrentShutterOpenAlpha = TargetShutterOpenAlpha;
 		ApplyShutterPositionFromAlpha();
-		SetActorTickEnabled(false);
+		UpdateBoothTickEnabled();
 		return;
 	}
 
-	if (!FMath::IsNearlyEqual(CurrentShutterOpenAlpha, TargetShutterOpenAlpha, ShutterAlphaConvergenceEpsilon))
-	{
-		SetActorTickEnabled(true);
-	}
+	UpdateBoothTickEnabled();
 }
 
 void ADirectorBoothActor::ApplyShutterPositionFromAlpha()
@@ -518,6 +652,63 @@ void ADirectorBoothActor::ApplyShutterPositionFromAlpha()
 	{
 		const FVector NewRelativePos = FMath::Lerp(ClosedShutterRelativeLocation, OpenShutterRelativeLocation, CurrentShutterOpenAlpha);
 		BlastShutterMotionPivot->SetRelativeLocation(NewRelativePos);
+	}
+}
+
+void ADirectorBoothActor::UpdateBoothTickEnabled()
+{
+	const bool bNeedShutterTick = !FMath::IsNearlyEqual(
+		CurrentShutterOpenAlpha,
+		TargetShutterOpenAlpha,
+		ShutterAlphaConvergenceEpsilon);
+	const bool bShouldTick = bNeedShutterTick || bIsBriefPulseActive || bIsBriefFadingOut;
+	SetActorTickEnabled(bShouldTick);
+}
+
+FColor ADirectorBoothActor::ComputeBriefPulseColor() const
+{
+	const float SafeFreqHz = FMath::Max(0.1f, BriefPulseFrequencyHz);
+	// Start near peak visibility at t=0 via cosine wave so the operational brief catches eye immediately on spawn.
+	const float PulseAlpha = 0.5f + 0.5f * FMath::Cos(BriefPulseElapsedSeconds * SafeFreqHz * 2.0f * UE_PI);
+	const FLinearColor BlendedLinear = FMath::Lerp(
+		FLinearColor(BoothBriefAmberMinColor),
+		FLinearColor(BoothBriefAmberPeakColor),
+		PulseAlpha);
+	return BlendedLinear.ToFColor(true);
+}
+
+void ADirectorBoothActor::ApplyFittedWingText(
+	UTextRenderComponent* TextComp,
+	const FString& NewText,
+	float DefaultWorldSize,
+	float MinWorldSize,
+	float MaxSafeWidthCm)
+{
+	if (!IsValid(TextComp))
+	{
+		return;
+	}
+
+	TextComp->SetText(FText::FromString(NewText));
+
+	const float SafeDefaultSize = FMath::Max(0.1f, DefaultWorldSize);
+	const float SafeCurrentSize = FMath::Max(0.1f, TextComp->WorldSize);
+	const FVector LocalSize = TextComp->GetTextLocalSize();
+	const float CurrentWidthYCm = static_cast<float>(FMath::Max(0.0, LocalSize.Y));
+	const float WidthAtDefaultCm = CurrentWidthYCm * (SafeDefaultSize / SafeCurrentSize);
+
+	float TargetWorldSize = SafeDefaultSize;
+	if (WidthAtDefaultCm > MaxSafeWidthCm && WidthAtDefaultCm > KINDA_SMALL_NUMBER)
+	{
+		TargetWorldSize = FMath::Clamp(
+			SafeDefaultSize * (MaxSafeWidthCm / WidthAtDefaultCm),
+			MinWorldSize,
+			SafeDefaultSize);
+	}
+
+	if (!FMath::IsNearlyEqual(SafeCurrentSize, TargetWorldSize, 0.01f))
+	{
+		TextComp->SetWorldSize(TargetWorldSize);
 	}
 }
 
@@ -530,7 +721,7 @@ FString ADirectorBoothActor::DescribeFaultReason(EContractFaultReason FaultReaso
 	case EContractFaultReason::ClampStructuralSnap:
 		return TEXT("FAULT: CLAMP TORQUE SNAP");
 	case EContractFaultReason::ScaleContaminated:
-		return TEXT("FAULT: CONTAMINATED | TARE [SPACE]");
+		return TEXT("FAULT: CONTAMINATED | HOLD [R] RESET");
 	case EContractFaultReason::QuotaOvershoot:
 		return TEXT("FAULT: OVERWEIGHT | MAX QUOTA");
 	case EContractFaultReason::TareAllowanceExceeded:

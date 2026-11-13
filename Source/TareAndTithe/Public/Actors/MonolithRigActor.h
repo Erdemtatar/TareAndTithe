@@ -111,6 +111,12 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rig|Telemetry", meta = (ClampMin = "0.05", ClampMax = "5.0"))
 	float VaporizedImpulseReferenceMassKg = 0.5f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rig|Telemetry", meta = (ClampMin = "0.001", ClampMax = "1.0"))
+	float MinPredictiveContactMassKg = 0.01f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rig|Telemetry", meta = (ClampMin = "0.1", ClampMax = "10.0"))
+	float VeinRemainderBoundsToleranceCm = 2.0f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rig|ClampFit", meta = (ClampMin = "0.0", ClampMax = "4.0"))
 	float JawPocketSeatEmbedZCm = 1.2f;
 

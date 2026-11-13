@@ -17,6 +17,8 @@
 namespace
 {
 	constexpr float DefaultTransitionDelaySeconds = 1.8f;
+	constexpr float DefaultContractBriefDurationSeconds = 3.5f;
+	constexpr float DefaultTightTorqueBriefThresholdNm = 42.0f;
 	constexpr float QuotaBoundaryFloatEpsilonKg = 1.0e-3f;
 	constexpr float WatchdogActiveFallVelocityThresholdZCmPerSec = -25.0f;
 	constexpr float WatchdogActiveFallMinCellFloorZCm = -75.0f;
@@ -60,11 +62,13 @@ void UInspectionShiftSubsystem::Deinitialize()
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(TransitionTimerHandle);
+		World->GetTimerManager().ClearTimer(ContractBriefTimerHandle);
 		if (UChunkPoolSubsystem* PoolSubsystem = World->GetSubsystem<UChunkPoolSubsystem>())
 		{
 			PoolSubsystem->OnAnyChunkWatchdogExpired.RemoveAll(this);
 		}
 	}
+	bIsContractBriefActive = false;
 
 	UnregisterTelemetryPublisher(this);
 	AudioBridges.Reset();
@@ -486,6 +490,12 @@ bool UInspectionShiftSubsystem::TryStampQuotaVerdict()
 
 	OnTelemetryImpulse.Broadcast(ETelemetryImpulseId::VerdictStamped, 1.0f, QueryReceiverLocationOrZero());
 
+	bIsContractBriefActive = false;
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ContractBriefTimerHandle);
+	}
+
 	const int32 TotalContracts = GetTotalContractCount();
 	if (CurrentContractIndex + 1 < TotalContracts)
 	{
@@ -547,6 +557,12 @@ void UInspectionShiftSubsystem::TriggerContractFaultAtLocation(
 	if (FaultReason == EContractFaultReason::None || CurrentPhase != EShiftPhase::ActiveInspection)
 	{
 		return;
+	}
+
+	bIsContractBriefActive = false;
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ContractBriefTimerHandle);
 	}
 
 	LastFaultReason = FaultReason;
@@ -636,6 +652,8 @@ UShiftProgressionDataAsset* UInspectionShiftSubsystem::BuildFallbackGreyboxProgr
 	FallbackGreyboxProgression->ChunkSeparationSpeedCmPerSec = 15.0f;
 	FallbackGreyboxProgression->MaxInFlightWatchdogSeconds = 6.0f;
 	FallbackGreyboxProgression->FaultAutoResetDelaySeconds = 1.8f;
+	FallbackGreyboxProgression->ContractBriefDurationSeconds = 3.5f;
+	FallbackGreyboxProgression->TightTorqueBriefThresholdNm = 42.0f;
 
 	auto MakeVein = [](const FVector& StartCm, const FVector& EndCm, float RadiusCm, float WarnCm) -> FVolatileVeinDefinition
 	{
@@ -782,9 +800,11 @@ const UMonolithContractDataAsset* UInspectionShiftSubsystem::ResolveContractAtIn
 
 bool UInspectionShiftSubsystem::LoadAndBeginContract(int32 ContractIndex)
 {
+	bIsContractBriefActive = false;
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(TransitionTimerHandle);
+		World->GetTimerManager().ClearTimer(ContractBriefTimerHandle);
 		if (UChunkPoolSubsystem* PoolSubsystem = World->GetSubsystem<UChunkPoolSubsystem>())
 		{
 			PoolSubsystem->ReclaimAllActiveChunks();
@@ -850,7 +870,22 @@ bool UInspectionShiftSubsystem::LoadAndBeginContract(int32 ContractIndex)
 			InitialContractMassKg);
 	}
 
-	// Activate inspection phase BEFORE snapshot & contract-loaded broadcasts so aiming and live preview queries run immediately.
+	// Activate inspection phase and 3.5s operational brief BEFORE snapshot & contract-loaded broadcasts so aiming and live preview queries run immediately.
+	bIsContractBriefActive = true;
+	if (UWorld* World = GetWorld())
+	{
+		const float BriefDurationSeconds = IsValid(ActiveProgressionAsset)
+			? FMath::Clamp(ActiveProgressionAsset->ContractBriefDurationSeconds, 0.5f, 10.0f)
+			: DefaultContractBriefDurationSeconds;
+
+		World->GetTimerManager().SetTimer(
+			ContractBriefTimerHandle,
+			this,
+			&UInspectionShiftSubsystem::HandleContractBriefTimerElapsed,
+			BriefDurationSeconds,
+			false);
+	}
+
 	SetShiftPhase(EShiftPhase::ActiveInspection);
 	RefreshAndBroadcastSnapshot();
 	OnActiveContractLoaded.Broadcast(ActiveContract, ActiveProgressionAsset, CurrentContractIndex);
@@ -955,7 +990,9 @@ void UInspectionShiftSubsystem::RefreshAndBroadcastSnapshot()
 	CachedSnapshot.AccumulatedTareWasteKg = AccumulatedTareWasteKg;
 	CachedSnapshot.MaxAllowedTareWasteKg = MaxTareKg;
 	CachedSnapshot.ContractDirectiveText = ResolveActiveContractDirectiveText();
+	CachedSnapshot.ContractBriefText = ResolveContractOperationalBriefText(ActiveContract);
 	CachedSnapshot.ActiveDiverterRoute = ActiveRoute;
+	CachedSnapshot.bIsContractBriefActive = bIsContractBriefActive && (CurrentPhase == EShiftPhase::ActiveInspection);
 	CachedSnapshot.bIsWithinQuotaWindow = bWithinWindow;
 	CachedSnapshot.bScaleSettledForStamp = bReadyForStamp;
 
@@ -1084,6 +1121,20 @@ void UInspectionShiftSubsystem::HandleContractPassTimerElapsed()
 	}
 }
 
+void UInspectionShiftSubsystem::HandleContractBriefTimerElapsed()
+{
+	if (!bIsContractBriefActive)
+	{
+		return;
+	}
+
+	bIsContractBriefActive = false;
+	if (CurrentPhase == EShiftPhase::ActiveInspection)
+	{
+		RefreshAndBroadcastSnapshot();
+	}
+}
+
 void UInspectionShiftSubsystem::SetShiftPhase(EShiftPhase NewPhase)
 {
 	if (CurrentPhase != NewPhase)
@@ -1109,6 +1160,30 @@ FString UInspectionShiftSubsystem::ResolveActiveContractDirectiveText() const
 		return ActiveContract->ContractDirectiveText;
 	}
 	return GetDefaultDirectiveForContractIndex(CurrentContractIndex);
+}
+
+FString UInspectionShiftSubsystem::ResolveContractOperationalBriefText(const UMonolithContractDataAsset* Contract) const
+{
+	if (!IsValid(Contract))
+	{
+		return TEXT("BRIEF: CUT WITHIN TARGET MASS WINDOW -> STAMP [E]");
+	}
+
+	if (Contract->HiddenVeins.Num() > 0)
+	{
+		return TEXT("BRIEF: [SPACE] -> TARE TO PURGE VEIN CHUNKS FIRST, THEN TITHE");
+	}
+
+	const float TightTorqueThresholdNm = IsValid(ActiveProgressionAsset)
+		? FMath::Max(5.0f, ActiveProgressionAsset->TightTorqueBriefThresholdNm)
+		: DefaultTightTorqueBriefThresholdNm;
+
+	if (Contract->ClampMaxSafeTorqueNm <= TightTorqueThresholdNm)
+	{
+		return TEXT("BRIEF: WATCH CLAMP TORQUE - BEVEL [RMB] OR TRIM LOAD");
+	}
+
+	return TEXT("BRIEF: CUT WITHIN TARGET MASS WINDOW -> STAMP [E]");
 }
 
 FString UInspectionShiftSubsystem::GetDefaultDirectiveForContractIndex(int32 ContractIndex)

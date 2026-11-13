@@ -186,6 +186,24 @@ FSlicePreviewTelemetry AMonolithRigActor::PreviewSlicePlane_Implementation(
 			Telemetry.EstimatedSeveredMassKg = SeveredMassKg;
 			Telemetry.EstimatedRemainderMassKg = RemainderMassKg;
 			Telemetry.bHasValidMassEstimate = true;
+
+			if ((SeveredMassKg > MinPredictiveContactMassKg) && !Telemetry.bWillDetonate)
+			{
+				FVector LocalOrigin = FVector::ZeroVector;
+				FVector SeveredLocalNormal = FVector::ZeroVector;
+				if (MonolithSliceComponent->ComputeSeveredHalfSpacePlaneLocal(
+					PlaneOriginWorld,
+					PlaneNormalWorld,
+					LocalOrigin,
+					SeveredLocalNormal))
+				{
+					Telemetry.bSeveredHalfContainsVein = VeinScannerComponent->DoesSeveredHalfSpaceContainActiveVein(
+						LocalOrigin,
+						SeveredLocalNormal,
+						MonolithSliceComponent->GetRemainderLocalBounds(),
+						VeinRemainderBoundsToleranceCm);
+				}
+			}
 		}
 	}
 	return Telemetry;
@@ -209,6 +227,13 @@ FSliceResultSummary AMonolithRigActor::CommitSlicePlane_Implementation(
 		VeinScannerComponent->GetMutableActiveVeins(),
 		SpawnedChunks,
 		SheetAperture);
+
+	if (Summary.Outcome == ECommitSliceOutcome::Success)
+	{
+		VeinScannerComponent->SyncPostSliceActiveVeins(
+			MonolithSliceComponent->GetRemainderLocalBounds(),
+			VeinRemainderBoundsToleranceCm);
+	}
 
 	if (Summary.Outcome == ECommitSliceOutcome::Success && IsValid(RemainderMeshComponent))
 	{

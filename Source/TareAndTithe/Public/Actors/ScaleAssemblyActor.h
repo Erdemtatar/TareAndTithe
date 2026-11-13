@@ -207,7 +207,19 @@ protected:
 	FColor ReadoutTareOrangeColor = FColor(255, 135, 0, 255);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Colors")
+	FColor ReadoutBriefAmberColor = FColor(255, 185, 25, 255);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Colors")
 	FColor ReadoutControlStencilColor = FColor(240, 230, 180, 255);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Readout", meta = (ClampMin = "3.5", ClampMax = "10.0"))
+	float StatusBannerDefaultWorldSize = 6.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Readout", meta = (ClampMin = "2.5", ClampMax = "8.0"))
+	float StatusBannerMinWorldSize = 4.1f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Readout", meta = (ClampMin = "120.0", ClampMax = "310.0"))
+	float StatusBannerMaxSafeWidthCm = 276.0f;
 
 private:
 	UFUNCTION()
@@ -229,6 +241,7 @@ private:
 	void EnforcePanTriggerGeometryAndCollision();
 	void RefreshContractHeaderReadout();
 	void RefreshStatusBannerReadout();
+	void SetStatusBannerTextFitted(const FString& BannerString, const FColor& BannerColor);
 	void RefreshRouteReadout();
 	static FString FormatFaultReasonBanner(EContractFaultReason FaultReason);
 	void InitializeGreyboxVisualMaterials();

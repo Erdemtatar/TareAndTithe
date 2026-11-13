@@ -168,6 +168,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry", meta = (ClampMin = "2.0", ClampMax = "10.0"))
 	float LaserReticleLineSpacingCm = 4.2f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry", meta = (ClampMin = "0.001", ClampMax = "1.0"))
+	float MinPredictiveContactMassKg = 0.01f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry", meta = (ClampMin = "0.01", ClampMax = "0.5"))
 	float LaserReticleVeinWarningThreshold = 0.05f;
 
@@ -188,6 +191,12 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry")
 	FColor ReticleAmberColor = FColor(255, 175, 20, 255);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry")
+	FColor ReticleVeinDropWarningColor = FColor(255, 145, 20, 255);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry")
+	FColor ReticlePurgeReadyColor = FColor(0, 250, 165, 255);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry")
 	FColor ReticleLoadCellColor = FColor(210, 242, 255, 255);
@@ -277,6 +286,7 @@ private:
 	void ConfigureLaserFrameGeometry();
 	void InitializeLaserSheetDynamicMaterial();
 	void UpdateLaserSheetMaterialVisuals();
+	bool HasValidPredictiveSliceContact() const;
 	bool DoesCurrentSliceEstimateLandInQuotaWindow() const;
 	void UpdateCameraParallaxFromAim();
 	void UpdateLaserReticleTransform();

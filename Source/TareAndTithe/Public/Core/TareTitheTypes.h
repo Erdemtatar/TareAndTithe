@@ -147,6 +147,9 @@ struct FSlicePreviewTelemetry
 	bool bWillDetonate = false;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Slice")
+	bool bSeveredHalfContainsVein = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Slice")
 	float EstimatedSeveredMassKg = 0.0f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Slice")
@@ -219,7 +222,13 @@ struct FContractRuntimeSnapshot
 	FString ContractDirectiveText;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Shift")
+	FString ContractBriefText;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Shift")
 	EDiverterRoute ActiveDiverterRoute = EDiverterRoute::TitheScale;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Shift")
+	bool bIsContractBriefActive = false;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Shift")
 	bool bIsWithinQuotaWindow = false;

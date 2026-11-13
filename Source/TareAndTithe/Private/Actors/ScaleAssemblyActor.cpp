@@ -277,7 +277,7 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 	ConfigureReadoutText(
 		StatusBannerText,
 		FVector(-2.0, 0.0, 3.6),
-		6.0f,
+		StatusBannerDefaultWorldSize,
 		ReadoutNormalSkyBlueColor,
 		TEXT("HOLD [LMB] TO SLICE MONOLITH INTO TITHE"));
 
@@ -361,6 +361,12 @@ void AScaleAssemblyActor::BeginPlay()
 			Binding.OnQueryWorldLocation.BindUObject(this, &AScaleAssemblyActor::QueryScaleWorldLocation);
 
 			ShiftSubsystem->RegisterQuotaReceiver(Binding);
+
+			CachedShiftPhase = ShiftSubsystem->GetCurrentPhase();
+			CachedContractIndex = ShiftSubsystem->GetCurrentContractIndex();
+			CachedTotalContracts = FMath::Max(1, ShiftSubsystem->GetTotalContractCount());
+			CachedSnapshot = ShiftSubsystem->GetCurrentSnapshot();
+			RefreshContractHeaderReadout();
 		}
 	}
 
@@ -846,35 +852,30 @@ void AScaleAssemblyActor::RefreshStatusBannerReadout()
 	{
 		if (LatchedVerdict == EShiftVerdictType::ContractFaultReset || CachedShiftPhase == EShiftPhase::FaultResetDelay)
 		{
-			StatusBannerText->SetTextRenderColor(ReadoutFaultBannerColor);
-			StatusBannerText->SetText(FText::FromString(FormatFaultReasonBanner(LatchedFaultReason)));
+			SetStatusBannerTextFitted(FormatFaultReasonBanner(LatchedFaultReason), ReadoutFaultBannerColor);
 			return;
 		}
 		if (LatchedVerdict == EShiftVerdictType::ShiftCompleted || CachedShiftPhase == EShiftPhase::ShiftCompleted)
 		{
-			StatusBannerText->SetTextRenderColor(ReadoutEmeraldColor);
-			StatusBannerText->SetText(FText::FromString(TEXT("SHIFT COMPLETE - HOLD [R] TO RESTART")));
+			SetStatusBannerTextFitted(TEXT("SHIFT COMPLETE - HOLD [R] TO RESTART"), ReadoutEmeraldColor);
 			return;
 		}
 		if (LatchedVerdict == EShiftVerdictType::ContractPassed || CachedShiftPhase == EShiftPhase::ContractPassTransition)
 		{
-			StatusBannerText->SetTextRenderColor(ReadoutEmeraldColor);
-			StatusBannerText->SetText(FText::FromString(TEXT("QUOTA STAMPED - LOADING NEXT CONTRACT")));
+			SetStatusBannerTextFitted(TEXT("QUOTA STAMPED - LOADING NEXT CONTRACT"), ReadoutEmeraldColor);
 			return;
 		}
 	}
 
 	if (HasContaminationFault_Implementation())
 	{
-		StatusBannerText->SetTextRenderColor(ReadoutFaultBannerColor);
-		StatusBannerText->SetText(FText::FromString(TEXT("FAULT: CONTAMINATED CHUNK - ROUTE TO [SPACE] TARE")));
+		SetStatusBannerTextFitted(FormatFaultReasonBanner(EContractFaultReason::ScaleContaminated), ReadoutFaultBannerColor);
 		return;
 	}
 
 	if (CachedSnapshot.InFlightMassKg > 0.01f)
 	{
-		StatusBannerText->SetTextRenderColor(ReadoutNormalSkyBlueColor);
-		StatusBannerText->SetText(FText::FromString(TEXT("CHUNK DROPPING...")));
+		SetStatusBannerTextFitted(TEXT("CHUNK DROPPING..."), ReadoutNormalSkyBlueColor);
 		return;
 	}
 
@@ -882,15 +883,13 @@ void AScaleAssemblyActor::RefreshStatusBannerReadout()
 		CachedSnapshot.SettledScaleMassKg > 0.0f &&
 		!IsReceiverSettled_Implementation())
 	{
-		StatusBannerText->SetTextRenderColor(ReadoutGoldColor);
-		StatusBannerText->SetText(FText::FromString(TEXT("SCALE SETTLING...")));
+		SetStatusBannerTextFitted(TEXT("SCALE SETTLING..."), ReadoutGoldColor);
 		return;
 	}
 
 	if (CachedSnapshot.bScaleSettledForStamp || CachedSnapshot.bIsWithinQuotaWindow)
 	{
-		StatusBannerText->SetTextRenderColor(ReadoutEmeraldColor);
-		StatusBannerText->SetText(FText::FromString(TEXT("QUOTA MET - PRESS [E] TO STAMP")));
+		SetStatusBannerTextFitted(TEXT("QUOTA MET - PRESS [E] TO STAMP"), ReadoutEmeraldColor);
 		return;
 	}
 
@@ -899,8 +898,7 @@ void AScaleAssemblyActor::RefreshStatusBannerReadout()
 		: CachedSnapshot.ActiveDiverterRoute;
 	if (EffectiveRoute == EDiverterRoute::TareChute)
 	{
-		StatusBannerText->SetTextRenderColor(ReadoutTareOrangeColor);
-		StatusBannerText->SetText(FText::FromString(TEXT("TARE CHUTE ACTIVE - HOLD [LMB] TO DUMP SCRAP | [SPACE] TITHE")));
+		SetStatusBannerTextFitted(TEXT("TARE CHUTE ACTIVE - HOLD [LMB] TO DUMP SCRAP | [SPACE] TITHE"), ReadoutTareOrangeColor);
 		return;
 	}
 
@@ -908,14 +906,52 @@ void AScaleAssemblyActor::RefreshStatusBannerReadout()
 	if (CachedSnapshot.SettledScaleMassKg > KINDA_SMALL_NUMBER && CachedSnapshot.SettledScaleMassKg < MinValidKg)
 	{
 		const float RemainingToWindowKg = FMath::Max(0.01f, MinValidKg - CachedSnapshot.SettledScaleMassKg);
-		StatusBannerText->SetTextRenderColor(ReadoutNormalSkyBlueColor);
-		StatusBannerText->SetText(FText::FromString(
-			FString::Printf(TEXT("UNDER QUOTA - ADD %.2f KG TO MIN WINDOW"), RemainingToWindowKg)));
+		SetStatusBannerTextFitted(
+			FString::Printf(TEXT("UNDER QUOTA - ADD %.2f KG TO MIN WINDOW"), RemainingToWindowKg),
+			ReadoutNormalSkyBlueColor);
 		return;
 	}
 
-	StatusBannerText->SetTextRenderColor(ReadoutNormalSkyBlueColor);
-	StatusBannerText->SetText(FText::FromString(TEXT("HOLD [LMB] TO SLICE MONOLITH INTO TITHE")));
+	if (CachedShiftPhase == EShiftPhase::ActiveInspection &&
+		CachedSnapshot.bIsContractBriefActive &&
+		!CachedSnapshot.ContractBriefText.IsEmpty())
+	{
+		SetStatusBannerTextFitted(CachedSnapshot.ContractBriefText, ReadoutBriefAmberColor);
+		return;
+	}
+
+	SetStatusBannerTextFitted(TEXT("HOLD [LMB] TO SLICE MONOLITH INTO TITHE"), ReadoutNormalSkyBlueColor);
+}
+
+void AScaleAssemblyActor::SetStatusBannerTextFitted(const FString& BannerString, const FColor& BannerColor)
+{
+	if (!IsValid(StatusBannerText))
+	{
+		return;
+	}
+
+	StatusBannerText->SetTextRenderColor(BannerColor);
+	StatusBannerText->SetText(FText::FromString(BannerString));
+
+	const float SafeDefaultSize = FMath::Max(0.1f, StatusBannerDefaultWorldSize);
+	const float SafeCurrentSize = FMath::Max(0.1f, StatusBannerText->WorldSize);
+	const FVector LocalSize = StatusBannerText->GetTextLocalSize();
+	const float CurrentWidthYCm = static_cast<float>(FMath::Max(0.0, LocalSize.Y));
+	const float WidthAtDefaultCm = CurrentWidthYCm * (SafeDefaultSize / SafeCurrentSize);
+
+	float TargetWorldSize = SafeDefaultSize;
+	if (WidthAtDefaultCm > StatusBannerMaxSafeWidthCm && WidthAtDefaultCm > KINDA_SMALL_NUMBER)
+	{
+		TargetWorldSize = FMath::Clamp(
+			SafeDefaultSize * (StatusBannerMaxSafeWidthCm / WidthAtDefaultCm),
+			StatusBannerMinWorldSize,
+			SafeDefaultSize);
+	}
+
+	if (!FMath::IsNearlyEqual(SafeCurrentSize, TargetWorldSize, 0.01f))
+	{
+		StatusBannerText->SetWorldSize(TargetWorldSize);
+	}
 }
 
 FString AScaleAssemblyActor::FormatFaultReasonBanner(EContractFaultReason FaultReason)
@@ -929,7 +965,7 @@ FString AScaleAssemblyActor::FormatFaultReasonBanner(EContractFaultReason FaultR
 	case EContractFaultReason::ClampStructuralSnap:
 		return TEXT("FAULT: CLAMP TORQUE SNAP");
 	case EContractFaultReason::ScaleContaminated:
-		return TEXT("FAULT: CONTAMINATED CHUNK - ROUTE TO [SPACE] TARE");
+		return TEXT("FAULT: VEIN IN TITHE PAN - HOLD [R] TO RESET (SWITCH [SPACE] TO TARE BEFORE CUT)");
 	case EContractFaultReason::TareAllowanceExceeded:
 		return TEXT("FAULT: MAX TARE WASTE EXCEEDED");
 	case EContractFaultReason::MathematicallyUnreachable:

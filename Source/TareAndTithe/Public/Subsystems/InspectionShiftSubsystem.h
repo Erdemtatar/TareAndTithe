@@ -185,10 +185,12 @@ private:
 	void HandleChunkWatchdogExpired(ASeveredChunkActor* ExpiredChunk);
 	void HandleFaultResetTimerElapsed();
 	void HandleContractPassTimerElapsed();
+	void HandleContractBriefTimerElapsed();
 	void SetShiftPhase(EShiftPhase NewPhase);
 
 	float QueryLiveRemainderMassKg() const;
 	FString ResolveActiveContractDirectiveText() const;
+	FString ResolveContractOperationalBriefText(const UMonolithContractDataAsset* Contract) const;
 	static FString GetDefaultDirectiveForContractIndex(int32 ContractIndex);
 	FVector QueryRigLocationOrZero() const;
 	FVector QueryReceiverLocationOrZero() const;
@@ -221,6 +223,7 @@ private:
 
 	FContractRuntimeSnapshot CachedSnapshot;
 	FTimerHandle TransitionTimerHandle;
+	FTimerHandle ContractBriefTimerHandle;
 
 	int32 CurrentContractIndex = 0;
 	float InitialContractMassKg = 0.0f;
@@ -232,5 +235,6 @@ private:
 
 	EShiftPhase CurrentPhase = EShiftPhase::WaitingForStations;
 	EContractFaultReason LastFaultReason = EContractFaultReason::None;
+	bool bIsContractBriefActive = false;
 	bool bWorldHasBegunPlay = false;
 };

@@ -105,8 +105,20 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Readout", meta = (ClampMin = "3.0", ClampMax = "12.0"))
 	float WingDirectiveWorldSize = 5.9f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Readout", meta = (ClampMin = "2.5", ClampMax = "10.0"))
+	float WingDirectiveMinWorldSize = 3.5f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Readout", meta = (ClampMin = "60.0", ClampMax = "240.0"))
+	float WingDirectiveMaxSafeWidthCm = 134.0f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Readout", meta = (ClampMin = "3.0", ClampMax = "12.0"))
 	float WingVerdictWorldSize = 5.7f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Readout", meta = (ClampMin = "0.2", ClampMax = "6.0"))
+	float BriefPulseFrequencyHz = 1.6f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Readout", meta = (ClampMin = "0.05", ClampMax = "2.0"))
+	float BriefFadeOutDurationSeconds = 0.35f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Readout")
 	FLinearColor SignboardBackingColor = FLinearColor(0.005f, 0.006f, 0.008f, 1.0f);
@@ -116,6 +128,12 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Readout")
 	FColor BoothDirectiveGoldColor = FColor(255, 210, 45, 255);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Readout")
+	FColor BoothBriefAmberMinColor = FColor(255, 165, 15, 255);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Readout")
+	FColor BoothBriefAmberPeakColor = FColor(255, 235, 130, 255);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Readout")
 	FColor BoothNormalSkyBlueColor = FColor(90, 210, 255, 255);
@@ -150,6 +168,14 @@ private:
 	void RefreshContractDirectiveWingReadout();
 	void SetShutterTargetOpenAlpha(float InTargetOpenAlpha, bool bInstant = false);
 	void ApplyShutterPositionFromAlpha();
+	void UpdateBoothTickEnabled();
+	FColor ComputeBriefPulseColor() const;
+	static void ApplyFittedWingText(
+		UTextRenderComponent* TextComp,
+		const FString& NewText,
+		float DefaultWorldSize,
+		float MinWorldSize,
+		float MaxSafeWidthCm);
 	static FString DescribeFaultReason(EContractFaultReason FaultReason);
 
 	UPROPERTY()
@@ -159,8 +185,15 @@ private:
 	TObjectPtr<UMaterialInterface> UnlitSignboardTextMaterial;
 
 	FString CachedDirectiveText;
+	FString CachedBriefText;
+	EShiftPhase CachedShiftPhase = EShiftPhase::ContractIntro;
 	int32 CachedContractIndex = 0;
 	int32 CachedTotalContracts = 6;
 	float CurrentShutterOpenAlpha = 0.0f;
 	float TargetShutterOpenAlpha = 0.0f;
+	float BriefPulseElapsedSeconds = 0.0f;
+	float BriefFadeElapsedSeconds = 0.0f;
+	FColor LastBriefDisplayColor = FColor(255, 210, 45, 255);
+	bool bIsBriefPulseActive = false;
+	bool bIsBriefFadingOut = false;
 };

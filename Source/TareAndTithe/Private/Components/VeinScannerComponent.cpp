@@ -39,10 +39,81 @@ void UVeinScannerComponent::SetActiveVeins(const TArray<FVolatileVeinDefinition>
 	}
 }
 
+void UVeinScannerComponent::SyncPostSliceActiveVeins(const FBox& RemainderLocalBounds, float BoundsSafetyToleranceCm)
+{
+	if (!RemainderLocalBounds.IsValid)
+	{
+		ActiveVeins.Reset();
+	}
+	else if (!ActiveVeins.IsEmpty())
+	{
+		const FBox SafeBounds = RemainderLocalBounds.ExpandBy(FMath::Max(0.0f, BoundsSafetyToleranceCm));
+		ActiveVeins.RemoveAll([&SafeBounds](const FVolatileVeinDefinition& CandidateVein)
+		{
+			return !SafeBounds.IsInsideOrOn(CandidateVein.GetMidpointCm());
+		});
+	}
+
+	if (ActiveVeins.IsEmpty())
+	{
+		EmitVeinProximityTelemetry(0.0f, true);
+	}
+}
+
 void UVeinScannerComponent::ClearActiveVeins()
 {
 	ActiveVeins.Reset();
 	EmitVeinProximityTelemetry(0.0f, true);
+}
+
+bool UVeinScannerComponent::DoesLocalHalfSpaceContainVein(
+	const FVector& LocalPlaneOrigin,
+	const FVector& SeveredLocalUnitNormal,
+	const TArray<FVolatileVeinDefinition>& Veins,
+	const FBox& RemainderLocalBounds,
+	float BoundsSafetyToleranceCm)
+{
+	if (Veins.IsEmpty() || !RemainderLocalBounds.IsValid)
+	{
+		return false;
+	}
+
+	const FVector UnitSeveredNormal = SeveredLocalUnitNormal.GetSafeNormal();
+	if (UnitSeveredNormal.IsNearlyZero())
+	{
+		return false;
+	}
+
+	const FBox SafeRemainderBounds = RemainderLocalBounds.ExpandBy(FMath::Max(0.0f, BoundsSafetyToleranceCm));
+	for (const FVolatileVeinDefinition& Vein : Veins)
+	{
+		const FVector MidpointCm = Vein.GetMidpointCm();
+		if (!SafeRemainderBounds.IsInsideOrOn(MidpointCm))
+		{
+			continue;
+		}
+
+		if (FVector::DotProduct(MidpointCm - LocalPlaneOrigin, UnitSeveredNormal) > 0.0)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool UVeinScannerComponent::DoesSeveredHalfSpaceContainActiveVein(
+	const FVector& LocalPlaneOrigin,
+	const FVector& SeveredLocalUnitNormal,
+	const FBox& RemainderLocalBounds,
+	float BoundsSafetyToleranceCm) const
+{
+	return DoesLocalHalfSpaceContainVein(
+		LocalPlaneOrigin,
+		SeveredLocalUnitNormal,
+		ActiveVeins,
+		RemainderLocalBounds,
+		BoundsSafetyToleranceCm);
 }
 
 FSlicePreviewTelemetry UVeinScannerComponent::EvaluateVeinsAgainstLocalPlane(

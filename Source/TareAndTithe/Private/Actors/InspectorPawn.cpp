@@ -824,27 +824,69 @@ void AInspectorPawn::UpdateLaserSheetMaterialVisuals()
 		return;
 	}
 
+	constexpr float QuotaFloatEpsilonKg = 1.0e-3f;
 	const FLinearColor SafeIdleColor(0.04f, 0.52f, 0.78f, 1.0f);
 	const FLinearColor IntersectCyanColor(0.08f, 0.88f, 1.00f, 1.0f);
 	const FLinearColor WindowMatchEmeraldColor(0.04f, 0.96f, 0.36f, 1.0f);
+	const FLinearColor TarePurgeReadyColor(0.06f, 0.94f, 0.62f, 1.0f);
 	const FLinearColor WarningAmberColor(1.00f, 0.56f, 0.04f, 1.0f);
 	const FLinearColor DangerCrimsonColor(1.00f, 0.05f, 0.03f, 1.0f);
 	const FLinearColor CapacitorHotWhiteColor(1.00f, 0.94f, 0.78f, 1.0f);
 
+	const bool bValidContact = HasValidPredictiveSliceContact();
+	const bool bDirectVeinHit = bCachedIntersectsMonolith && CachedPreviewTelemetry.bWillDetonate;
 	const bool bMatchesQuotaWindow = DoesCurrentSliceEstimateLandInQuotaWindow();
-	FLinearColor BaseHue = bCachedIntersectsMonolith
-		? (bMatchesQuotaWindow ? WindowMatchEmeraldColor : IntersectCyanColor)
-		: SafeIdleColor;
-	if (CachedVeinProximityNormalized > 0.0f)
+	const float EstSeveredKg = FMath::Max(0.0f, CachedPreviewTelemetry.EstimatedSeveredMassKg);
+	const float ProjectedTareKg = FMath::Max(0.0f, CachedHudSnapshot.AccumulatedTareWasteKg) + EstSeveredKg;
+	const float MaxTareKg = FMath::Max(0.0f, CachedHudSnapshot.MaxAllowedTareWasteKg);
+	const bool bTareOverflowRisk = ProjectedTareKg > (MaxTareKg + QuotaFloatEpsilonKg);
+
+	FLinearColor BaseHue = SafeIdleColor;
+	bool bHighlightReadySheet = bMatchesQuotaWindow;
+
+	if (bDirectVeinHit)
 	{
-		const FLinearColor CleanContactHue = bMatchesQuotaWindow ? WindowMatchEmeraldColor : IntersectCyanColor;
-		if (CachedVeinProximityNormalized < 0.5f)
+		BaseHue = DangerCrimsonColor;
+	}
+	else if (bValidContact)
+	{
+		if (CachedPreviewTelemetry.bSeveredHalfContainsVein)
 		{
-			BaseHue = FMath::Lerp(CleanContactHue, WarningAmberColor, CachedVeinProximityNormalized * 2.0f);
+			if (CachedHudSnapshot.ActiveDiverterRoute == EDiverterRoute::TitheScale)
+			{
+				const float DangerAlpha = FMath::Clamp((CachedVeinProximityNormalized - 0.5f) * 2.0f, 0.0f, 1.0f);
+				BaseHue = FMath::Lerp(WarningAmberColor, DangerCrimsonColor, DangerAlpha);
+			}
+			else if (bTareOverflowRisk)
+			{
+				BaseHue = DangerCrimsonColor;
+			}
+			else
+			{
+				const float CriticalVeinAlpha = FMath::Clamp((CachedVeinProximityNormalized - 0.65f) / 0.35f, 0.0f, 1.0f);
+				BaseHue = FMath::Lerp(TarePurgeReadyColor, DangerCrimsonColor, CriticalVeinAlpha);
+				bHighlightReadySheet = (CriticalVeinAlpha <= KINDA_SMALL_NUMBER);
+			}
+		}
+		else if (CachedHudSnapshot.ActiveDiverterRoute == EDiverterRoute::TareChute && bTareOverflowRisk)
+		{
+			BaseHue = DangerCrimsonColor;
 		}
 		else
 		{
-			BaseHue = FMath::Lerp(WarningAmberColor, DangerCrimsonColor, (CachedVeinProximityNormalized - 0.5f) * 2.0f);
+			const FLinearColor CleanContactHue = bMatchesQuotaWindow ? WindowMatchEmeraldColor : IntersectCyanColor;
+			if (CachedVeinProximityNormalized <= 0.0f)
+			{
+				BaseHue = CleanContactHue;
+			}
+			else if (CachedVeinProximityNormalized < 0.5f)
+			{
+				BaseHue = FMath::Lerp(CleanContactHue, WarningAmberColor, CachedVeinProximityNormalized * 2.0f);
+			}
+			else
+			{
+				BaseHue = FMath::Lerp(WarningAmberColor, DangerCrimsonColor, (CachedVeinProximityNormalized - 0.5f) * 2.0f);
+			}
 		}
 	}
 
@@ -871,15 +913,25 @@ void AInspectorPawn::UpdateLaserSheetMaterialVisuals()
 		TargetMID->SetScalarParameterValue(TEXT("LaserCharge"), CachedLaserChargeNormalized);
 	};
 
-	ApplyParameters(LaserSheetMID, bCachedIntersectsMonolith ? (bMatchesQuotaWindow ? 0.48f : 0.42f) : 0.18f);
+	const float SheetOpacity = (bValidContact || bDirectVeinHit)
+		? (bHighlightReadySheet ? 0.48f : 0.42f)
+		: 0.18f;
+	ApplyParameters(LaserSheetMID, SheetOpacity);
 	ApplyParameters(LaserFrameMID, 1.0f);
+}
+
+bool AInspectorPawn::HasValidPredictiveSliceContact() const
+{
+	return bCachedIntersectsMonolith &&
+		CachedPreviewTelemetry.bHasValidMassEstimate &&
+		(CachedPreviewTelemetry.EstimatedSeveredMassKg > MinPredictiveContactMassKg);
 }
 
 bool AInspectorPawn::DoesCurrentSliceEstimateLandInQuotaWindow() const
 {
-	if (!bCachedIntersectsMonolith ||
-		!CachedPreviewTelemetry.bHasValidMassEstimate ||
+	if (!HasValidPredictiveSliceContact() ||
 		CachedPreviewTelemetry.bWillDetonate ||
+		CachedPreviewTelemetry.bSeveredHalfContainsVein ||
 		CachedHudSnapshot.ActiveDiverterRoute != EDiverterRoute::TitheScale)
 	{
 		return false;
@@ -1025,9 +1077,12 @@ void AInspectorPawn::UpdateLaserReticleReadoutText()
 		}
 	}
 
+	const bool bValidContact = HasValidPredictiveSliceContact();
+	const bool bDirectVeinHit = bCachedIntersectsMonolith && CachedPreviewTelemetry.bWillDetonate;
+
 	if (IsValid(LaserReticleYieldReadout))
 	{
-		if (!bCachedIntersectsMonolith || !CachedPreviewTelemetry.bHasValidMassEstimate)
+		if (!bValidContact && !bDirectVeinHit)
 		{
 			LaserReticleYieldReadout->SetTextRenderColor(ReticleLoadCellColor);
 			LaserReticleYieldReadout->SetText(FText::FromString(TEXT("CUT EST: --- (NO CONTACT)")));
@@ -1037,22 +1092,44 @@ void AInspectorPawn::UpdateLaserReticleReadoutText()
 			constexpr float QuotaFloatEpsilonKg = 1.0e-3f;
 			const float EstSeveredKg = FMath::Max(0.0f, CachedPreviewTelemetry.EstimatedSeveredMassKg);
 			const float EstRemainderKg = FMath::Max(0.0f, CachedPreviewTelemetry.EstimatedRemainderMassKg);
+			const float ProjectedTareKg = FMath::Max(0.0f, CachedHudSnapshot.AccumulatedTareWasteKg) + EstSeveredKg;
+			const float MaxTareKg = FMath::Max(0.0f, CachedHudSnapshot.MaxAllowedTareWasteKg);
+			const bool bTareOverflow = ProjectedTareKg > (MaxTareKg + QuotaFloatEpsilonKg);
 
-			if (CachedPreviewTelemetry.bWillDetonate)
+			if (bDirectVeinHit)
 			{
 				LaserReticleYieldReadout->SetTextRenderColor(ReticleCrimsonColor);
 				LaserReticleYieldReadout->SetText(
-					FText::FromString(FString::Printf(TEXT("CUT EST: +%.2f KG [VEIN HIT!]"), EstSeveredKg)));
+					FText::FromString(FString::Printf(TEXT("CUT EST: +%.2f KG [VEIN INTERSECT]"), EstSeveredKg)));
 			}
-			else if (CachedHudSnapshot.ActiveDiverterRoute == EDiverterRoute::TareChute)
+			else if (CachedPreviewTelemetry.bSeveredHalfContainsVein)
 			{
-				const float ProjectedTareKg = FMath::Max(0.0f, CachedHudSnapshot.AccumulatedTareWasteKg) + EstSeveredKg;
-				const float MaxTareKg = FMath::Max(0.0f, CachedHudSnapshot.MaxAllowedTareWasteKg);
-				if (ProjectedTareKg > (MaxTareKg + QuotaFloatEpsilonKg))
+				if (CachedHudSnapshot.ActiveDiverterRoute == EDiverterRoute::TitheScale)
+				{
+					LaserReticleYieldReadout->SetTextRenderColor(ReticleVeinDropWarningColor);
+					LaserReticleYieldReadout->SetText(
+						FText::FromString(FString::Printf(TEXT("CUT EST: +%.2f KG | VEIN IN DROP! [SPACE] -> TARE"), EstSeveredKg)));
+				}
+				else if (bTareOverflow)
 				{
 					LaserReticleYieldReadout->SetTextRenderColor(ReticleCrimsonColor);
 					LaserReticleYieldReadout->SetText(
-						FText::FromString(FString::Printf(TEXT("SCRAP EST: %.2f KG [OVER TARE!]"), EstSeveredKg)));
+						FText::FromString(FString::Printf(TEXT("SCRAP EST: %.2f KG [TARE OVERFLOW RISK!]"), EstSeveredKg)));
+				}
+				else
+				{
+					LaserReticleYieldReadout->SetTextRenderColor(ReticlePurgeReadyColor);
+					LaserReticleYieldReadout->SetText(
+						FText::FromString(FString::Printf(TEXT("SCRAP EST: %.2f KG [TARE PURGE READY]"), EstSeveredKg)));
+				}
+			}
+			else if (CachedHudSnapshot.ActiveDiverterRoute == EDiverterRoute::TareChute)
+			{
+				if (bTareOverflow)
+				{
+					LaserReticleYieldReadout->SetTextRenderColor(ReticleCrimsonColor);
+					LaserReticleYieldReadout->SetText(
+						FText::FromString(FString::Printf(TEXT("SCRAP EST: %.2f KG [TARE OVERFLOW RISK!]"), EstSeveredKg)));
 				}
 				else
 				{
@@ -1104,10 +1181,22 @@ void AInspectorPawn::UpdateLaserReticleReadoutText()
 
 	if (IsValid(LaserReticleHazardReadout))
 	{
-		if (CachedVeinProximityNormalized > LaserReticleVeinWarningThreshold)
+		if (bDirectVeinHit)
+		{
+			LaserReticleHazardReadout->SetTextRenderColor(ReticleCrimsonColor);
+			LaserReticleHazardReadout->SetText(FText::FromString(TEXT("!! VEIN INTERSECT !!")));
+		}
+		else if (CachedVeinProximityNormalized > LaserReticleVeinWarningThreshold)
 		{
 			LaserReticleHazardReadout->SetTextRenderColor(ReticleCrimsonColor);
 			LaserReticleHazardReadout->SetText(FText::FromString(TEXT("!! VOLATILE VEIN !!")));
+		}
+		else if (bValidContact &&
+			CachedPreviewTelemetry.bSeveredHalfContainsVein &&
+			CachedHudSnapshot.ActiveDiverterRoute == EDiverterRoute::TitheScale)
+		{
+			LaserReticleHazardReadout->SetTextRenderColor(ReticleVeinDropWarningColor);
+			LaserReticleHazardReadout->SetText(FText::FromString(TEXT("!! VEIN IN DROP -> [SPACE] TARE !!")));
 		}
 		else if (CachedClampStrainNormalized >= LaserReticleClampTorqueWarningThreshold)
 		{

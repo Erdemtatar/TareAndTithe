@@ -50,6 +50,11 @@ public:
 		const FVector& PlaneOriginWorld,
 		const FVector& PlaneNormalWorld,
 		const FLaserSliceAperture& SheetAperture = FLaserSliceAperture()) const;
+	bool ComputeSeveredHalfSpacePlaneLocal(
+		const FVector& PlaneOriginWorld,
+		const FVector& PlaneNormalWorld,
+		FVector& OutLocalOrigin,
+		FVector& OutSeveredLocalNormal) const;
 	bool EstimateSeveredMassKg(
 		const FVector& PlaneOriginWorld,
 		const FVector& PlaneNormalWorld,

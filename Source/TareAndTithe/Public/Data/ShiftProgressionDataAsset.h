@@ -38,6 +38,12 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Safety", meta = (ClampMin = "0.2", ClampMax = "3.0"))
 	float FaultAutoResetDelaySeconds = 1.8f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Briefing", meta = (ClampMin = "0.5", ClampMax = "10.0"))
+	float ContractBriefDurationSeconds = 3.5f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Briefing", meta = (ClampMin = "5.0", ClampMax = "100.0"))
+	float TightTorqueBriefThresholdNm = 42.0f;
+
 	virtual FPrimaryAssetId GetPrimaryAssetId() const override;
 
 #if WITH_EDITOR
