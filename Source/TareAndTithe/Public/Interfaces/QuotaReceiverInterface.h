@@ -8,6 +8,7 @@
 #include "QuotaReceiverInterface.generated.h"
 
 class AActor;
+class UPrimitiveComponent;
 
 UINTERFACE(MinimalAPI)
 class UQuotaReceiverInterface : public UInterface
@@ -37,4 +38,14 @@ public:
 
 	UFUNCTION(BlueprintNativeEvent, Category = "Quota")
 	bool TryRecoverPayloadOnReceiver(AActor* PayloadActor);
+
+	UFUNCTION(BlueprintNativeEvent, Category = "Quota")
+	bool IsScalePanSupportComponent(const UPrimitiveComponent* CandidateComponent) const;
+
+	UFUNCTION(BlueprintNativeEvent, Category = "Quota")
+	void NotifyPayloadScaleSupportImpact(
+		AActor* PayloadActor,
+		UPrimitiveComponent* PayloadPrimitive,
+		const FVector& WorldImpactPoint,
+		const FVector& NormalImpulse);
 };

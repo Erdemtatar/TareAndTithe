@@ -31,7 +31,9 @@ public:
 	USceneComponent* GetFlapperComponent() const { return FlapperComponent; }
 
 	void BindTareChuteTrigger(UPrimitiveComponent* InTareTriggerComponent);
+	void BindTareAbyssDespawnTrigger(UPrimitiveComponent* InAbyssTriggerComponent);
 	void ProcessTareChuteOverlap(AActor* OtherActor);
+	bool LatchPayloadAsTareOnce(AActor* OtherActor);
 
 	void ConfigureForContract(bool bInAllowToggle, EDiverterRoute InitialRoute = EDiverterRoute::TitheScale);
 	bool ToggleRoute();
@@ -62,6 +64,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Diverter|Telemetry", meta = (ClampMin = "0.5", ClampMax = "100.0"))
 	float ImpulseReferenceMassKg = 10.0f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Diverter|Safety", meta = (ClampMin = "0.4", ClampMax = "5.0"))
+	float TareAbyssFailsafeSeconds = 1.60f;
+
 private:
 	UFUNCTION()
 	void HandleTareTriggerBeginOverlap(
@@ -71,6 +76,23 @@ private:
 		int32 OtherBodyIndex,
 		bool bFromSweep,
 		const FHitResult& SweepResult);
+
+	UFUNCTION()
+	void HandleTareAbyssDespawnBeginOverlap(
+		UPrimitiveComponent* OverlappedComponent,
+		AActor* OtherActor,
+		UPrimitiveComponent* OtherComp,
+		int32 OtherBodyIndex,
+		bool bFromSweep,
+		const FHitResult& SweepResult);
+
+	UFUNCTION()
+	void HandleFlapperPrimitiveHit(
+		UPrimitiveComponent* HitComponent,
+		AActor* OtherActor,
+		UPrimitiveComponent* OtherComp,
+		FVector NormalImpulse,
+		const FHitResult& Hit);
 
 	void ApplyFlapperRotation(bool bSweep);
 	void WakeTouchingBodies();
@@ -84,6 +106,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UPrimitiveComponent> TareChuteTriggerComponent;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UPrimitiveComponent> TareAbyssDespawnTriggerComponent;
 
 	FQuat BaseFlapperRelativeRotation = FQuat::Identity;
 	EDiverterRoute CurrentRoute = EDiverterRoute::TitheScale;

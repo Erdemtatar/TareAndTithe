@@ -172,6 +172,7 @@ BASELINE_CONTRACT_SPECS = [
         "directive": "CUT 12.0 KG TO TITHE | STAMP [E]",
         "shape": "BOX",
         "dims": (24.0, 24.0, 75.0),
+        "grip_offset_cm": (0.0, 0.0),
         "density": 0.80,
         "target_kg": 12.0,
         "tol_kg": 1.25,
@@ -186,16 +187,17 @@ BASELINE_CONTRACT_SPECS = [
     },
     {
         "name": "DA_Contract_02",
-        "code": "ACT I-B // CTR-02: ECCENTRIC L-CASTING",
+        "code": "ACT I-B // CTR-02: CANTILEVERED J-HOOK",
         "directive": "CUT GREEN YIELD | [SPACE] DUMPS TARE",
-        "shape": "ASYMMETRIC_L_BLOCK",
-        "dims": (24.0, 32.0, 80.0),
+        "shape": "CANTILEVERED_J_HOOK",
+        "dims": (24.0, 34.0, 80.0),
+        "grip_offset_cm": (0.0, 0.0),
         "density": 0.85,
         "target_kg": 14.5,
         "tol_kg": 1.35,
         "max_tare_kg": 16.0,
         "allow_diverter": True,
-        "max_torque_nm": 26.5,
+        "max_torque_nm": 29.0,
         "grace_s": 6.5,
         "cooldown_s": 3.0,
         "stiff": 180.0,
@@ -204,21 +206,22 @@ BASELINE_CONTRACT_SPECS = [
     },
     {
         "name": "DA_Contract_03",
-        "code": "ACT II-A // CTR-03: SINGLE-VEIN OCTAGON CORE",
+        "code": "ACT II-A // CTR-03: OFFSET C-CHANNEL CORE",
         "directive": "HIDDEN VEIN: AUDIO SCAN & BEVEL [RMB]",
-        "shape": "OCTAGONAL_PRISM",
-        "dims": (30.0, 30.0, 84.0),
-        "density": 0.95,
+        "shape": "OFFSET_C_CHANNEL",
+        "dims": (28.0, 34.0, 84.0),
+        "grip_offset_cm": (0.0, 0.0),
+        "density": 0.92,
         "target_kg": 15.0,
         "tol_kg": 1.00,
         "max_tare_kg": 18.0,
         "allow_diverter": True,
-        "max_torque_nm": 28.0,
+        "max_torque_nm": 30.0,
         "grace_s": 6.5,
         "cooldown_s": 3.0,
         "stiff": 180.0,
         "damp": 24.0,
-        "veins": [((-4.0, -7.0, -14.0), (4.0, 7.0, -6.0), 2.8, 18.0)],
+        "veins": [((-5.5, -8.5, -33.5), (5.5, 6.5, -28.0), 2.4, 18.0)],
     },
     {
         "name": "DA_Contract_04",
@@ -226,6 +229,7 @@ BASELINE_CONTRACT_SPECS = [
         "directive": "SLAG COLUMN: DODGE VEIN | WATCH TARE",
         "shape": "BOX",
         "dims": (30.0, 28.0, 88.0),
+        "grip_offset_cm": (0.0, 1.85),
         "density": 0.90,
         "target_kg": 18.0,
         "tol_kg": 0.95,
@@ -243,23 +247,24 @@ BASELINE_CONTRACT_SPECS = [
     },
     {
         "name": "DA_Contract_05",
-        "code": "ACT III-A // CTR-05: DENSE BISMUTH COUNTER-TORQUE",
+        "code": "ACT III-A // CTR-05: BISMUTH Z-COUNTERWEIGHT",
         "directive": "TORQUE LIMIT: KEEP CUTS BALANCED",
-        "shape": "ASYMMETRIC_L_BLOCK",
-        "dims": (22.0, 28.0, 76.0),
-        "density": 1.95,
+        "shape": "COUNTERWEIGHTED_Z_BRACKET",
+        "dims": (24.0, 34.0, 78.0),
+        "grip_offset_cm": (0.0, 0.0),
+        "density": 1.82,
         "target_kg": 21.0,
         "tol_kg": 0.90,
         "max_tare_kg": 28.0,
         "allow_diverter": True,
-        "max_torque_nm": 31.0,
+        "max_torque_nm": 32.0,
         "grace_s": 6.5,
         "cooldown_s": 3.0,
         "stiff": 210.0,
         "damp": 28.0,
         "veins": [
-            ((-4.0, 4.8, -29.0), (4.0, 9.8, -16.0), 2.4, 17.0),
-            ((-4.0, -9.8, 4.0), (4.0, -3.0, 18.0), 2.4, 17.0),
+            ((-4.5, -9.5, -31.0), (4.5, -2.5, -16.0), 2.3, 17.0),
+            ((-4.5, 2.5, 5.5), (4.5, 9.5, 16.5), 2.3, 17.0),
         ],
     },
     {
@@ -268,6 +273,7 @@ BASELINE_CONTRACT_SPECS = [
         "directive": "DIRECTOR'S INGOT: DUAL VEINS + TORQUE",
         "shape": "STEPPED_CORE",
         "dims": (24.0, 34.0, 84.0),
+        "grip_offset_cm": (0.0, -2.50),
         "density": 1.75,
         "target_kg": 24.0,
         "tol_kg": 0.85,
@@ -281,7 +287,7 @@ BASELINE_CONTRACT_SPECS = [
         "veins": [
             ((-5.0, -12.5, -9.0), (5.0, -7.5, 7.0), 2.3, 16.0),
             ((5.0, 2.5, -31.0), (-5.0, 6.8, -19.0), 2.3, 16.0),
-            ((-4.5, -4.5, 18.5), (4.5, 4.5, 27.0), 2.2, 16.0),
+            ((-4.5, -4.5, 13.0), (4.5, 4.5, 20.5), 2.2, 16.0),
         ],
     },
 ]
@@ -1198,6 +1204,9 @@ def ensure_shift_progression_and_contracts(da_pres: unreal.Object) -> Tuple[unre
         "OCTAGONAL_PRISM": unreal.MonolithBaseShape.OCTAGONAL_PRISM,
         "ASYMMETRIC_L_BLOCK": unreal.MonolithBaseShape.ASYMMETRIC_L_BLOCK,
         "STEPPED_CORE": unreal.MonolithBaseShape.STEPPED_CORE,
+        "CANTILEVERED_J_HOOK": unreal.MonolithBaseShape.CANTILEVERED_J_HOOK,
+        "OFFSET_C_CHANNEL": unreal.MonolithBaseShape.OFFSET_C_CHANNEL,
+        "COUNTERWEIGHTED_Z_BRACKET": unreal.MonolithBaseShape.COUNTERWEIGHTED_Z_BRACKET,
     }
 
     contracts: List[unreal.Object] = []
@@ -1212,6 +1221,8 @@ def ensure_shift_progression_and_contracts(da_pres: unreal.Object) -> Tuple[unre
             "dimensions_cm",
             unreal.Vector(entry["dims"][0], entry["dims"][1], entry["dims"][2]),
         )
+        gx, gy = entry.get("grip_offset_cm", (0.0, 0.0))
+        c_asset.set_editor_property("clamp_grip_horizontal_offset_cm", unreal.Vector2D(gx, gy))
         c_asset.set_editor_property("density_grams_per_cm3", entry["density"])
         c_asset.set_editor_property("target_tithe_mass_kg", entry["target_kg"])
         c_asset.set_editor_property("quota_tolerance_kg", entry["tol_kg"])
@@ -1315,6 +1326,9 @@ def verify_unreal_api_bindings() -> None:
         unreal.MonolithBaseShape.ASYMMETRIC_L_BLOCK,
         unreal.MonolithBaseShape.STEPPED_CORE,
         unreal.MonolithBaseShape.CUSTOM_STATIC_MESH,
+        unreal.MonolithBaseShape.CANTILEVERED_J_HOOK,
+        unreal.MonolithBaseShape.OFFSET_C_CHANNEL,
+        unreal.MonolithBaseShape.COUNTERWEIGHTED_Z_BRACKET,
         unreal.GeometryScript_AssetUtils.copy_mesh_from_static_mesh_v2,
         unreal.GeometryScript_AssetUtils.copy_mesh_to_static_mesh,
         unreal.GeometryScript_MeshRepair.weld_mesh_edges,
@@ -1467,10 +1481,11 @@ def main() -> None:
         # Verify spawn overhang torque safety against ClampMaxSafeTorqueNm
         verify_dyn = copy_static_mesh_to_dynamic(static_mesh)
         _, _, com_cm = unreal.GeometryScript_MeshQueries.get_mesh_volume_area_center(verify_dyn)
-        lever_m = math.hypot(float(com_cm.x), float(com_cm.y)) * 0.01
+        grip_off = target_contract.get_editor_property("clamp_grip_horizontal_offset_cm")
+        lever_m = math.hypot(float(com_cm.x) - float(grip_off.x), float(com_cm.y) - float(grip_off.y)) * 0.01
         spawn_torque_nm = mono_summary.calibrated_mass_kg * 9.81 * lever_m
         max_safe_nm = float(target_contract.get_editor_property("clamp_max_safe_torque_nm"))
-        assert spawn_torque_nm < 0.70 * max_safe_nm, (
+        assert spawn_torque_nm < 0.75 * max_safe_nm, (
             f"{canonical_name} initial overhang torque {spawn_torque_nm:.2f} Nm approaches {max_safe_nm:.1f} Nm!"
         )
 

@@ -11,7 +11,9 @@
 class UDynamicMeshComponent;
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
+class UPrimitiveComponent;
 class ASeveredChunkActor;
+struct FHitResult;
 
 namespace UE::Geometry
 {
@@ -55,10 +57,15 @@ public:
 	virtual EChunkRoutingState GetRoutingState_Implementation() const override;
 	virtual void NotifyRoutingStateChanged_Implementation(EChunkRoutingState NewState) override;
 	virtual void ReturnToChunkPool_Implementation() override;
+	virtual UPrimitiveComponent* GetPayloadPhysicsPrimitive_Implementation() const override;
+	virtual AActor* GetScaleSupportReceiverActor_Implementation() const override;
+	virtual void SetScaleSupportReceiverActor_Implementation(AActor* NewSupportReceiver) override;
+	virtual void ArmTareAbyssFailsafeTimer_Implementation(float FailsafeDurationSeconds) override;
 
 	FOnChunkWatchdogExpired OnChunkWatchdogExpired;
 
 protected:
+	virtual void BeginPlay() override;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Chunk")
 	TObjectPtr<UDynamicMeshComponent> ChunkMeshComponent;
 
@@ -75,10 +82,20 @@ protected:
 	float DefaultWatchdogSeconds = 6.0f;
 
 private:
+	UFUNCTION()
+	void HandleChunkMeshComponentHit(
+		UPrimitiveComponent* HitComponent,
+		AActor* OtherActor,
+		UPrimitiveComponent* OtherComp,
+		FVector NormalImpulse,
+		const FHitResult& Hit);
+
 	void EnsureFallbackChunkMaterialsInitialized();
 	void StartInFlightWatchdog(float DurationSeconds);
 	void ClearInFlightWatchdog();
 	void HandleWatchdogExpired();
+	void ClearTareAbyssFailsafeTimer();
+	void HandleTareAbyssFailsafeExpired();
 
 	UPROPERTY()
 	TObjectPtr<UMaterialInterface> BaseRuntimeSurfaceMaterial;
@@ -89,10 +106,13 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> FallbackChunkCutCapMID;
 
+	TWeakObjectPtr<AActor> CurrentScaleSupportReceiver;
+
 	float AnalyticalMassKg = 0.0f;
 	float ActiveWatchdogSeconds = 6.0f;
 	bool bVolatileContaminated = false;
 	bool bHasRearmedWatchdogOnce = false;
 	EChunkRoutingState RoutingState = EChunkRoutingState::PooledInactive;
 	FTimerHandle WatchdogTimerHandle;
+	FTimerHandle TareAbyssFailsafeTimerHandle;
 };

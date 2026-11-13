@@ -3,10 +3,13 @@
 #include "Actors/SeveredChunkActor.h"
 #include "UDynamicMesh.h"
 #include "Components/DynamicMeshComponent.h"
+#include "Components/PrimitiveComponent.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "GeometryScript/CollisionFunctions.h"
+#include "Interfaces/QuotaReceiverInterface.h"
 #include "Subsystems/ChunkPoolSubsystem.h"
 #include "Engine/CollisionProfile.h"
+#include "Engine/HitResult.h"
 #include "Engine/World.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
@@ -40,15 +43,34 @@ ASeveredChunkActor::ASeveredChunkActor()
 	ChunkMeshComponent->SetSimulatePhysics(false);
 	ChunkMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	ChunkMeshComponent->SetGenerateOverlapEvents(false);
+	ChunkMeshComponent->SetNotifyRigidBodyCollision(false);
 	ChunkMeshComponent->SetComplexAsSimpleCollisionEnabled(false, false);
 
 	SetActorHiddenInGame(true);
 	SetActorEnableCollision(false);
 }
 
+void ASeveredChunkActor::BeginPlay()
+{
+	Super::BeginPlay();
+
+	if (IsValid(ChunkMeshComponent))
+	{
+		ChunkMeshComponent->OnComponentHit.AddUniqueDynamic(this, &ASeveredChunkActor::HandleChunkMeshComponentHit);
+	}
+}
+
 void ASeveredChunkActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	ClearInFlightWatchdog();
+	ClearTareAbyssFailsafeTimer();
+	CurrentScaleSupportReceiver.Reset();
+
+	if (IsValid(ChunkMeshComponent))
+	{
+		ChunkMeshComponent->OnComponentHit.RemoveDynamic(this, &ASeveredChunkActor::HandleChunkMeshComponentHit);
+	}
+
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -68,6 +90,8 @@ void ASeveredChunkActor::ActivateFromSlice(
 	float InWatchdogSeconds)
 {
 	ClearInFlightWatchdog();
+	ClearTareAbyssFailsafeTimer();
+	CurrentScaleSupportReceiver.Reset();
 
 	AnalyticalMassKg = FMath::Max(0.001f, InAnalyticalMassKg);
 	bVolatileContaminated = bInIsContaminated;
@@ -81,6 +105,8 @@ void ASeveredChunkActor::ActivateFromSlice(
 
 	if (IsValid(ChunkMeshComponent))
 	{
+		ChunkMeshComponent->OnComponentHit.AddUniqueDynamic(this, &ASeveredChunkActor::HandleChunkMeshComponentHit);
+
 		if (!IsValid(OuterMaterial) || !IsValid(CutCapMaterial))
 		{
 			EnsureFallbackChunkMaterialsInitialized();
@@ -119,6 +145,7 @@ void ASeveredChunkActor::ActivateFromSlice(
 		ChunkMeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 		ChunkMeshComponent->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
 		ChunkMeshComponent->SetGenerateOverlapEvents(true);
+		ChunkMeshComponent->SetNotifyRigidBodyCollision(true);
 		ChunkMeshComponent->SetComplexAsSimpleCollisionEnabled(false, true);
 		ChunkMeshComponent->SetMassOverrideInKg(NAME_None, AnalyticalMassKg, true);
 		ChunkMeshComponent->SetSimulatePhysics(true);
@@ -162,6 +189,8 @@ bool ASeveredChunkActor::TryRearmWatchdogIfActivelyFalling(float MaxDownwardVelo
 void ASeveredChunkActor::DeactivateToPool()
 {
 	ClearInFlightWatchdog();
+	ClearTareAbyssFailsafeTimer();
+	CurrentScaleSupportReceiver.Reset();
 
 	RoutingState = EChunkRoutingState::PooledInactive;
 	AnalyticalMassKg = 0.0f;
@@ -171,6 +200,7 @@ void ASeveredChunkActor::DeactivateToPool()
 	if (IsValid(ChunkMeshComponent))
 	{
 		ChunkMeshComponent->SetGenerateOverlapEvents(false);
+		ChunkMeshComponent->SetNotifyRigidBodyCollision(false);
 
 		if (ChunkMeshComponent->IsSimulatingPhysics())
 		{
@@ -219,6 +249,16 @@ void ASeveredChunkActor::NotifyRoutingStateChanged_Implementation(EChunkRoutingS
 
 	RoutingState = NewState;
 
+	if (RoutingState != EChunkRoutingState::OnScalePan)
+	{
+		CurrentScaleSupportReceiver.Reset();
+	}
+
+	if (RoutingState != EChunkRoutingState::ConsumedAsTare)
+	{
+		ClearTareAbyssFailsafeTimer();
+	}
+
 	if (RoutingState == EChunkRoutingState::InFlight)
 	{
 		bHasRearmedWatchdogOnce = false;
@@ -242,6 +282,109 @@ void ASeveredChunkActor::ReturnToChunkPool_Implementation()
 	}
 
 	DeactivateToPool();
+}
+
+UPrimitiveComponent* ASeveredChunkActor::GetPayloadPhysicsPrimitive_Implementation() const
+{
+	return ChunkMeshComponent;
+}
+
+AActor* ASeveredChunkActor::GetScaleSupportReceiverActor_Implementation() const
+{
+	return CurrentScaleSupportReceiver.Get();
+}
+
+void ASeveredChunkActor::SetScaleSupportReceiverActor_Implementation(AActor* NewSupportReceiver)
+{
+	CurrentScaleSupportReceiver = NewSupportReceiver;
+}
+
+void ASeveredChunkActor::ArmTareAbyssFailsafeTimer_Implementation(float FailsafeDurationSeconds)
+{
+	if (RoutingState == EChunkRoutingState::PooledInactive)
+	{
+		return;
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		if (!World->GetTimerManager().IsTimerActive(TareAbyssFailsafeTimerHandle))
+		{
+			const float SafeDuration = FMath::Max(0.25f, FailsafeDurationSeconds);
+			World->GetTimerManager().SetTimer(
+				TareAbyssFailsafeTimerHandle,
+				this,
+				&ASeveredChunkActor::HandleTareAbyssFailsafeExpired,
+				SafeDuration,
+				false);
+		}
+	}
+}
+
+void ASeveredChunkActor::HandleChunkMeshComponentHit(
+	UPrimitiveComponent* HitComponent,
+	AActor* OtherActor,
+	UPrimitiveComponent* OtherComp,
+	FVector NormalImpulse,
+	const FHitResult& Hit)
+{
+	if (!IsValid(OtherActor) || OtherActor == this)
+	{
+		return;
+	}
+
+	if (RoutingState == EChunkRoutingState::InFlight)
+	{
+		if (IsValid(OtherComp) &&
+			OtherActor->Implements<UQuotaReceiverInterface>() &&
+			IQuotaReceiverInterface::Execute_IsScalePanSupportComponent(OtherActor, OtherComp))
+		{
+			IQuotaReceiverInterface::Execute_NotifyPayloadScaleSupportImpact(
+				OtherActor,
+				this,
+				HitComponent,
+				FVector(Hit.ImpactPoint),
+				NormalImpulse);
+			return;
+		}
+
+		if (OtherActor->Implements<UMassPayloadInterface>() &&
+			IMassPayloadInterface::Execute_GetRoutingState(OtherActor) == EChunkRoutingState::OnScalePan)
+		{
+			AActor* SupportReceiver = IMassPayloadInterface::Execute_GetScaleSupportReceiverActor(OtherActor);
+			if (IsValid(SupportReceiver) && SupportReceiver->Implements<UQuotaReceiverInterface>())
+			{
+				IQuotaReceiverInterface::Execute_NotifyPayloadScaleSupportImpact(
+					SupportReceiver,
+					this,
+					HitComponent,
+					FVector(Hit.ImpactPoint),
+					NormalImpulse);
+			}
+		}
+		return;
+	}
+
+	// Bidirectional stack contact guard: if this chunk is already OnScalePan and Chaos reports a hit with an InFlight chunk resting/landing on top of us, propagate upward via interface.
+	if (RoutingState == EChunkRoutingState::OnScalePan)
+	{
+		AActor* SupportReceiver = CurrentScaleSupportReceiver.Get();
+		if (IsValid(SupportReceiver) &&
+			SupportReceiver->Implements<UQuotaReceiverInterface>() &&
+			OtherActor->Implements<UMassPayloadInterface>() &&
+			IMassPayloadInterface::Execute_GetRoutingState(OtherActor) == EChunkRoutingState::InFlight)
+		{
+			UPrimitiveComponent* OtherPayloadPrim = IsValid(OtherComp)
+				? OtherComp
+				: IMassPayloadInterface::Execute_GetPayloadPhysicsPrimitive(OtherActor);
+			IQuotaReceiverInterface::Execute_NotifyPayloadScaleSupportImpact(
+				SupportReceiver,
+				OtherActor,
+				OtherPayloadPrim,
+				FVector(Hit.ImpactPoint),
+				-NormalImpulse);
+		}
+	}
 }
 
 void ASeveredChunkActor::EnsureFallbackChunkMaterialsInitialized()
@@ -312,5 +455,21 @@ void ASeveredChunkActor::HandleWatchdogExpired()
 	if (RoutingState == EChunkRoutingState::InFlight)
 	{
 		OnChunkWatchdogExpired.Broadcast(this);
+	}
+}
+
+void ASeveredChunkActor::ClearTareAbyssFailsafeTimer()
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(TareAbyssFailsafeTimerHandle);
+	}
+}
+
+void ASeveredChunkActor::HandleTareAbyssFailsafeExpired()
+{
+	if (RoutingState == EChunkRoutingState::ConsumedAsTare)
+	{
+		ReturnToChunkPool_Implementation();
 	}
 }

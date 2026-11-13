@@ -11,11 +11,13 @@
 
 class UBoxComponent;
 class UDiverterGateComponent;
+class UInstancedStaticMeshComponent;
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
 class UMoltenThermalLightComponent;
 class UMonolithContractDataAsset;
 class UPointLightComponent;
+class UPrimitiveComponent;
 class UScaleWeighingComponent;
 class USceneComponent;
 class UShiftProgressionDataAsset;
@@ -45,6 +47,12 @@ public:
 	virtual EDiverterRoute GetActiveDiverterRoute_Implementation() const override;
 	virtual void ResetReceiverState_Implementation() override;
 	virtual bool TryRecoverPayloadOnReceiver_Implementation(AActor* PayloadActor) override;
+	virtual bool IsScalePanSupportComponent_Implementation(const UPrimitiveComponent* CandidateComponent) const override;
+	virtual void NotifyPayloadScaleSupportImpact_Implementation(
+		AActor* PayloadActor,
+		UPrimitiveComponent* PayloadPrimitive,
+		const FVector& WorldImpactPoint,
+		const FVector& NormalImpulse) override;
 
 	// ITelemetryPublisherInterface
 	virtual FOnTelemetryStreamSignature& GetTelemetryStreamDelegate() override { return OnTelemetryStream; }
@@ -109,8 +117,44 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly")
 	TObjectPtr<UStaticMeshComponent> TareChuteVisual;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly|TareHopper")
+	TObjectPtr<UInstancedStaticMeshComponent> TareHopperCollarISM;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly|TareHopper")
+	TObjectPtr<UInstancedStaticMeshComponent> TareHopperThroatISM;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly|TareHopper")
+	TObjectPtr<UStaticMeshComponent> TareHopperFurnaceGlowCard;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly|TareHopper")
+	TObjectPtr<UBoxComponent> TareGuideWallOuterRightBox;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly|TareHopper")
+	TObjectPtr<UBoxComponent> TareGuideWallFrontBox;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly|TareHopper")
+	TObjectPtr<UBoxComponent> TareGuideWallBackBox;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly|TareHopper")
+	TObjectPtr<UBoxComponent> TareGuideWallInnerLeftLowerBox;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly|TareHopper")
+	TObjectPtr<UBoxComponent> TareGuideFeedApronSlopeBox;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly|TareHopper")
+	TObjectPtr<UBoxComponent> TareGuideChamferOuterRightBox;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly|TareHopper")
+	TObjectPtr<UBoxComponent> TareGuideChamferFrontBox;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly|TareHopper")
+	TObjectPtr<UBoxComponent> TareGuideChamferBackBox;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly")
 	TObjectPtr<UBoxComponent> TareChuteTriggerBox;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly|TareHopper")
+	TObjectPtr<UBoxComponent> TareAbyssDespawnTriggerBox;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly")
 	TObjectPtr<UScaleWeighingComponent> ScaleWeighingComponent;
@@ -180,6 +224,27 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Colliders")
 	FVector LeftHopperGuideBoxExtentCm = FVector(38.0, 1.5, 16.5);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|TareHopper")
+	FVector TareBasinVisualOffsetCm = FVector(0.0, 90.0, -82.0);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|TareHopper", meta = (ClampMin = "0.5", ClampMax = "1.0"))
+	float TareBasinVisualXYScaleMultiplier = 0.86f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|TareHopper")
+	FVector TareMouthTriggerOffsetCm = FVector(0.0, 87.0, 20.0);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|TareHopper")
+	FVector TareMouthTriggerExtentCm = FVector(45.0, 45.0, 26.0);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|TareHopper")
+	FVector TareAbyssDespawnTriggerOffsetCm = FVector(0.0, 90.0, -92.0);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|TareHopper")
+	FVector TareAbyssDespawnTriggerExtentCm = FVector(46.0, 42.0, 8.0);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|TareHopper")
+	FLinearColor TareFurnaceBaffleEmissiveColor = FLinearColor(1.10f, 0.25f, 0.025f, 1.0f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Trigger", meta = (ClampMin = "2.0", ClampMax = "40.0"))
 	float FlapperFilterEngagementAngleDegrees = 15.0f;
@@ -268,7 +333,12 @@ private:
 	void RefreshRouteReadout();
 	static FString FormatFaultReasonBanner(EContractFaultReason FaultReason);
 	void InitializeGreyboxVisualMaterials();
+	void RebuildTareHopperVisualInstances();
+	void ApplyTareHopperPresentationMaterials();
 	void ApplyDarkGunmetalMaterial(UStaticMeshComponent* TargetMesh);
+	void ApplyDarkGunmetalMaterialToISM(UInstancedStaticMeshComponent* TargetISM);
+	UMaterialInterface* ResolveDarkGunmetalMaterial();
+	UMaterialInterface* ResolveRodinHopperCollarMaterial() const;
 	FVector QueryScaleWorldLocation() const;
 
 	void HandleChildTelemetryStream(ETelemetryStreamId StreamId, float NormalizedValue);
@@ -291,6 +361,12 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInterface> AutoResolvedDarkGunmetalMaterial;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> AutoResolvedHopperCollarMaterial;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> TareFurnaceBaffleMID;
 
 	UPROPERTY(Transient)
 	TObjectPtr<const UTareTithePresentationDataAsset> PresentationData;

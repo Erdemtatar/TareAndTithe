@@ -859,48 +859,49 @@ UShiftProgressionDataAsset* UInspectionShiftSubsystem::BuildFallbackGreyboxProgr
 		FallbackGreyboxContracts.Add(C01);
 	}
 
-	// Contract 02 (Act I-B): Front-facing YZ Asymmetric L-Block (~39.92 kg initial mass, CoM_Y = -3.06 cm -> S_clamp = 0.45 on spawn).
+	// Contract 02 (Act I-B): Front-facing YZ Cantilevered J-Hook (~45.32 kg initial mass -> S_clamp ~ 0.59 on spawn).
 	{
-		UMonolithContractDataAsset* C02 = NewObject<UMonolithContractDataAsset>(this, TEXT("ACT_IB_Fallback_Contract02_LBlock"));
-		C02->ContractCode = FText::FromString(TEXT("ACT I-B // CTR-02: ECCENTRIC L-CASTING"));
+		UMonolithContractDataAsset* C02 = NewObject<UMonolithContractDataAsset>(this, TEXT("DA_Fallback_Contract02_JHook"));
+		C02->ContractCode = FText::FromString(TEXT("ACT I-B // CTR-02: CANTILEVERED J-HOOK"));
 		C02->ContractDirectiveText = GetDefaultDirectiveForContractIndex(1);
-		C02->BaseShape = EMonolithBaseShape::AsymmetricLBlock;
-		C02->DimensionsCm = FVector(24.0f, 32.0f, 80.0f);
+		C02->BaseShape = EMonolithBaseShape::CantileveredJHook;
+		C02->DimensionsCm = FVector(24.0f, 34.0f, 80.0f);
 		C02->DensityGramsPerCm3 = 0.85f;
 		C02->TargetTitheMassKg = 14.5f;
 		C02->QuotaToleranceKg = 1.35f;
 		C02->MaxAllowedTareWasteKg = 16.0f;
 		C02->bAllowDiverterToggle = true;
-		C02->ClampMaxSafeTorqueNm = 26.5f;
+		C02->ClampMaxSafeTorqueNm = 29.0f;
 		C02->ClampFatigueGraceSeconds = 6.5f;
 		FallbackGreyboxContracts.Add(C02);
 	}
 
-	// Contract 03 (Act II-A): 1-Vein Octagonal Prism + Diverter routing (~50.78 kg initial mass; inscribed apothem 13.86 cm).
+	// Contract 03 (Act II-A): 1-Vein Offset C-Channel + Diverter routing (~57.69 kg initial mass -> S_clamp ~ 0.575 on spawn).
 	{
-		UMonolithContractDataAsset* C03 = NewObject<UMonolithContractDataAsset>(this, TEXT("DA_Fallback_Contract03_Octagon1Vein"));
-		C03->ContractCode = FText::FromString(TEXT("ACT II-A // CTR-03: SINGLE-VEIN OCTAGON CORE"));
+		UMonolithContractDataAsset* C03 = NewObject<UMonolithContractDataAsset>(this, TEXT("DA_Fallback_Contract03_OffsetCChannel"));
+		C03->ContractCode = FText::FromString(TEXT("ACT II-A // CTR-03: OFFSET C-CHANNEL CORE"));
 		C03->ContractDirectiveText = GetDefaultDirectiveForContractIndex(2);
-		C03->BaseShape = EMonolithBaseShape::OctagonalPrism;
-		C03->DimensionsCm = FVector(30.0f, 30.0f, 84.0f);
-		C03->DensityGramsPerCm3 = 0.95f;
+		C03->BaseShape = EMonolithBaseShape::OffsetCChannel;
+		C03->DimensionsCm = FVector(28.0f, 34.0f, 84.0f);
+		C03->DensityGramsPerCm3 = 0.92f;
 		C03->TargetTitheMassKg = 15.0f;
 		C03->QuotaToleranceKg = 1.00f;
 		C03->MaxAllowedTareWasteKg = 18.0f;
 		C03->bAllowDiverterToggle = true;
-		C03->ClampMaxSafeTorqueNm = 28.0f;
+		C03->ClampMaxSafeTorqueNm = 30.0f;
 		C03->ClampFatigueGraceSeconds = 6.5f;
-		C03->HiddenVeins.Add(MakeVein(FVector(-4.0f, -7.0f, -14.0f), FVector(4.0f, 7.0f, -6.0f), 2.8f, 18.0f));
+		C03->HiddenVeins.Add(MakeVein(FVector(-5.5f, -8.5f, -33.5f), FVector(5.5f, 6.5f, -28.0f), 2.4f, 18.0f));
 		FallbackGreyboxContracts.Add(C03);
 	}
 
-	// Contract 04 (Act II-B): 2-Vein Crossed Lattice (~66.53 kg initial mass; Box bounds X in [-15,15], Y in [-14,14], Z in [-44,44]).
+	// Contract 04 (Act II-B): 2-Vein Crossed Lattice with +1.85 cm eccentric clamp offset (~66.53 kg initial mass -> S_clamp ~ 0.51 on spawn).
 	{
 		UMonolithContractDataAsset* C04 = NewObject<UMonolithContractDataAsset>(this, TEXT("DA_Fallback_Contract04_CrossedLattice"));
 		C04->ContractCode = FText::FromString(TEXT("ACT II-B // CTR-04: CROSSED ISOTOPE LATTICE"));
 		C04->ContractDirectiveText = GetDefaultDirectiveForContractIndex(3);
 		C04->BaseShape = EMonolithBaseShape::Box;
 		C04->DimensionsCm = FVector(30.0f, 28.0f, 88.0f);
+		C04->ClampGripHorizontalOffsetCm = FVector2D(0.0f, 1.85f);
 		C04->DensityGramsPerCm3 = 0.90f;
 		C04->TargetTitheMassKg = 18.0f;
 		C04->QuotaToleranceKg = 0.95f;
@@ -913,36 +914,36 @@ UShiftProgressionDataAsset* UInspectionShiftSubsystem::BuildFallbackGreyboxProgr
 		FallbackGreyboxContracts.Add(C04);
 	}
 
-	// Contract 05 (Act III-A): High-Density Bismuth Counter-Torque YZ L-Block (~69.77 kg initial mass, CoM_Y = -2.68 cm -> S_clamp = 0.59 on spawn).
+	// Contract 05 (Act III-A): High-Density Bismuth Counterweighted Z-Bracket (~78.40 kg initial mass -> S_clamp ~ 0.616 on spawn).
 	{
-		UMonolithContractDataAsset* C05 = NewObject<UMonolithContractDataAsset>(this, TEXT("DA_Fallback_Contract05_BismuthTorque"));
-		C05->ContractCode = FText::FromString(TEXT("ACT III-A // CTR-05: DENSE BISMUTH COUNTER-TORQUE"));
+		UMonolithContractDataAsset* C05 = NewObject<UMonolithContractDataAsset>(this, TEXT("DA_Fallback_Contract05_BismuthZBracket"));
+		C05->ContractCode = FText::FromString(TEXT("ACT III-A // CTR-05: BISMUTH Z-COUNTERWEIGHT"));
 		C05->ContractDirectiveText = GetDefaultDirectiveForContractIndex(4);
-		C05->BaseShape = EMonolithBaseShape::AsymmetricLBlock;
-		C05->DimensionsCm = FVector(22.0f, 28.0f, 76.0f);
-		C05->DensityGramsPerCm3 = 1.95f;
+		C05->BaseShape = EMonolithBaseShape::CounterweightedZBracket;
+		C05->DimensionsCm = FVector(24.0f, 34.0f, 78.0f);
+		C05->DensityGramsPerCm3 = 1.82f;
 		C05->TargetTitheMassKg = 21.0f;
 		C05->QuotaToleranceKg = 0.90f;
 		C05->MaxAllowedTareWasteKg = 28.0f;
 		C05->bAllowDiverterToggle = true;
-		C05->ClampMaxSafeTorqueNm = 31.0f;
+		C05->ClampMaxSafeTorqueNm = 32.0f;
 		C05->ClampFatigueGraceSeconds = 6.5f;
 		C05->ClampFatigueCooldownSeconds = 3.0f;
 		C05->ClampSpringStiffness = 210.0f;
 		C05->ClampSpringDamping = 28.0f;
-		// Strictly inside lower-right L-foot (Y in [3.36, 14.0], Z in [-38.0, -9.12]) and upper-left stem (Y in [-14.0, 3.36], Z in [-38.0, 38.0]).
-		C05->HiddenVeins.Add(MakeVein(FVector(-4.0f, 4.8f, -29.0f), FVector(4.0f, 9.8f, -16.0f), 2.4f, 17.0f));
-		C05->HiddenVeins.Add(MakeVein(FVector(-4.0f, -9.8f, 4.0f), FVector(4.0f, -3.0f, 18.0f), 2.4f, 17.0f));
+		C05->HiddenVeins.Add(MakeVein(FVector(-4.5f, -9.5f, -31.0f), FVector(4.5f, -2.5f, -16.0f), 2.3f, 17.0f));
+		C05->HiddenVeins.Add(MakeVein(FVector(-4.5f, 2.5f, 5.5f), FVector(4.5f, 9.5f, 16.5f), 2.3f, 17.0f));
 		FallbackGreyboxContracts.Add(C05);
 	}
 
-	// Contract 06 (Act III-B): 3-Vein YZ Stepped Core Finale (~86.44 kg initial mass across 3 front-facing horizontal tiers).
+	// Contract 06 (Act III-B): 3-Vein YZ Stepped Core Finale with -2.50 cm eccentric clamp offset (~86.44 kg initial mass -> S_clamp ~ 0.62 on spawn).
 	{
 		UMonolithContractDataAsset* C06 = NewObject<UMonolithContractDataAsset>(this, TEXT("DA_Fallback_Contract06_SteppedFinale"));
 		C06->ContractCode = FText::FromString(TEXT("ACT III-B // CTR-06: DIRECTORATE STEPPED CORE"));
 		C06->ContractDirectiveText = GetDefaultDirectiveForContractIndex(5);
 		C06->BaseShape = EMonolithBaseShape::SteppedCore;
 		C06->DimensionsCm = FVector(24.0f, 34.0f, 84.0f);
+		C06->ClampGripHorizontalOffsetCm = FVector2D(0.0f, -2.50f);
 		C06->DensityGramsPerCm3 = 1.75f;
 		C06->TargetTitheMassKg = 24.0f;
 		C06->QuotaToleranceKg = 0.85f;
@@ -953,10 +954,9 @@ UShiftProgressionDataAsset* UInspectionShiftSubsystem::BuildFallbackGreyboxProgr
 		C06->ClampFatigueCooldownSeconds = 3.0f;
 		C06->ClampSpringStiffness = 220.0f;
 		C06->ClampSpringDamping = 28.0f;
-		// Strictly inside middle-left flange (Y in [-17,17], Z in [-14.7,14.7]), lower-right base (Y in [-10.54,10.54], Z in [-42,-14.7]), and top collar (Y in [-8.84,8.84], Z in [14.7,42]).
 		C06->HiddenVeins.Add(MakeVein(FVector(-5.0f, -12.5f, -9.0f), FVector(5.0f, -7.5f, 7.0f), 2.3f, 16.0f));
 		C06->HiddenVeins.Add(MakeVein(FVector(5.0f, 2.5f, -31.0f), FVector(-5.0f, 6.8f, -19.0f), 2.3f, 16.0f));
-		C06->HiddenVeins.Add(MakeVein(FVector(-4.5f, -4.5f, 18.5f), FVector(4.5f, 4.5f, 27.0f), 2.2f, 16.0f));
+		C06->HiddenVeins.Add(MakeVein(FVector(-4.5f, -4.5f, 13.0f), FVector(4.5f, 4.5f, 20.5f), 2.2f, 16.0f));
 		FallbackGreyboxContracts.Add(C06);
 	}
 
@@ -1423,7 +1423,7 @@ FString UInspectionShiftSubsystem::ResolveContractOperationalBriefText(const UMo
 		return TEXT("BRIEF: [SPACE] -> TARE TO PURGE VEIN CHUNKS FIRST, THEN TITHE");
 	}
 
-	if (Contract->BaseShape == EMonolithBaseShape::AsymmetricLBlock ||
+	if (Contract->HasAsymmetricTorqueProfile() ||
 		Contract->ClampMaxSafeTorqueNm <= 25.0f)
 	{
 		return TEXT("BRIEF: WATCH CLAMP TORQUE - BEVEL [RMB] OR TRIM LOAD");
@@ -1513,7 +1513,7 @@ FString UInspectionShiftSubsystem::ResolveDirectorIntercomLine(bool bReadyForSta
 			}
 			return FString::Printf(TEXT("OVERTIME S%02d: VOLUNTARY HAZARD PAY ACTIVE."), CurrentShiftNumber);
 		case 1:
-			return TEXT("ECCENTRIC L-BLOCK: TRIM OVERHANG FIRST!");
+			return TEXT("CANTILEVERED HOOK: TRIM OVERHANG FIRST!");
 		case 2:
 			return TEXT("LIVE ISOTOPE CORE: [SPACE] DUMPS VEIN SCRAP.");
 		case 3:

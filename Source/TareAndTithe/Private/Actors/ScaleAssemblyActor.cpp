@@ -3,8 +3,10 @@
 #include "Actors/ScaleAssemblyActor.h"
 #include "Components/BoxComponent.h"
 #include "Components/DiverterGateComponent.h"
+#include "Components/InstancedStaticMeshComponent.h"
 #include "Components/MoltenThermalLightComponent.h"
 #include "Components/PointLightComponent.h"
+#include "Components/PrimitiveComponent.h"
 #include "Components/ScaleWeighingComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -19,6 +21,44 @@
 #include "Misc/PackageName.h"
 #include "Subsystems/InspectionShiftSubsystem.h"
 #include "UObject/ConstructorHelpers.h"
+
+namespace
+{
+	// Open 84 x 76 cm abyssal Tare shaft clear interior: X in [-42.0, +42.0], Y in [+52.0, +128.0], Z down to -98.0 cm (World Z = -84.0 cm).
+	constexpr double TareShaftClearHalfWidthXCm = 42.0;
+	constexpr double TareShaftInnerMinYCm = 52.0;
+	constexpr double TareShaftOuterMaxYCm = 128.0;
+	constexpr double TareShaftCenterYCm = 90.0;
+	constexpr double TareShaftBottomLocalZCm = -98.0;
+
+	// Low visible forged-PBR collar (strictly ScaleRoot Z <= +16.0 cm across every visible instance so sightlines & Bottom CRT HUD stay 100% clear).
+	constexpr double TareCollarWallThicknessCm = 6.5;
+	constexpr double TareCollarSideTopLocalZCm = 14.0;
+	constexpr double TareCollarFrontTopLocalZCm = 6.0;
+	constexpr double TareCollarBaseLocalZCm = -2.0;
+	constexpr double TareCollarLipBevelDeg = 28.0;
+
+	// Sloped -Y feed apron bridging from beneath DiverterFlapperPivot (Y=+34) into the -Y=+52 throat wall (top Z <= +15.8 cm).
+	constexpr double TareFeedApronCenterYCm = 43.8;
+	constexpr double TareFeedApronCenterZCm = 7.4;
+	constexpr double TareFeedApronSlopeRollDeg = -38.0;
+	constexpr double TareFeedApronSpanXCm = 88.0;
+	constexpr double TareFeedApronLengthCm = 24.0;
+	constexpr double TareFeedApronThicknessCm = 2.8;
+
+	// Tall invisible physics guide walls (up to ScaleRoot Z = +62.0 cm on +Y, -X, +X; -Y above +16 cm stays 100% open for flapper ramp).
+	constexpr double TareGuideWallTopLocalZCm = 62.0;
+	constexpr double TareGuideWallHalfThickCm = 3.0;
+	constexpr double TareGuideChamferCenterZCm = 58.0;
+	constexpr double TareGuideChamferTiltDeg = 35.0;
+
+	// Deep basin visual & bloom-safe (< 1.65 BloomThreshold) unlit warm furnace ember baffle card.
+	constexpr double TareFurnaceCardOffsetZAboveBasinCm = 6.0;
+	constexpr float MaxBloomSafeFurnaceEmissiveChannel = 1.25f;
+
+	// Tall multi-chunk stack retention ceiling above PanDeckTopLocalZCm.
+	constexpr float TallStackWellCeilingAboveDeckCm = 175.0f;
+}
 
 AScaleAssemblyActor::AScaleAssemblyActor()
 	: CachedShiftPhase(EShiftPhase::WaitingForStations)
@@ -192,15 +232,136 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 	TareChuteVisual = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("TareChuteVisual"));
 	TareChuteVisual->SetupAttachment(ScaleRoot);
 	ConfigureVisualOnlyMesh(TareChuteVisual);
-	TareChuteVisual->SetRelativeLocation(FVector(0.0, 86.0, 4.0));
-	TareChuteVisual->SetRelativeScale3D(FVector(0.86, 0.84, 0.08));
+	TareChuteVisual->SetCastShadow(false);
+	TareChuteVisual->SetRelativeLocation(TareBasinVisualOffsetCm);
+	TareChuteVisual->SetRelativeScale3D(FVector(0.74, 0.72, 0.08));
+
+	auto ConfigureHopperVisualISM = [this](UInstancedStaticMeshComponent* TargetISM)
+	{
+		TargetISM->SetupAttachment(ScaleRoot);
+		TargetISM->PrimaryComponentTick.bCanEverTick = false;
+		TargetISM->SetSimulatePhysics(false);
+		TargetISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		TargetISM->SetGenerateOverlapEvents(false);
+		TargetISM->SetCastShadow(false);
+		TargetISM->bReceivesDecals = false;
+		if (IsValid(FallbackCubeMesh))
+		{
+			TargetISM->SetStaticMesh(FallbackCubeMesh);
+		}
+		if (IsValid(BaseGreyboxShapeMaterial))
+		{
+			TargetISM->SetMaterial(0, BaseGreyboxShapeMaterial);
+		}
+	};
+
+	TareHopperCollarISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("TareHopperCollarISM"));
+	ConfigureHopperVisualISM(TareHopperCollarISM);
+
+	TareHopperThroatISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("TareHopperThroatISM"));
+	ConfigureHopperVisualISM(TareHopperThroatISM);
+
+	TareHopperFurnaceGlowCard = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("TareHopperFurnaceGlowCard"));
+	TareHopperFurnaceGlowCard->SetupAttachment(ScaleRoot);
+	ConfigureVisualOnlyMesh(TareHopperFurnaceGlowCard);
+	TareHopperFurnaceGlowCard->SetCastShadow(false);
+	TareHopperFurnaceGlowCard->SetAffectDistanceFieldLighting(false);
+	TareHopperFurnaceGlowCard->SetAffectDynamicIndirectLighting(false);
+	TareHopperFurnaceGlowCard->SetVisibleInRayTracing(false);
+	TareHopperFurnaceGlowCard->bReceivesDecals = false;
+	TareHopperFurnaceGlowCard->SetRelativeLocation(
+		TareBasinVisualOffsetCm + FVector(0.0, 0.0, TareFurnaceCardOffsetZAboveBasinCm));
+	TareHopperFurnaceGlowCard->SetRelativeScale3D(FVector(0.78, 0.70, 0.015));
+
+	auto ConfigureInvisibleGuideBox = [&](
+		UBoxComponent* GuideBox,
+		const FVector& RelLocationCm,
+		const FQuat& RelQuat,
+		const FVector& ExtentCm)
+	{
+		ConfigureAuthoritativeBlockingBox(GuideBox, ScaleRoot, RelLocationCm, ExtentCm);
+		GuideBox->SetRelativeRotation(RelQuat);
+		GuideBox->SetHiddenInGame(true, false);
+		GuideBox->SetVisibility(false, false);
+		GuideBox->SetCastShadow(false);
+	};
+
+	const double GuideWallHeightZ = TareGuideWallTopLocalZCm - TareShaftBottomLocalZCm;
+	const double GuideWallCenterZ = 0.5 * (TareGuideWallTopLocalZCm + TareShaftBottomLocalZCm);
+	const double GuideWallHalfHeightZ = 0.5 * GuideWallHeightZ;
+
+	TareGuideWallOuterRightBox = CreateDefaultSubobject<UBoxComponent>(TEXT("TareGuideWallOuterRightBox"));
+	ConfigureInvisibleGuideBox(
+		TareGuideWallOuterRightBox,
+		FVector(0.0, TareShaftOuterMaxYCm + TareGuideWallHalfThickCm, GuideWallCenterZ),
+		FQuat::Identity,
+		FVector(TareShaftClearHalfWidthXCm + (2.0 * TareGuideWallHalfThickCm), TareGuideWallHalfThickCm, GuideWallHalfHeightZ));
+
+	TareGuideWallFrontBox = CreateDefaultSubobject<UBoxComponent>(TEXT("TareGuideWallFrontBox"));
+	ConfigureInvisibleGuideBox(
+		TareGuideWallFrontBox,
+		FVector(-(TareShaftClearHalfWidthXCm + TareGuideWallHalfThickCm), 85.0, GuideWallCenterZ),
+		FQuat::Identity,
+		FVector(TareGuideWallHalfThickCm, 49.0, GuideWallHalfHeightZ));
+
+	TareGuideWallBackBox = CreateDefaultSubobject<UBoxComponent>(TEXT("TareGuideWallBackBox"));
+	ConfigureInvisibleGuideBox(
+		TareGuideWallBackBox,
+		FVector(+(TareShaftClearHalfWidthXCm + TareGuideWallHalfThickCm), 85.0, GuideWallCenterZ),
+		FQuat::Identity,
+		FVector(TareGuideWallHalfThickCm, 49.0, GuideWallHalfHeightZ));
+
+	// Strictly below Z = +2.0 cm so -Y above the sloped feed apron remains 100% open for DiverterFlapper ramp travel.
+	TareGuideWallInnerLeftLowerBox = CreateDefaultSubobject<UBoxComponent>(TEXT("TareGuideWallInnerLeftLowerBox"));
+	ConfigureInvisibleGuideBox(
+		TareGuideWallInnerLeftLowerBox,
+		FVector(0.0, TareShaftInnerMinYCm - TareGuideWallHalfThickCm, -48.0),
+		FQuat::Identity,
+		FVector(TareShaftClearHalfWidthXCm + (2.0 * TareGuideWallHalfThickCm), TareGuideWallHalfThickCm, 50.0));
+
+	TareGuideFeedApronSlopeBox = CreateDefaultSubobject<UBoxComponent>(TEXT("TareGuideFeedApronSlopeBox"));
+	ConfigureInvisibleGuideBox(
+		TareGuideFeedApronSlopeBox,
+		FVector(0.0, TareFeedApronCenterYCm, TareFeedApronCenterZCm),
+		FQuat(FVector::ForwardVector, FMath::DegreesToRadians(TareFeedApronSlopeRollDeg)),
+		FVector(0.5 * TareFeedApronSpanXCm, 0.5 * TareFeedApronLengthCm, 0.5 * TareFeedApronThicknessCm));
+
+	TareGuideChamferOuterRightBox = CreateDefaultSubobject<UBoxComponent>(TEXT("TareGuideChamferOuterRightBox"));
+	ConfigureInvisibleGuideBox(
+		TareGuideChamferOuterRightBox,
+		FVector(0.0, TareShaftOuterMaxYCm - 2.5, TareGuideChamferCenterZCm),
+		FQuat(FVector::ForwardVector, FMath::DegreesToRadians(+TareGuideChamferTiltDeg)),
+		FVector(TareShaftClearHalfWidthXCm + 4.0, 1.5, 8.0));
+
+	TareGuideChamferFrontBox = CreateDefaultSubobject<UBoxComponent>(TEXT("TareGuideChamferFrontBox"));
+	ConfigureInvisibleGuideBox(
+		TareGuideChamferFrontBox,
+		FVector(-(TareShaftClearHalfWidthXCm - 2.0), TareShaftCenterYCm, TareGuideChamferCenterZCm),
+		FQuat(FVector::RightVector, FMath::DegreesToRadians(+TareGuideChamferTiltDeg)),
+		FVector(1.5, 40.0, 8.0));
+
+	TareGuideChamferBackBox = CreateDefaultSubobject<UBoxComponent>(TEXT("TareGuideChamferBackBox"));
+	ConfigureInvisibleGuideBox(
+		TareGuideChamferBackBox,
+		FVector(+(TareShaftClearHalfWidthXCm - 2.0), TareShaftCenterYCm, TareGuideChamferCenterZCm),
+		FQuat(FVector::RightVector, FMath::DegreesToRadians(-TareGuideChamferTiltDeg)),
+		FVector(1.5, 40.0, 8.0));
 
 	TareChuteTriggerBox = CreateDefaultSubobject<UBoxComponent>(TEXT("TareChuteTriggerBox"));
 	TareChuteTriggerBox->SetupAttachment(ScaleRoot);
 	TareChuteTriggerBox->PrimaryComponentTick.bCanEverTick = false;
 	TareChuteTriggerBox->SetRelativeScale3D(FVector::OneVector);
-	TareChuteTriggerBox->SetRelativeLocation(FVector(0.0, 86.0, 36.0));
-	TareChuteTriggerBox->InitBoxExtent(FVector(58.0, 49.0, 52.0));
+	TareChuteTriggerBox->SetRelativeLocation(TareMouthTriggerOffsetCm);
+	TareChuteTriggerBox->InitBoxExtent(TareMouthTriggerExtentCm);
+
+	TareAbyssDespawnTriggerBox = CreateDefaultSubobject<UBoxComponent>(TEXT("TareAbyssDespawnTriggerBox"));
+	TareAbyssDespawnTriggerBox->SetupAttachment(ScaleRoot);
+	TareAbyssDespawnTriggerBox->PrimaryComponentTick.bCanEverTick = false;
+	TareAbyssDespawnTriggerBox->SetRelativeScale3D(FVector::OneVector);
+	TareAbyssDespawnTriggerBox->SetRelativeLocation(TareAbyssDespawnTriggerOffsetCm);
+	TareAbyssDespawnTriggerBox->InitBoxExtent(TareAbyssDespawnTriggerExtentCm);
+
+	RebuildTareHopperVisualInstances();
 
 	ScaleWeighingComponent = CreateDefaultSubobject<UScaleWeighingComponent>(TEXT("ScaleWeighingComponent"));
 	DiverterGateComponent = CreateDefaultSubobject<UDiverterGateComponent>(TEXT("DiverterGateComponent"));
@@ -357,7 +518,7 @@ void AScaleAssemblyActor::BeginPlay()
 		ScaleWeighingComponent->SetPanWellBoundsGeometry(
 			FVector2D(PanTriggerBoxExtentCm.X, PanTriggerBoxExtentCm.Y),
 			PanDeckTopLocalZCm - 6.0f,
-			PanDeckTopLocalZCm + 135.0f);
+			PanDeckTopLocalZCm + TallStackWellCeilingAboveDeckCm);
 		ScaleWeighingComponent->OnShouldIgnorePayloadInPan.BindUObject(this, &AScaleAssemblyActor::ShouldIgnorePayloadInPanForTareRamp);
 		ScaleWeighingComponent->BindPanContainmentTrigger(PanTriggerBox);
 		ScaleWeighingComponent->OnTelemetryStream.AddUObject(this, &AScaleAssemblyActor::HandleChildTelemetryStream);
@@ -372,11 +533,14 @@ void AScaleAssemblyActor::BeginPlay()
 	{
 		DiverterGateComponent->SetFlapperPivotAndPrimitive(DiverterFlapperPivot, DiverterPlateCollider);
 		DiverterGateComponent->BindTareChuteTrigger(TareChuteTriggerBox);
+		DiverterGateComponent->BindTareAbyssDespawnTrigger(TareAbyssDespawnTriggerBox);
 		DiverterGateComponent->OnRouteChanged.AddUObject(this, &AScaleAssemblyActor::HandleDiverterRouteChanged);
 		DiverterGateComponent->OnRouteSlewCompleted.AddUObject(this, &AScaleAssemblyActor::HandleDiverterRouteSlewCompleted);
 		DiverterGateComponent->OnChunkRoutedToTare.AddUObject(this, &AScaleAssemblyActor::HandleChunkRoutedToTare);
 		DiverterGateComponent->OnTelemetryImpulse.AddUObject(this, &AScaleAssemblyActor::HandleChildTelemetryImpulse);
 	}
+
+	ApplyTareHopperPresentationMaterials();
 
 	if (UWorld* World = GetWorld())
 	{
@@ -500,6 +664,36 @@ bool AScaleAssemblyActor::TryRecoverPayloadOnReceiver_Implementation(AActor* Pay
 	return ScaleWeighingComponent->TryRecoverPayloadOnPan(PayloadActor);
 }
 
+bool AScaleAssemblyActor::IsScalePanSupportComponent_Implementation(const UPrimitiveComponent* CandidateComponent) const
+{
+	if (!IsValid(CandidateComponent))
+	{
+		return false;
+	}
+
+	return (CandidateComponent == PanDeckCollider) ||
+	       (CandidateComponent == PanRimFrontBox) ||
+	       (CandidateComponent == PanRimBackBox) ||
+	       (CandidateComponent == PanRimLeftBox) ||
+	       (CandidateComponent == PanRimRightBox);
+}
+
+void AScaleAssemblyActor::NotifyPayloadScaleSupportImpact_Implementation(
+	AActor* PayloadActor,
+	UPrimitiveComponent* PayloadPrimitive,
+	const FVector& WorldImpactPoint,
+	const FVector& NormalImpulse)
+{
+	if (IsValid(ScaleWeighingComponent))
+	{
+		ScaleWeighingComponent->ConfirmPayloadScaleImpact(
+			PayloadActor,
+			PayloadPrimitive,
+			WorldImpactPoint,
+			NormalImpulse);
+	}
+}
+
 void AScaleAssemblyActor::ConfigureForContract(const UMonolithContractDataAsset* Contract, EDiverterRoute InitialRoute)
 {
 	if (IsValid(ScaleWellThermalLightComponent))
@@ -597,6 +791,11 @@ void AScaleAssemblyActor::ApplyPresentationData(const UTareTithePresentationData
 				DefaultMoltenCfg.FlashDecayDurationSeconds,
 				DefaultMoltenCfg.SteadyInterpSpeed);
 		}
+		if (IsValid(TareChuteVisual))
+		{
+			TareChuteVisual->SetRelativeLocation(TareBasinVisualOffsetCm);
+		}
+		ApplyTareHopperPresentationMaterials();
 		return;
 	}
 
@@ -617,7 +816,18 @@ void AScaleAssemblyActor::ApplyPresentationData(const UTareTithePresentationData
 	InPresentationData->ScaleBaseMeshSlot.ApplyToVisualComponent(ScaleBaseVisual);
 	InPresentationData->ScalePanMeshSlot.ApplyToVisualComponent(PanPlatformVisual);
 	const bool bAppliedFlapperSlot = InPresentationData->DiverterFlapperMeshSlot.ApplyToVisualComponent(DiverterFlapperVisual);
-	InPresentationData->TareChuteMeshSlot.ApplyToVisualComponent(TareChuteVisual);
+	const bool bAppliedTareSlot = InPresentationData->TareChuteMeshSlot.ApplyToVisualComponent(TareChuteVisual);
+	if (IsValid(TareChuteVisual))
+	{
+		TareChuteVisual->SetRelativeLocation(TareBasinVisualOffsetCm);
+		if (bAppliedTareSlot)
+		{
+			const FVector SlotScale = TareChuteVisual->GetRelativeScale3D();
+			const double SafeXYMult = static_cast<double>(FMath::Clamp(TareBasinVisualXYScaleMultiplier, 0.50f, 1.0f));
+			TareChuteVisual->SetRelativeScale3D(FVector(SlotScale.X * SafeXYMult, SlotScale.Y * SafeXYMult, SlotScale.Z));
+		}
+		TareChuteVisual->SetCastShadow(false);
+	}
 
 	// Guard 2: Preserve MI_Station_DiverterFlapper baked bevel normals & grazing steel specular whenever DiverterFlapperMeshSlot assigns a valid mesh/material.
 	const bool bHasExplicitFlapperOverride =
@@ -632,6 +842,7 @@ void AScaleAssemblyActor::ApplyPresentationData(const UTareTithePresentationData
 		ApplyDarkGunmetalMaterial(DiverterFlapperVisual);
 	}
 	ApplyDarkGunmetalMaterial(LeftHopperGuideVisual);
+	ApplyTareHopperPresentationMaterials();
 
 	if (IsLegacyWorldSpaceReadoutEnabled())
 	{
@@ -837,12 +1048,13 @@ bool AScaleAssemblyActor::ShouldIgnorePayloadInPanForTareRamp(const AActor* Cand
 
 void AScaleAssemblyActor::EnforcePanTriggerGeometryAndCollision()
 {
-	UStaticMeshComponent* const PureVisualMeshes[6] = {
+	UStaticMeshComponent* const PureVisualMeshes[7] = {
 		ScaleBaseVisual,
 		LeftHopperGuideVisual,
 		PanPlatformVisual,
 		DiverterFlapperVisual,
 		TareChuteVisual,
+		TareHopperFurnaceGlowCard,
 		ReadoutBackingPlate
 	};
 	for (UStaticMeshComponent* VisualComp : PureVisualMeshes)
@@ -853,6 +1065,30 @@ void AScaleAssemblyActor::EnforcePanTriggerGeometryAndCollision()
 			VisualComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 			VisualComp->SetGenerateOverlapEvents(false);
 		}
+	}
+
+	UInstancedStaticMeshComponent* const PureVisualISMs[2] = {
+		TareHopperCollarISM,
+		TareHopperThroatISM
+	};
+	for (UInstancedStaticMeshComponent* VisualISM : PureVisualISMs)
+	{
+		if (IsValid(VisualISM))
+		{
+			VisualISM->SetSimulatePhysics(false);
+			VisualISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			VisualISM->SetGenerateOverlapEvents(false);
+			VisualISM->SetCastShadow(false);
+		}
+	}
+
+	RebuildTareHopperVisualInstances();
+	if (IsValid(TareHopperFurnaceGlowCard))
+	{
+		TareHopperFurnaceGlowCard->SetRelativeLocation(
+			TareBasinVisualOffsetCm + FVector(0.0, 0.0, TareFurnaceCardOffsetZAboveBasinCm));
+		TareHopperFurnaceGlowCard->SetRelativeScale3D(FVector(0.78, 0.70, 0.015));
+		TareHopperFurnaceGlowCard->SetCastShadow(false);
 	}
 
 	auto EnforceAuthoritativeCollider = [](
@@ -921,6 +1157,95 @@ void AScaleAssemblyActor::EnforcePanTriggerGeometryAndCollision()
 		DiverterFlapperPivot,
 		DiverterPlateColliderOffsetCm,
 		DiverterPlateBoxExtentCm);
+
+	auto EnforceInvisibleGuideBox = [&](
+		UBoxComponent* GuideBox,
+		const FVector& RelLocationCm,
+		const FQuat& RelQuat,
+		const FVector& ExtentCm)
+	{
+		if (!IsValid(GuideBox) || !IsValid(ScaleRoot))
+		{
+			return;
+		}
+		EnforceAuthoritativeCollider(GuideBox, ScaleRoot, RelLocationCm, ExtentCm);
+		GuideBox->SetRelativeRotation(RelQuat);
+		GuideBox->SetHiddenInGame(true, false);
+		GuideBox->SetVisibility(false, false);
+		GuideBox->SetCastShadow(false);
+	};
+
+	const double GuideWallHeightZ = TareGuideWallTopLocalZCm - TareShaftBottomLocalZCm;
+	const double GuideWallCenterZ = 0.5 * (TareGuideWallTopLocalZCm + TareShaftBottomLocalZCm);
+	const double GuideWallHalfHeightZ = 0.5 * GuideWallHeightZ;
+
+	EnforceInvisibleGuideBox(
+		TareGuideWallOuterRightBox,
+		FVector(0.0, TareShaftOuterMaxYCm + TareGuideWallHalfThickCm, GuideWallCenterZ),
+		FQuat::Identity,
+		FVector(TareShaftClearHalfWidthXCm + (2.0 * TareGuideWallHalfThickCm), TareGuideWallHalfThickCm, GuideWallHalfHeightZ));
+	EnforceInvisibleGuideBox(
+		TareGuideWallFrontBox,
+		FVector(-(TareShaftClearHalfWidthXCm + TareGuideWallHalfThickCm), 85.0, GuideWallCenterZ),
+		FQuat::Identity,
+		FVector(TareGuideWallHalfThickCm, 49.0, GuideWallHalfHeightZ));
+	EnforceInvisibleGuideBox(
+		TareGuideWallBackBox,
+		FVector(+(TareShaftClearHalfWidthXCm + TareGuideWallHalfThickCm), 85.0, GuideWallCenterZ),
+		FQuat::Identity,
+		FVector(TareGuideWallHalfThickCm, 49.0, GuideWallHalfHeightZ));
+	EnforceInvisibleGuideBox(
+		TareGuideWallInnerLeftLowerBox,
+		FVector(0.0, TareShaftInnerMinYCm - TareGuideWallHalfThickCm, -48.0),
+		FQuat::Identity,
+		FVector(TareShaftClearHalfWidthXCm + (2.0 * TareGuideWallHalfThickCm), TareGuideWallHalfThickCm, 50.0));
+	EnforceInvisibleGuideBox(
+		TareGuideFeedApronSlopeBox,
+		FVector(0.0, TareFeedApronCenterYCm, TareFeedApronCenterZCm),
+		FQuat(FVector::ForwardVector, FMath::DegreesToRadians(TareFeedApronSlopeRollDeg)),
+		FVector(0.5 * TareFeedApronSpanXCm, 0.5 * TareFeedApronLengthCm, 0.5 * TareFeedApronThicknessCm));
+	EnforceInvisibleGuideBox(
+		TareGuideChamferOuterRightBox,
+		FVector(0.0, TareShaftOuterMaxYCm - 2.5, TareGuideChamferCenterZCm),
+		FQuat(FVector::ForwardVector, FMath::DegreesToRadians(+TareGuideChamferTiltDeg)),
+		FVector(TareShaftClearHalfWidthXCm + 4.0, 1.5, 8.0));
+	EnforceInvisibleGuideBox(
+		TareGuideChamferFrontBox,
+		FVector(-(TareShaftClearHalfWidthXCm - 2.0), TareShaftCenterYCm, TareGuideChamferCenterZCm),
+		FQuat(FVector::RightVector, FMath::DegreesToRadians(+TareGuideChamferTiltDeg)),
+		FVector(1.5, 40.0, 8.0));
+	EnforceInvisibleGuideBox(
+		TareGuideChamferBackBox,
+		FVector(+(TareShaftClearHalfWidthXCm - 2.0), TareShaftCenterYCm, TareGuideChamferCenterZCm),
+		FQuat(FVector::RightVector, FMath::DegreesToRadians(-TareGuideChamferTiltDeg)),
+		FVector(1.5, 40.0, 8.0));
+
+	auto EnforceOverlapTriggerBox = [this](UBoxComponent* TriggerBox, const FVector& RelLocationCm, const FVector& ExtentCm)
+	{
+		if (!IsValid(TriggerBox) || !IsValid(ScaleRoot))
+		{
+			return;
+		}
+		if (TriggerBox->GetAttachParent() != ScaleRoot)
+		{
+			TriggerBox->AttachToComponent(ScaleRoot, FAttachmentTransformRules::KeepRelativeTransform);
+		}
+		TriggerBox->SetRelativeScale3D(FVector::OneVector);
+		TriggerBox->SetRelativeRotation(FQuat::Identity);
+		TriggerBox->SetRelativeLocation(RelLocationCm);
+		TriggerBox->SetBoxExtent(ExtentCm, true);
+		TriggerBox->SetHiddenInGame(true, false);
+		TriggerBox->SetVisibility(false, false);
+		TriggerBox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		TriggerBox->SetCollisionObjectType(ECC_WorldDynamic);
+		TriggerBox->SetCollisionResponseToAllChannels(ECR_Ignore);
+		TriggerBox->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Overlap);
+		TriggerBox->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Overlap);
+		TriggerBox->SetGenerateOverlapEvents(true);
+	};
+
+	EnforceOverlapTriggerBox(TareChuteTriggerBox, TareMouthTriggerOffsetCm, TareMouthTriggerExtentCm);
+	EnforceOverlapTriggerBox(TareAbyssDespawnTriggerBox, TareAbyssDespawnTriggerOffsetCm, TareAbyssDespawnTriggerExtentCm);
 
 	if (!IsValid(PanTriggerBox) || !IsValid(PanMotionRoot))
 	{
@@ -1303,15 +1628,184 @@ void AScaleAssemblyActor::InitializeGreyboxVisualMaterials()
 
 	ApplyDarkGunmetalMaterial(LeftHopperGuideVisual);
 	ApplyDarkGunmetalMaterial(DiverterFlapperVisual);
+	ApplyTareHopperPresentationMaterials();
 }
 
-void AScaleAssemblyActor::ApplyDarkGunmetalMaterial(UStaticMeshComponent* TargetMesh)
+void AScaleAssemblyActor::RebuildTareHopperVisualInstances()
 {
-	if (!IsValid(TargetMesh))
+	if (!IsValid(FallbackCubeMesh))
 	{
 		return;
 	}
 
+	const FBox CubeBox = FallbackCubeMesh->GetBoundingBox();
+	const FVector CubeSize = CubeBox.IsValid ? CubeBox.GetSize() : FVector(100.0, 100.0, 100.0);
+	const double InvCubeX = 1.0 / FMath::Max(1.0, CubeSize.X);
+	const double InvCubeY = 1.0 / FMath::Max(1.0, CubeSize.Y);
+	const double InvCubeZ = 1.0 / FMath::Max(1.0, CubeSize.Z);
+
+	auto AddBoxInstance = [&](
+		UInstancedStaticMeshComponent* TargetISM,
+		const FVector& CenterCm,
+		const FQuat& Quat,
+		const FVector& SizeCm)
+	{
+		if (!IsValid(TargetISM))
+		{
+			return;
+		}
+		const FVector Scale(SizeCm.X * InvCubeX, SizeCm.Y * InvCubeY, SizeCm.Z * InvCubeZ);
+		TargetISM->AddInstance(FTransform(Quat, CenterCm, Scale), false);
+	};
+
+	if (IsValid(TareHopperCollarISM))
+	{
+		TareHopperCollarISM->ClearInstances();
+		TareHopperCollarISM->SetStaticMesh(FallbackCubeMesh);
+
+		// 1. Sloped -Y feed apron bridging downward from beneath DiverterFlapperPivot (Y=+34) into the Y=+52 shaft throat (max Z <= +15.8 cm).
+		AddBoxInstance(
+			TareHopperCollarISM,
+			FVector(0.0, TareFeedApronCenterYCm, TareFeedApronCenterZCm),
+			FQuat(FVector::ForwardVector, FMath::DegreesToRadians(TareFeedApronSlopeRollDeg)),
+			FVector(TareFeedApronSpanXCm, TareFeedApronLengthCm, TareFeedApronThicknessCm));
+
+		const double SideCollarHeightZ = TareCollarSideTopLocalZCm - TareCollarBaseLocalZCm;
+		const double SideCollarCenterZ = 0.5 * (TareCollarSideTopLocalZCm + TareCollarBaseLocalZCm);
+		const double FrontCollarHeightZ = TareCollarFrontTopLocalZCm - TareCollarBaseLocalZCm;
+		const double FrontCollarCenterZ = 0.5 * (TareCollarFrontTopLocalZCm + TareCollarBaseLocalZCm);
+
+		// 2. Outer-right (+Y) low bevelled industrial collar curb & inward bevel lip (ScaleRoot Z <= +15.8 cm).
+		AddBoxInstance(
+			TareHopperCollarISM,
+			FVector(0.0, TareShaftOuterMaxYCm + (0.5 * TareCollarWallThicknessCm), SideCollarCenterZ),
+			FQuat::Identity,
+			FVector((2.0 * TareShaftClearHalfWidthXCm) + (2.0 * TareCollarWallThicknessCm), TareCollarWallThicknessCm, SideCollarHeightZ));
+		AddBoxInstance(
+			TareHopperCollarISM,
+			FVector(0.0, TareShaftOuterMaxYCm + 1.6, 13.2),
+			FQuat(FVector::ForwardVector, FMath::DegreesToRadians(+TareCollarLipBevelDeg)),
+			FVector((2.0 * TareShaftClearHalfWidthXCm) + (2.0 * TareCollarWallThicknessCm) - 1.0, 6.2, 2.4));
+
+		// 3. Stadium-stepped front (-X) low bevelled collar curb & inward bevel lip (ScaleRoot Z <= +8.2 cm for wide camera sightline into throat).
+		AddBoxInstance(
+			TareHopperCollarISM,
+			FVector(-(TareShaftClearHalfWidthXCm + (0.5 * TareCollarWallThicknessCm)), 85.0, FrontCollarCenterZ),
+			FQuat::Identity,
+			FVector(TareCollarWallThicknessCm, 99.0, FrontCollarHeightZ));
+		AddBoxInstance(
+			TareHopperCollarISM,
+			FVector(-(TareShaftClearHalfWidthXCm + 1.6), TareShaftCenterYCm, 5.6),
+			FQuat(FVector::RightVector, FMath::DegreesToRadians(+TareCollarLipBevelDeg)),
+			FVector(6.2, 78.0, 2.4));
+
+		// 4. Back (+X) low bevelled collar curb & inward bevel lip (ScaleRoot Z <= +15.8 cm).
+		AddBoxInstance(
+			TareHopperCollarISM,
+			FVector(+(TareShaftClearHalfWidthXCm + (0.5 * TareCollarWallThicknessCm)), 85.0, SideCollarCenterZ),
+			FQuat::Identity,
+			FVector(TareCollarWallThicknessCm, 99.0, SideCollarHeightZ));
+		AddBoxInstance(
+			TareHopperCollarISM,
+			FVector(+(TareShaftClearHalfWidthXCm + 1.6), TareShaftCenterYCm, 13.2),
+			FQuat(FVector::RightVector, FMath::DegreesToRadians(-TareCollarLipBevelDeg)),
+			FVector(6.2, 78.0, 2.4));
+
+		TareHopperCollarISM->MarkRenderStateDirty();
+	}
+
+	if (IsValid(TareHopperThroatISM))
+	{
+		TareHopperThroatISM->ClearInstances();
+		TareHopperThroatISM->SetStaticMesh(FallbackCubeMesh);
+
+		// Deep dark gunmetal vertical shaft liner walls (84 x 76 cm clear opening down to ScaleRoot Z = -98.0 cm).
+		AddBoxInstance(
+			TareHopperThroatISM,
+			FVector(0.0, TareShaftInnerMinYCm - 1.5, -48.5),
+			FQuat::Identity,
+			FVector((2.0 * TareShaftClearHalfWidthXCm) + 6.0, 3.0, 99.0));
+		AddBoxInstance(
+			TareHopperThroatISM,
+			FVector(0.0, TareShaftOuterMaxYCm + 1.5, -49.5),
+			FQuat::Identity,
+			FVector((2.0 * TareShaftClearHalfWidthXCm) + 6.0, 3.0, 97.0));
+		AddBoxInstance(
+			TareHopperThroatISM,
+			FVector(-(TareShaftClearHalfWidthXCm + 1.5), TareShaftCenterYCm, -49.5),
+			FQuat::Identity,
+			FVector(3.0, 82.0, 97.0));
+		AddBoxInstance(
+			TareHopperThroatISM,
+			FVector(+(TareShaftClearHalfWidthXCm + 1.5), TareShaftCenterYCm, -49.5),
+			FQuat::Identity,
+			FVector(3.0, 82.0, 97.0));
+
+		TareHopperThroatISM->MarkRenderStateDirty();
+	}
+}
+
+void AScaleAssemblyActor::ApplyTareHopperPresentationMaterials()
+{
+	if (!IsValid(AutoResolvedHopperCollarMaterial))
+	{
+		if (FPackageName::DoesPackageExist(TEXT("/Game/Presentation/Materials/MI_Station_TareChute")))
+		{
+			AutoResolvedHopperCollarMaterial = LoadObject<UMaterialInterface>(
+				nullptr,
+				TEXT("/Game/Presentation/Materials/MI_Station_TareChute.MI_Station_TareChute"));
+		}
+		else if (FPackageName::DoesPackageExist(TEXT("/Game/Presentation/Materials/MI_Station_ScaleBase")))
+		{
+			AutoResolvedHopperCollarMaterial = LoadObject<UMaterialInterface>(
+				nullptr,
+				TEXT("/Game/Presentation/Materials/MI_Station_ScaleBase.MI_Station_ScaleBase"));
+		}
+	}
+
+	if (IsValid(TareHopperCollarISM))
+	{
+		if (UMaterialInterface* CollarPbrMat = ResolveRodinHopperCollarMaterial())
+		{
+			TareHopperCollarISM->SetMaterial(0, CollarPbrMat);
+		}
+		else
+		{
+			ApplyDarkGunmetalMaterialToISM(TareHopperCollarISM);
+		}
+	}
+
+	ApplyDarkGunmetalMaterialToISM(TareHopperThroatISM);
+
+	if (IsValid(TareHopperFurnaceGlowCard) && IsValid(BaseGreyboxShapeMaterial))
+	{
+		if (!IsValid(TareFurnaceBaffleMID))
+		{
+			TareFurnaceBaffleMID = UMaterialInstanceDynamic::Create(BaseGreyboxShapeMaterial, this);
+		}
+		if (IsValid(TareFurnaceBaffleMID))
+		{
+			const FLinearColor ClampedEmissive(
+				FMath::Clamp(TareFurnaceBaffleEmissiveColor.R, 0.0f, MaxBloomSafeFurnaceEmissiveChannel),
+				FMath::Clamp(TareFurnaceBaffleEmissiveColor.G, 0.0f, MaxBloomSafeFurnaceEmissiveChannel),
+				FMath::Clamp(TareFurnaceBaffleEmissiveColor.B, 0.0f, MaxBloomSafeFurnaceEmissiveChannel),
+				1.0f);
+			const FLinearColor FurnaceBaseColor(0.24f, 0.055f, 0.012f, 1.0f);
+
+			TareFurnaceBaffleMID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.94f);
+			TareFurnaceBaffleMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.04f);
+			TareFurnaceBaffleMID->SetScalarParameterValue(TEXT("SpecularConst"), 0.02f);
+			TareFurnaceBaffleMID->SetVectorParameterValue(TEXT("BaseColorConst"), FurnaceBaseColor);
+			TareFurnaceBaffleMID->SetVectorParameterValue(TEXT("Color"), FurnaceBaseColor);
+			TareFurnaceBaffleMID->SetVectorParameterValue(TEXT("EmissiveColorConst"), ClampedEmissive);
+			TareFurnaceBaffleMID->SetScalarParameterValue(TEXT("EmissiveScale"), 1.0f);
+			TareHopperFurnaceGlowCard->SetMaterial(0, TareFurnaceBaffleMID);
+		}
+	}
+}
+
+UMaterialInterface* AScaleAssemblyActor::ResolveDarkGunmetalMaterial()
+{
 	UMaterialInterface* ResolvedGunmetal =
 		(IsValid(PresentationData) && IsValid(PresentationData->DarkGunmetalMaterial))
 		? PresentationData->DarkGunmetalMaterial.Get()
@@ -1329,7 +1823,57 @@ void AScaleAssemblyActor::ApplyDarkGunmetalMaterial(UStaticMeshComponent* Target
 		ResolvedGunmetal = AutoResolvedDarkGunmetalMaterial.Get();
 	}
 
-	if (IsValid(ResolvedGunmetal))
+	return ResolvedGunmetal;
+}
+
+UMaterialInterface* AScaleAssemblyActor::ResolveRodinHopperCollarMaterial() const
+{
+	if (IsValid(PresentationData))
+	{
+		if (PresentationData->TareChuteMeshSlot.MaterialOverrides.Num() > 0 &&
+			IsValid(PresentationData->TareChuteMeshSlot.MaterialOverrides[0]))
+		{
+			return PresentationData->TareChuteMeshSlot.MaterialOverrides[0].Get();
+		}
+		if (IsValid(PresentationData->TareChuteMeshSlot.Mesh))
+		{
+			if (UMaterialInterface* TareMeshMat = PresentationData->TareChuteMeshSlot.Mesh->GetMaterial(0))
+			{
+				return TareMeshMat;
+			}
+		}
+		if (PresentationData->ScaleBaseMeshSlot.MaterialOverrides.Num() > 0 &&
+			IsValid(PresentationData->ScaleBaseMeshSlot.MaterialOverrides[0]))
+		{
+			return PresentationData->ScaleBaseMeshSlot.MaterialOverrides[0].Get();
+		}
+		if (IsValid(PresentationData->ScaleBaseMeshSlot.Mesh))
+		{
+			if (UMaterialInterface* BaseMeshMat = PresentationData->ScaleBaseMeshSlot.Mesh->GetMaterial(0))
+			{
+				return BaseMeshMat;
+			}
+		}
+	}
+
+	if (IsValid(TareChuteVisual) &&
+		TareChuteVisual->GetStaticMesh() != FallbackCubeMesh &&
+		IsValid(TareChuteVisual->GetMaterial(0)))
+	{
+		return TareChuteVisual->GetMaterial(0);
+	}
+
+	return AutoResolvedHopperCollarMaterial.Get();
+}
+
+void AScaleAssemblyActor::ApplyDarkGunmetalMaterial(UStaticMeshComponent* TargetMesh)
+{
+	if (!IsValid(TargetMesh))
+	{
+		return;
+	}
+
+	if (UMaterialInterface* ResolvedGunmetal = ResolveDarkGunmetalMaterial())
 	{
 		const int32 NumSlots = FMath::Max(1, TargetMesh->GetNumMaterials());
 		for (int32 SlotIdx = 0; SlotIdx < NumSlots; ++SlotIdx)
@@ -1354,6 +1898,38 @@ void AScaleAssemblyActor::ApplyDarkGunmetalMaterial(UStaticMeshComponent* Target
 			{
 				TargetMesh->SetMaterial(SlotIdx, MID);
 			}
+		}
+	}
+}
+
+void AScaleAssemblyActor::ApplyDarkGunmetalMaterialToISM(UInstancedStaticMeshComponent* TargetISM)
+{
+	if (!IsValid(TargetISM))
+	{
+		return;
+	}
+
+	if (UMaterialInterface* ResolvedGunmetal = ResolveDarkGunmetalMaterial())
+	{
+		const int32 NumSlots = FMath::Max(1, TargetISM->GetNumMaterials());
+		for (int32 SlotIdx = 0; SlotIdx < NumSlots; ++SlotIdx)
+		{
+			TargetISM->SetMaterial(SlotIdx, ResolvedGunmetal);
+		}
+		return;
+	}
+
+	if (IsValid(BaseGreyboxShapeMaterial))
+	{
+		if (UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(BaseGreyboxShapeMaterial, this))
+		{
+			MID->SetVectorParameterValue(TEXT("BaseColorConst"), DarkGunmetalLinearColor);
+			MID->SetVectorParameterValue(TEXT("Color"), DarkGunmetalLinearColor);
+			MID->SetVectorParameterValue(TEXT("EmissiveColorConst"), FLinearColor::Black);
+			MID->SetScalarParameterValue(TEXT("EmissiveScale"), 0.0f);
+			MID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.42f);
+			MID->SetScalarParameterValue(TEXT("MetallicConst"), 0.85f);
+			TargetISM->SetMaterial(0, MID);
 		}
 	}
 }

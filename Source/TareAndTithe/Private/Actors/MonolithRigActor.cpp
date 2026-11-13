@@ -413,16 +413,21 @@ bool AMonolithRigActor::LoadContractOnRig(
 		ResolveEffectiveCutCapMaterial(Contract)
 	});
 
-	// Align actual upper grip cross-section centroid directly under TiltingMountComponent (0, 0) seated inside the jaw pocket,
-	// so asymmetric shapes (L-Blocks, tapered Rodin rocks) hang physically by their upper stem while overhangs generate real torque.
+	// Align actual upper grip cross-section centroid plus any contract eccentric grip offset directly under TiltingMountComponent (0, 0)
+	// seated inside the jaw pocket, so asymmetric castings and eccentric-clamped Rodin monoliths generate real gravitational lever torque.
 	const FBox LocalBounds = MonolithSliceComponent->GetRemainderLocalBounds();
 	const FBox TopGripBounds = MonolithSliceComponent->GetTopGripLocalBounds();
 	const FVector TopGripCenter = TopGripBounds.IsValid ? TopGripBounds.GetCenter() : FVector::ZeroVector;
+	const FVector GripHorizontalOffsetCm(
+		static_cast<double>(Contract->ClampGripHorizontalOffsetCm.X),
+		static_cast<double>(Contract->ClampGripHorizontalOffsetCm.Y),
+		0.0);
+	const FVector EffectiveGripPivotLocal = TopGripCenter + GripHorizontalOffsetCm;
 	const double TopLocalZ = LocalBounds.IsValid
 		? LocalBounds.Max.Z
 		: (0.5 * FMath::Max(5.0, static_cast<double>(Contract->DimensionsCm.Z)));
 	RemainderMeshComponent->SetRelativeLocationAndRotation(
-		FVector(-TopGripCenter.X, -TopGripCenter.Y, -TopLocalZ + static_cast<double>(JawPocketSeatEmbedZCm)),
+		FVector(-EffectiveGripPivotLocal.X, -EffectiveGripPivotLocal.Y, -TopLocalZ + static_cast<double>(JawPocketSeatEmbedZCm)),
 		FQuat::Identity);
 	RemainderMeshComponent->UpdateBounds();
 
@@ -643,6 +648,9 @@ void AMonolithRigActor::FitClampJawToActiveMonolith()
 	const double GripWidthX = FMath::Max(6.0, static_cast<double>(GripSizeCm.X));
 	const double GripWidthY = FMath::Max(6.0, static_cast<double>(GripSizeCm.Y));
 	const double ProtrusionCm = FMath::Max(0.5, static_cast<double>(JawProngOuterProtrusionCm));
+	const double EccentricOffsetXCm = static_cast<double>(CachedLoadedContract->ClampGripHorizontalOffsetCm.X);
+	const double EccentricOffsetYCm = static_cast<double>(CachedLoadedContract->ClampGripHorizontalOffsetCm.Y);
+	const FVector JawCenterMountOffsetCm(-EccentricOffsetXCm, -EccentricOffsetYCm, 0.0);
 
 	if (bHasCustomClampJawMesh &&
 		IsValid(PresentationData) &&
@@ -662,7 +670,8 @@ void AMonolithRigActor::FitClampJawToActiveMonolith()
 			UStaticMeshComponent* VisualComp,
 			const FTransform& BaseSlotTransform,
 			double RatioMountX,
-			double RatioMountY)
+			double RatioMountY,
+			const FVector& MountXYTranslationCm)
 		{
 			if (!IsValid(VisualComp))
 			{
@@ -676,7 +685,11 @@ void AMonolithRigActor::FitClampJawToActiveMonolith()
 				? FVector(RatioMountY, RatioMountX, 1.0)
 				: FVector(RatioMountX, RatioMountY, 1.0);
 
-			VisualComp->SetRelativeLocation(FVector(SlotLoc.X * RatioMountX, SlotLoc.Y * RatioMountY, SlotLoc.Z));
+			VisualComp->SetRelativeLocation(
+				FVector(
+					(SlotLoc.X * RatioMountX) + MountXYTranslationCm.X,
+					(SlotLoc.Y * RatioMountY) + MountXYTranslationCm.Y,
+					SlotLoc.Z));
 			VisualComp->SetRelativeRotation(SlotRot);
 			VisualComp->SetRelativeScale3D(SlotScale * LocalScaleMult);
 		};
@@ -704,7 +717,7 @@ void AMonolithRigActor::FitClampJawToActiveMonolith()
 
 		const double JawRatioX = TargetOuterXCm / FMath::Max(1.0, BaseJawOuterCm.X);
 		const double JawRatioY = TargetOuterYCm / FMath::Max(1.0, BaseJawOuterCm.Y);
-		ApplyMountXYScaleToSlot(ClampJawVisual, JawSlotXf, JawRatioX, JawRatioY);
+		ApplyMountXYScaleToSlot(ClampJawVisual, JawSlotXf, JawRatioX, JawRatioY, JawCenterMountOffsetCm);
 
 		if (IsValid(ClampSpringHousingVisual) && IsValid(PresentationData->ClampSpringHousingMeshSlot.Mesh))
 		{
@@ -714,25 +727,32 @@ void AMonolithRigActor::FitClampJawToActiveMonolith()
 				HousingSlotXf,
 				FVector(48.0, 48.0, 40.0));
 
+			const double RequiredEnvelopeXCm = FMath::Max(
+				TargetOuterXCm * 1.06,
+				TargetOuterXCm + (2.0 * FMath::Abs(EccentricOffsetXCm)) + 1.5);
+			const double RequiredEnvelopeYCm = FMath::Max(
+				TargetOuterYCm * 1.06,
+				TargetOuterYCm + (2.0 * FMath::Abs(EccentricOffsetYCm)) + 1.5);
+
 			const double TargetHousingXCm = FMath::Clamp(
-				FMath::Max(BaseHousingOuterCm.X, TargetOuterXCm * 1.06),
+				FMath::Max(BaseHousingOuterCm.X, RequiredEnvelopeXCm),
 				BaseHousingOuterCm.X,
-				MaxJawOuterCm + 4.0);
+				MaxJawOuterCm + 10.0);
 			const double TargetHousingYCm = FMath::Clamp(
-				FMath::Max(BaseHousingOuterCm.Y, TargetOuterYCm * 1.06),
+				FMath::Max(BaseHousingOuterCm.Y, RequiredEnvelopeYCm),
 				BaseHousingOuterCm.Y,
-				MaxJawOuterCm + 4.0);
+				MaxJawOuterCm + 10.0);
 
 			const double HousingRatioX = TargetHousingXCm / FMath::Max(1.0, BaseHousingOuterCm.X);
 			const double HousingRatioY = TargetHousingYCm / FMath::Max(1.0, BaseHousingOuterCm.Y);
-			ApplyMountXYScaleToSlot(ClampSpringHousingVisual, HousingSlotXf, HousingRatioX, HousingRatioY);
+			ApplyMountXYScaleToSlot(ClampSpringHousingVisual, HousingSlotXf, HousingRatioX, HousingRatioY, FVector::ZeroVector);
 		}
 		return;
 	}
 
 	const double GreyboxJawScaleX = FMath::Clamp((GripWidthX + (2.0 * ProtrusionCm)) / 100.0, 0.16, 0.72);
 	const double GreyboxJawScaleY = FMath::Clamp((GripWidthY + (2.0 * ProtrusionCm)) / 100.0, 0.16, 0.72);
-	ClampJawVisual->SetRelativeLocation(FVector(0.0, 0.0, -2.0));
+	ClampJawVisual->SetRelativeLocation(FVector(JawCenterMountOffsetCm.X, JawCenterMountOffsetCm.Y, -2.0));
 	ClampJawVisual->SetRelativeRotation(FRotator::ZeroRotator);
 	ClampJawVisual->SetRelativeScale3D(FVector(GreyboxJawScaleX, GreyboxJawScaleY, 0.16));
 }

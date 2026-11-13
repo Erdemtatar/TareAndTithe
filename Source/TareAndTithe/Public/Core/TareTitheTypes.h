@@ -9,11 +9,14 @@
 UENUM(BlueprintType)
 enum class EMonolithBaseShape : uint8
 {
-	Box                 UMETA(DisplayName = "Box"),
-	OctagonalPrism      UMETA(DisplayName = "Octagonal Prism"),
-	AsymmetricLBlock    UMETA(DisplayName = "Asymmetric L-Block"),
-	SteppedCore         UMETA(DisplayName = "Stepped Core"),
-	CustomStaticMesh    UMETA(DisplayName = "Custom Watertight StaticMesh")
+	Box                     UMETA(DisplayName = "Box"),
+	OctagonalPrism          UMETA(DisplayName = "Octagonal Prism"),
+	AsymmetricLBlock        UMETA(DisplayName = "Asymmetric L-Block"),
+	SteppedCore             UMETA(DisplayName = "Stepped Core"),
+	CustomStaticMesh        UMETA(DisplayName = "Custom Watertight StaticMesh"),
+	CantileveredJHook       UMETA(DisplayName = "Cantilevered J-Hook"),
+	OffsetCChannel          UMETA(DisplayName = "Offset C-Channel"),
+	CounterweightedZBracket UMETA(DisplayName = "Counterweighted Z-Bracket")
 };
 
 UENUM(BlueprintType)

@@ -15,6 +15,19 @@ FPrimaryAssetId UMonolithContractDataAsset::GetPrimaryAssetId() const
 	return FPrimaryAssetId(FPrimaryAssetType(TEXT("MonolithContract")), GetFName());
 }
 
+bool UMonolithContractDataAsset::HasAsymmetricTorqueProfile() const
+{
+	if (!ClampGripHorizontalOffsetCm.IsNearlyZero(0.05f))
+	{
+		return true;
+	}
+
+	return (BaseShape == EMonolithBaseShape::AsymmetricLBlock) ||
+		(BaseShape == EMonolithBaseShape::CantileveredJHook) ||
+		(BaseShape == EMonolithBaseShape::OffsetCChannel) ||
+		(BaseShape == EMonolithBaseShape::CounterweightedZBracket);
+}
+
 #if WITH_EDITOR
 EDataValidationResult UMonolithContractDataAsset::IsDataValid(FDataValidationContext& Context) const
 {

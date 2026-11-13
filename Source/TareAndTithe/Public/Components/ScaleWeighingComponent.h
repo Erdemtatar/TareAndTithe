@@ -44,14 +44,21 @@ public:
 	void SetSettleDampingMultiplier(float InMultiplier);
 	float GetSettleDampingMultiplier() const { return SettleDampingMultiplier; }
 	void ResetScaleState();
+	bool ConfirmPayloadScaleImpact(
+		AActor* PayloadActor,
+		UPrimitiveComponent* PayloadPrimitive,
+		const FVector& WorldImpactPoint,
+		const FVector& NormalImpulse);
 	bool ReconcileOverlappingPayloads(bool bEnableTickOnChange = false);
 	bool TryRecoverPayloadOnPan(AActor* PayloadActor);
 
 	float GetPanMassKg() const { return PanMassKg; }
 	float GetSettledMassKg() const { return PanMassKg; }
+	double GetCurrentPanDisplacementZCm() const { return CurrentDisplacementZCm; }
 	bool IsScaleSettled() const { return bIsSettled; }
 	bool HasContaminationFault() const { return bHasContamination; }
 	int32 GetOverlappingPayloadCount() const { return TrackedPayloads.Num(); }
+	int32 GetConfirmedPayloadCount() const;
 
 	FShouldIgnorePayloadInPanSignature OnShouldIgnorePayloadInPan;
 	FOnScaleChunkEventSignature OnChunkLandedOnScale;
@@ -105,13 +112,32 @@ protected:
 	float PanWellFloorOffsetZCm = -3.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Scale|Recovery", meta = (ClampMin = "20.0", ClampMax = "250.0"))
-	float PanWellMaxRecoveryHeightZCm = 140.0f;
+	float PanWellMaxRecoveryHeightZCm = 180.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Scale|Impact", meta = (ClampMin = "5.0", ClampMax = "200.0"))
+	float EffectivePanCarriageMassKg = 36.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Scale|Impact", meta = (ClampMin = "0.01", ClampMax = "0.5"))
+	float ImpactImpulseTransferScale = 0.08f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Scale|Impact", meta = (ClampMin = "0.0", ClampMax = "5.0"))
+	float MinImpactKickPerKgCmPerSec = 0.85f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Scale|Impact", meta = (ClampMin = "4.0", ClampMax = "120.0"))
+	float MaxImpactKickSpeedCmPerSec = 36.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Scale|Impact", meta = (ClampMin = "1.0", ClampMax = "30.0"))
+	float RestingFallbackMaxLinearSpeedCmPerSec = 12.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Scale|Impact", meta = (ClampMin = "0.5", ClampMax = "10.0"))
+	float RestingFallbackContactToleranceZCm = 3.5f;
 
 private:
 	struct FTrackedPanPayload
 	{
 		TWeakObjectPtr<AActor> PayloadActor;
 		TWeakObjectPtr<UPrimitiveComponent> PayloadPrimitive;
+		bool bHasConfirmedScaleImpact = false;
 	};
 
 	UFUNCTION()
@@ -132,6 +158,8 @@ private:
 
 	int32 FindTrackedPayloadIndex(const AActor* PayloadActor) const;
 	bool IsPayloadWithinPanRecoveryWell(const AActor* PayloadActor) const;
+	bool IsInFlightPayloadRestingOnPanOrConfirmedStack(const AActor* CandidateActor, const UPrimitiveComponent* CandidatePrimitive) const;
+	void CascadeRestingStackedPayloads();
 	void RecomputeAnalyticalPanMass();
 	bool AreAllPayloadsBelowSettleVelocity() const;
 	void WakeOverlappingPayloads();

@@ -530,6 +530,85 @@ namespace
 			});
 			break;
 		}
+		case EMonolithBaseShape::CantileveredJHook:
+		{
+			const double Hx = 0.5 * static_cast<double>(DimX);
+			const double Sy = static_cast<double>(DimY);
+			const double Sz = static_cast<double>(DimZ);
+
+			// Strictly Z-monotone CCW J-hook profile: eccentric left clamp stem + heavy lower-right cantilevered J-belly (zero floating islands on horizontal cuts).
+			const TArray<FVector2d> JHookProfileYZ = {
+				FVector2d(-0.32 * Sy, -0.50 * Sz),
+				FVector2d(+0.30 * Sy, -0.50 * Sz),
+				FVector2d(+0.50 * Sy, -0.36 * Sz),
+				FVector2d(+0.50 * Sy, -0.04 * Sz),
+				FVector2d(+0.14 * Sy, +0.16 * Sz),
+				FVector2d(+0.14 * Sy, +0.50 * Sz),
+				FVector2d(-0.50 * Sy, +0.50 * Sz),
+				FVector2d(-0.50 * Sy, -0.38 * Sz)
+			};
+
+			TargetDynMesh->EditMesh([&JHookProfileYZ, Hx](UE::Geometry::FDynamicMesh3& EditMesh)
+			{
+				BuildWatertightExtrudedProfileX(EditMesh, JHookProfileYZ, Hx);
+			});
+			break;
+		}
+		case EMonolithBaseShape::OffsetCChannel:
+		{
+			const double Hx = 0.5 * static_cast<double>(DimX);
+			const double Sy = static_cast<double>(DimY);
+			const double Sz = static_cast<double>(DimZ);
+
+			// Strictly Z-monotone CCW offset C-channel profile: continuous right spine + sloped C-throat recess & lower flange housing Vein 0.
+			const TArray<FVector2d> CChannelProfileYZ = {
+				FVector2d(-0.50 * Sy, -0.50 * Sz),
+				FVector2d(+0.36 * Sy, -0.50 * Sz),
+				FVector2d(+0.50 * Sy, -0.40 * Sz),
+				FVector2d(+0.50 * Sy, +0.50 * Sz),
+				FVector2d(-0.17 * Sy, +0.50 * Sz),
+				FVector2d(-0.17 * Sy, +0.30 * Sz),
+				FVector2d(-0.48 * Sy, +0.20 * Sz),
+				FVector2d(-0.48 * Sy, +0.05 * Sz),
+				FVector2d(+0.04 * Sy, -0.04 * Sz),
+				FVector2d(+0.04 * Sy, -0.19 * Sz),
+				FVector2d(-0.50 * Sy, -0.25 * Sz)
+			};
+
+			TargetDynMesh->EditMesh([&CChannelProfileYZ, Hx](UE::Geometry::FDynamicMesh3& EditMesh)
+			{
+				BuildWatertightExtrudedProfileX(EditMesh, CChannelProfileYZ, Hx);
+			});
+			break;
+		}
+		case EMonolithBaseShape::CounterweightedZBracket:
+		{
+			const double Hx = 0.5 * static_cast<double>(DimX);
+			const double Sy = static_cast<double>(DimY);
+			const double Sz = static_cast<double>(DimZ);
+
+			// Strictly Z-monotone CCW counterweighted Z-bracket profile: opposing upper-right (+Y) and lower-left (-Y) bismuth counterweights.
+			const TArray<FVector2d> ZBracketProfileYZ = {
+				FVector2d(-0.50 * Sy, -0.50 * Sz),
+				FVector2d(+0.20 * Sy, -0.50 * Sz),
+				FVector2d(+0.20 * Sy, -0.08 * Sz),
+				FVector2d(+0.50 * Sy, +0.04 * Sz),
+				FVector2d(+0.50 * Sy, +0.26 * Sz),
+				FVector2d(+0.135 * Sy, +0.34 * Sz),
+				FVector2d(+0.135 * Sy, +0.50 * Sz),
+				FVector2d(-0.385 * Sy, +0.50 * Sz),
+				FVector2d(-0.385 * Sy, +0.34 * Sz),
+				FVector2d(-0.24 * Sy, +0.26 * Sz),
+				FVector2d(-0.24 * Sy, +0.04 * Sz),
+				FVector2d(-0.50 * Sy, -0.08 * Sz)
+			};
+
+			TargetDynMesh->EditMesh([&ZBracketProfileYZ, Hx](UE::Geometry::FDynamicMesh3& EditMesh)
+			{
+				BuildWatertightExtrudedProfileX(EditMesh, ZBracketProfileYZ, Hx);
+			});
+			break;
+		}
 		case EMonolithBaseShape::SteppedCore:
 		default:
 		{

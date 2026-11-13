@@ -67,6 +67,9 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Clamp", meta = (ClampMin = "1.0"))
 	float ClampSpringDamping = 24.0f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Clamp")
+	FVector2D ClampGripHorizontalOffsetCm = FVector2D::ZeroVector;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Veins")
 	TArray<FVolatileVeinDefinition> HiddenVeins;
 
@@ -75,6 +78,8 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials")
 	TObjectPtr<UMaterialInterface> MoltenCutCapMaterial = nullptr;
+
+	bool HasAsymmetricTorqueProfile() const;
 
 	virtual FPrimaryAssetId GetPrimaryAssetId() const override;
 

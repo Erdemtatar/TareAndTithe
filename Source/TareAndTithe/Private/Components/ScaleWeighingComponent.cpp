@@ -94,6 +94,15 @@ void UScaleWeighingComponent::SetSettleDampingMultiplier(float InMultiplier)
 
 void UScaleWeighingComponent::ResetScaleState()
 {
+	for (const FTrackedPanPayload& Entry : TrackedPayloads)
+	{
+		AActor* Actor = Entry.PayloadActor.Get();
+		if (IsValid(Actor) && Actor->Implements<UMassPayloadInterface>())
+		{
+			IMassPayloadInterface::Execute_SetScaleSupportReceiverActor(Actor, nullptr);
+		}
+	}
+
 	TrackedPayloads.Reset();
 	PanMassKg = 0.0f;
 	bHasContamination = false;
@@ -106,6 +115,134 @@ void UScaleWeighingComponent::ResetScaleState()
 	SetSettledState(true);
 	EmitFillRatioTelemetry(0.0f, true);
 	SetComponentTickEnabled(false);
+}
+
+int32 UScaleWeighingComponent::GetConfirmedPayloadCount() const
+{
+	int32 ConfirmedCount = 0;
+	for (const FTrackedPanPayload& Entry : TrackedPayloads)
+	{
+		AActor* Actor = Entry.PayloadActor.Get();
+		if (Entry.bHasConfirmedScaleImpact &&
+			IsValid(Actor) &&
+			Actor->Implements<UMassPayloadInterface>() &&
+			IMassPayloadInterface::Execute_GetRoutingState(Actor) == EChunkRoutingState::OnScalePan)
+		{
+			++ConfirmedCount;
+		}
+	}
+	return ConfirmedCount;
+}
+
+bool UScaleWeighingComponent::ConfirmPayloadScaleImpact(
+	AActor* PayloadActor,
+	UPrimitiveComponent* PayloadPrimitive,
+	const FVector& WorldImpactPoint,
+	const FVector& NormalImpulse)
+{
+	if (!IsValid(PayloadActor) || PayloadActor == GetOwner() || !PayloadActor->Implements<UMassPayloadInterface>())
+	{
+		return false;
+	}
+
+	const EChunkRoutingState IncomingState = IMassPayloadInterface::Execute_GetRoutingState(PayloadActor);
+	if (IncomingState == EChunkRoutingState::PooledInactive ||
+		IncomingState == EChunkRoutingState::ConsumedAsTare ||
+		IncomingState == EChunkRoutingState::LostAsStrayTare)
+	{
+		return false;
+	}
+
+	if (IncomingState != EChunkRoutingState::OnScalePan &&
+		OnShouldIgnorePayloadInPan.IsBound() &&
+		OnShouldIgnorePayloadInPan.Execute(PayloadActor))
+	{
+		return false;
+	}
+
+	const bool bInSpatialPanZone =
+		(IsValid(PanContainmentTrigger) && PanContainmentTrigger->IsOverlappingActor(PayloadActor)) ||
+		IsPayloadWithinPanRecoveryWell(PayloadActor);
+	if (!bInSpatialPanZone)
+	{
+		return false;
+	}
+
+	UPrimitiveComponent* ResolvedPrim = IsValid(PayloadPrimitive)
+		? PayloadPrimitive
+		: IMassPayloadInterface::Execute_GetPayloadPhysicsPrimitive(PayloadActor);
+
+	int32 TrackedIdx = FindTrackedPayloadIndex(PayloadActor);
+	if (TrackedIdx != INDEX_NONE &&
+		TrackedPayloads[TrackedIdx].bHasConfirmedScaleImpact &&
+		IncomingState == EChunkRoutingState::OnScalePan)
+	{
+		return false;
+	}
+
+	if (TrackedIdx == INDEX_NONE)
+	{
+		FTrackedPanPayload NewEntry;
+		NewEntry.PayloadActor = PayloadActor;
+		NewEntry.PayloadPrimitive = ResolvedPrim;
+		NewEntry.bHasConfirmedScaleImpact = true;
+		TrackedIdx = TrackedPayloads.Add(NewEntry);
+	}
+	else
+	{
+		if (!TrackedPayloads[TrackedIdx].PayloadPrimitive.IsValid() && IsValid(ResolvedPrim))
+		{
+			TrackedPayloads[TrackedIdx].PayloadPrimitive = ResolvedPrim;
+		}
+		TrackedPayloads[TrackedIdx].bHasConfirmedScaleImpact = true;
+	}
+
+	IMassPayloadInterface::Execute_SetScaleSupportReceiverActor(PayloadActor, GetOwner());
+	IMassPayloadInterface::Execute_NotifyRoutingStateChanged(PayloadActor, EChunkRoutingState::OnScalePan);
+
+	const float ChunkMassKg = FMath::Max(0.0f, IMassPayloadInterface::Execute_GetAnalyticalMassKg(PayloadActor));
+	const bool bChunkContaminated = IMassPayloadInterface::Execute_IsVolatileContaminated(PayloadActor);
+
+	// Impart downward rigid-body kinetic impulse kick to PanMotionRoot strictly at physical contact frame.
+	const double SafeCarriageMassKg = FMath::Max(1.0, static_cast<double>(EffectivePanCarriageMassKg));
+	const double ImpulseDerivedSpeedCmPerSec =
+		(NormalImpulse.Size() / SafeCarriageMassKg) * static_cast<double>(ImpactImpulseTransferScale);
+	const double MassFloorKickCmPerSec =
+		static_cast<double>(ChunkMassKg) * static_cast<double>(MinImpactKickPerKgCmPerSec);
+	const double ClampedKickCmPerSec = FMath::Clamp(
+		FMath::Max(ImpulseDerivedSpeedCmPerSec, MassFloorKickCmPerSec),
+		1.5,
+		static_cast<double>(MaxImpactKickSpeedCmPerSec));
+	VelocityZCmPerSec = FMath::Clamp(
+		VelocityZCmPerSec - ClampedKickCmPerSec,
+		-static_cast<double>(MaxImpactKickSpeedCmPerSec) * 1.35,
+		static_cast<double>(MaxImpactKickSpeedCmPerSec));
+
+	RecomputeAnalyticalPanMass();
+
+	SettleHoldElapsedSeconds = 0.0f;
+	SetSettledState(false);
+	SetComponentTickEnabled(true);
+
+	const float NormalizedImpact = FMath::Clamp(ChunkMassKg / FMath::Max(0.5f, TargetQuotaMassKg), 0.05f, 1.0f);
+	FVector ImpactWorldLocation = !WorldImpactPoint.IsNearlyZero()
+		? WorldImpactPoint
+		: PayloadActor->GetActorLocation();
+	if (WorldImpactPoint.IsNearlyZero() && IsValid(PanPlatformComponent))
+	{
+		ImpactWorldLocation.Z = PanPlatformComponent->GetComponentLocation().Z + static_cast<double>(PanWellFloorOffsetZCm + 6.0f);
+	}
+
+	OnTelemetryImpulse.Broadcast(ETelemetryImpulseId::ChunkScaleImpact, NormalizedImpact, ImpactWorldLocation);
+	OnChunkLandedOnScale.Broadcast(PayloadActor, ChunkMassKg, PanMassKg);
+
+	if (bChunkContaminated)
+	{
+		OnScaleContaminationDetected.Broadcast(PayloadActor);
+	}
+
+	CascadeRestingStackedPayloads();
+	return true;
 }
 
 void UScaleWeighingComponent::TickComponent(
@@ -121,19 +258,32 @@ void UScaleWeighingComponent::TickComponent(
 		return;
 	}
 
-	// Prune any invalidated weak payload entries cleanly.
-	const int32 PrevCount = TrackedPayloads.Num();
-	TrackedPayloads.RemoveAllSwap([](const FTrackedPanPayload& Entry)
+	// Prune invalidated, pooled, tare-routed, or detached entries while preserving airborne InFlight containment entries (which contribute 0.0 kg until impact).
+	bool bConfirmedMembershipPruned = false;
+	for (int32 Idx = TrackedPayloads.Num() - 1; Idx >= 0; --Idx)
 	{
+		const FTrackedPanPayload& Entry = TrackedPayloads[Idx];
 		AActor* Actor = Entry.PayloadActor.Get();
 		if (!IsValid(Actor) || !Actor->Implements<UMassPayloadInterface>())
 		{
-			return true;
+			bConfirmedMembershipPruned |= Entry.bHasConfirmedScaleImpact;
+			TrackedPayloads.RemoveAtSwap(Idx, EAllowShrinking::No);
+			continue;
 		}
-		return IMassPayloadInterface::Execute_GetRoutingState(Actor) != EChunkRoutingState::OnScalePan;
-	}, EAllowShrinking::No);
 
-	if (TrackedPayloads.Num() != PrevCount)
+		const EChunkRoutingState State = IMassPayloadInterface::Execute_GetRoutingState(Actor);
+		const bool bTerminalState =
+			(State == EChunkRoutingState::PooledInactive) ||
+			(State == EChunkRoutingState::ConsumedAsTare) ||
+			(State == EChunkRoutingState::LostAsStrayTare);
+		if (bTerminalState || (Entry.bHasConfirmedScaleImpact && State != EChunkRoutingState::OnScalePan))
+		{
+			bConfirmedMembershipPruned |= Entry.bHasConfirmedScaleImpact;
+			TrackedPayloads.RemoveAtSwap(Idx, EAllowShrinking::No);
+		}
+	}
+
+	if (bConfirmedMembershipPruned)
 	{
 		RecomputeAnalyticalPanMass();
 	}
@@ -224,43 +374,38 @@ void UScaleWeighingComponent::HandlePanTriggerBeginOverlap(
 		return;
 	}
 
-	if (IncomingState != EChunkRoutingState::OnScalePan &&
-		OnShouldIgnorePayloadInPan.IsBound() &&
-		OnShouldIgnorePayloadInPan.Execute(OtherActor))
+	UPrimitiveComponent* ResolvedPrim = IsValid(OtherComp)
+		? OtherComp
+		: IMassPayloadInterface::Execute_GetPayloadPhysicsPrimitive(OtherActor);
+
+	// Spatial containment vs. impact activation separation:
+	// Entering the tall PanTriggerBox while InFlight records spatial containment ONLY (0.0 kg equilibrium feed, zero state change, zero tick wakeup).
+	if (IncomingState != EChunkRoutingState::OnScalePan)
 	{
+		FTrackedPanPayload AirborneEntry;
+		AirborneEntry.PayloadActor = OtherActor;
+		AirborneEntry.PayloadPrimitive = ResolvedPrim;
+		AirborneEntry.bHasConfirmedScaleImpact = false;
+		TrackedPayloads.Add(AirborneEntry);
+
+		if (IsInFlightPayloadRestingOnPanOrConfirmedStack(OtherActor, ResolvedPrim))
+		{
+			ConfirmPayloadScaleImpact(OtherActor, ResolvedPrim, OtherActor->GetActorLocation(), FVector::ZeroVector);
+		}
 		return;
 	}
 
-	FTrackedPanPayload NewEntry;
-	NewEntry.PayloadActor = OtherActor;
-	NewEntry.PayloadPrimitive = OtherComp;
-	TrackedPayloads.Add(NewEntry);
+	FTrackedPanPayload ConfirmedEntry;
+	ConfirmedEntry.PayloadActor = OtherActor;
+	ConfirmedEntry.PayloadPrimitive = ResolvedPrim;
+	ConfirmedEntry.bHasConfirmedScaleImpact = true;
+	TrackedPayloads.Add(ConfirmedEntry);
 
-	IMassPayloadInterface::Execute_NotifyRoutingStateChanged(OtherActor, EChunkRoutingState::OnScalePan);
-
-	const float ChunkMassKg = IMassPayloadInterface::Execute_GetAnalyticalMassKg(OtherActor);
-	const bool bChunkContaminated = IMassPayloadInterface::Execute_IsVolatileContaminated(OtherActor);
-
+	IMassPayloadInterface::Execute_SetScaleSupportReceiverActor(OtherActor, GetOwner());
 	RecomputeAnalyticalPanMass();
-
 	SettleHoldElapsedSeconds = 0.0f;
 	SetSettledState(false);
 	SetComponentTickEnabled(true);
-
-	const float NormalizedImpact = FMath::Clamp(ChunkMassKg / FMath::Max(0.5f, TargetQuotaMassKg), 0.05f, 1.0f);
-	FVector ImpactWorldLocation = OtherActor->GetActorLocation();
-	if (IsValid(PanPlatformComponent))
-	{
-		const double DeckWorldZ = PanPlatformComponent->GetComponentLocation().Z + static_cast<double>(PanWellFloorOffsetZCm + 6.0f);
-		ImpactWorldLocation.Z = DeckWorldZ;
-	}
-	OnTelemetryImpulse.Broadcast(ETelemetryImpulseId::ChunkScaleImpact, NormalizedImpact, ImpactWorldLocation);
-	OnChunkLandedOnScale.Broadcast(OtherActor, ChunkMassKg, PanMassKg);
-
-	if (bChunkContaminated)
-	{
-		OnScaleContaminationDetected.Broadcast(OtherActor);
-	}
 }
 
 void UScaleWeighingComponent::HandlePanTriggerEndOverlap(
@@ -280,21 +425,23 @@ void UScaleWeighingComponent::HandlePanTriggerEndOverlap(
 		return;
 	}
 
+	const bool bWasConfirmed = TrackedPayloads[ExistingIdx].bHasConfirmedScaleImpact;
 	const EChunkRoutingState LeavingState = IMassPayloadInterface::Execute_GetRoutingState(OtherActor);
 
 	// Multi-convex-hull & stacked recovery guard: retain if still overlapping or still resting inside the pan well column.
 	if ((IsValid(PanContainmentTrigger) && PanContainmentTrigger->IsOverlappingActor(OtherActor)) ||
-		(LeavingState == EChunkRoutingState::OnScalePan && IsPayloadWithinPanRecoveryWell(OtherActor)))
+		(bWasConfirmed && LeavingState == EChunkRoutingState::OnScalePan && IsPayloadWithinPanRecoveryWell(OtherActor)))
 	{
 		return;
 	}
 
 	TrackedPayloads.RemoveAtSwap(ExistingIdx, EAllowShrinking::No);
 
-	// Genuine bounce-out vs. pool reset guard: only transition back to InFlight if still marked OnScalePan.
-	if (LeavingState == EChunkRoutingState::OnScalePan)
+	// Genuine bounce-out vs. pool reset guard: only transition back to InFlight if it had confirmed scale contact and is still marked OnScalePan.
+	if (bWasConfirmed && LeavingState == EChunkRoutingState::OnScalePan)
 	{
 		const float BouncedMassKg = IMassPayloadInterface::Execute_GetAnalyticalMassKg(OtherActor);
+		IMassPayloadInterface::Execute_SetScaleSupportReceiverActor(OtherActor, nullptr);
 		IMassPayloadInterface::Execute_NotifyRoutingStateChanged(OtherActor, EChunkRoutingState::InFlight);
 
 		RecomputeAnalyticalPanMass();
@@ -304,8 +451,9 @@ void UScaleWeighingComponent::HandlePanTriggerEndOverlap(
 
 		OnChunkBouncedOffScale.Broadcast(OtherActor, BouncedMassKg, PanMassKg);
 	}
-	else
+	else if (bWasConfirmed)
 	{
+		IMassPayloadInterface::Execute_SetScaleSupportReceiverActor(OtherActor, nullptr);
 		RecomputeAnalyticalPanMass();
 	}
 }
@@ -347,6 +495,124 @@ bool UScaleWeighingComponent::IsPayloadWithinPanRecoveryWell(const AActor* Paylo
 		(LocalPos.Z <= static_cast<double>(PanWellMaxRecoveryHeightZCm));
 }
 
+bool UScaleWeighingComponent::IsInFlightPayloadRestingOnPanOrConfirmedStack(
+	const AActor* CandidateActor,
+	const UPrimitiveComponent* CandidatePrimitive) const
+{
+	if (!IsValid(CandidateActor) || !IsValid(CandidatePrimitive) || !CandidatePrimitive->IsSimulatingPhysics())
+	{
+		return false;
+	}
+
+	const double MaxRestSpeedSq = FMath::Square(static_cast<double>(RestingFallbackMaxLinearSpeedCmPerSec));
+	if (CandidatePrimitive->GetPhysicsLinearVelocity().SizeSquared() > MaxRestSpeedSq)
+	{
+		return false;
+	}
+
+	const FBox CandidateBox = CandidatePrimitive->Bounds.GetBox();
+	if (!CandidateBox.IsValid)
+	{
+		return false;
+	}
+
+	const double TolZ = static_cast<double>(RestingFallbackContactToleranceZCm);
+	if (IsValid(PanPlatformComponent))
+	{
+		const double DeckTopWorldZ = PanPlatformComponent->GetComponentLocation().Z + static_cast<double>(PanWellFloorOffsetZCm + 6.0f);
+		if (FMath::Abs(CandidateBox.Min.Z - DeckTopWorldZ) <= TolZ)
+		{
+			return true;
+		}
+	}
+
+	for (const FTrackedPanPayload& Entry : TrackedPayloads)
+	{
+		if (!Entry.bHasConfirmedScaleImpact)
+		{
+			continue;
+		}
+
+		const AActor* SupportActor = Entry.PayloadActor.Get();
+		const UPrimitiveComponent* SupportPrim = Entry.PayloadPrimitive.Get();
+		if (!IsValid(SupportActor) || SupportActor == CandidateActor || !IsValid(SupportPrim))
+		{
+			continue;
+		}
+
+		if (!SupportActor->Implements<UMassPayloadInterface>() ||
+			IMassPayloadInterface::Execute_GetRoutingState(SupportActor) != EChunkRoutingState::OnScalePan)
+		{
+			continue;
+		}
+
+		const FBox SupportBox = SupportPrim->Bounds.GetBox();
+		if (!SupportBox.IsValid)
+		{
+			continue;
+		}
+
+		const bool bOverlapsXY =
+			(CandidateBox.Max.X + 2.0 >= SupportBox.Min.X) && (CandidateBox.Min.X - 2.0 <= SupportBox.Max.X) &&
+			(CandidateBox.Max.Y + 2.0 >= SupportBox.Min.Y) && (CandidateBox.Min.Y - 2.0 <= SupportBox.Max.Y);
+		const bool bRestsOnSupportZ =
+			(CandidateBox.Min.Z <= SupportBox.Max.Z + TolZ) &&
+			(CandidateBox.Max.Z >= SupportBox.Min.Z);
+		if (bOverlapsXY && bRestsOnSupportZ)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void UScaleWeighingComponent::CascadeRestingStackedPayloads()
+{
+	bool bPromotedAny = true;
+	int32 SafetyPass = 0;
+	while (bPromotedAny && SafetyPass < 8)
+	{
+		bPromotedAny = false;
+		++SafetyPass;
+
+		for (int32 Idx = 0; Idx < TrackedPayloads.Num(); ++Idx)
+		{
+			if (TrackedPayloads[Idx].bHasConfirmedScaleImpact)
+			{
+				continue;
+			}
+
+			AActor* CandidateActor = TrackedPayloads[Idx].PayloadActor.Get();
+			if (!IsValid(CandidateActor) || !CandidateActor->Implements<UMassPayloadInterface>())
+			{
+				continue;
+			}
+
+			if (IMassPayloadInterface::Execute_GetRoutingState(CandidateActor) != EChunkRoutingState::InFlight)
+			{
+				continue;
+			}
+
+			UPrimitiveComponent* CandidatePrim = TrackedPayloads[Idx].PayloadPrimitive.Get();
+			if (!IsValid(CandidatePrim))
+			{
+				CandidatePrim = IMassPayloadInterface::Execute_GetPayloadPhysicsPrimitive(CandidateActor);
+				TrackedPayloads[Idx].PayloadPrimitive = CandidatePrim;
+			}
+
+			if (IsInFlightPayloadRestingOnPanOrConfirmedStack(CandidateActor, CandidatePrim))
+			{
+				if (ConfirmPayloadScaleImpact(CandidateActor, CandidatePrim, CandidateActor->GetActorLocation(), FVector::ZeroVector))
+				{
+					bPromotedAny = true;
+					break;
+				}
+			}
+		}
+	}
+}
+
 bool UScaleWeighingComponent::ReconcileOverlappingPayloads(bool bEnableTickOnChange)
 {
 	if (!IsValid(PanContainmentTrigger))
@@ -360,7 +626,7 @@ bool UScaleWeighingComponent::ReconcileOverlappingPayloads(bool bEnableTickOnCha
 	PanContainmentTrigger->GetOverlappingActors(OverlappingActors);
 
 	const float PreviousPanMassKg = PanMassKg;
-	bool bMembershipChanged = false;
+	bool bConfirmedMembershipChanged = false;
 
 	struct FBouncedEntry
 	{
@@ -371,18 +637,19 @@ bool UScaleWeighingComponent::ReconcileOverlappingPayloads(bool bEnableTickOnCha
 
 	for (int32 Idx = TrackedPayloads.Num() - 1; Idx >= 0; --Idx)
 	{
+		const bool bWasConfirmed = TrackedPayloads[Idx].bHasConfirmedScaleImpact;
 		AActor* TrackedActor = TrackedPayloads[Idx].PayloadActor.Get();
 		if (!IsValid(TrackedActor) || !TrackedActor->Implements<UMassPayloadInterface>())
 		{
 			TrackedPayloads.RemoveAtSwap(Idx, EAllowShrinking::No);
-			bMembershipChanged = true;
+			bConfirmedMembershipChanged |= bWasConfirmed;
 			continue;
 		}
 
 		const EChunkRoutingState CurrentState = IMassPayloadInterface::Execute_GetRoutingState(TrackedActor);
 		const bool bStillOverlapping = OverlappingActors.Contains(TrackedActor);
 		const bool bRetainedInPanWell = bStillOverlapping ||
-			(CurrentState == EChunkRoutingState::OnScalePan && IsPayloadWithinPanRecoveryWell(TrackedActor));
+			(bWasConfirmed && CurrentState == EChunkRoutingState::OnScalePan && IsPayloadWithinPanRecoveryWell(TrackedActor));
 
 		if (!bRetainedInPanWell ||
 			CurrentState == EChunkRoutingState::PooledInactive ||
@@ -390,13 +657,18 @@ bool UScaleWeighingComponent::ReconcileOverlappingPayloads(bool bEnableTickOnCha
 			CurrentState == EChunkRoutingState::LostAsStrayTare)
 		{
 			TrackedPayloads.RemoveAtSwap(Idx, EAllowShrinking::No);
-			bMembershipChanged = true;
+			bConfirmedMembershipChanged |= bWasConfirmed;
 
-			if (!bRetainedInPanWell && CurrentState == EChunkRoutingState::OnScalePan)
+			if (!bRetainedInPanWell && bWasConfirmed && CurrentState == EChunkRoutingState::OnScalePan)
 			{
 				const float BouncedMassKg = IMassPayloadInterface::Execute_GetAnalyticalMassKg(TrackedActor);
+				IMassPayloadInterface::Execute_SetScaleSupportReceiverActor(TrackedActor, nullptr);
 				IMassPayloadInterface::Execute_NotifyRoutingStateChanged(TrackedActor, EChunkRoutingState::InFlight);
 				NewlyBouncedEntries.Add({TrackedActor, BouncedMassKg});
+			}
+			else if (bWasConfirmed)
+			{
+				IMassPayloadInterface::Execute_SetScaleSupportReceiverActor(TrackedActor, nullptr);
 			}
 		}
 	}
@@ -424,40 +696,63 @@ bool UScaleWeighingComponent::ReconcileOverlappingPayloads(bool bEnableTickOnCha
 			continue;
 		}
 
-		const int32 ExistingIdx = FindTrackedPayloadIndex(OverlappedActor);
-		if (ExistingIdx == INDEX_NONE && CurrentState != EChunkRoutingState::OnScalePan)
+		UPrimitiveComponent* PayloadPrim = IMassPayloadInterface::Execute_GetPayloadPhysicsPrimitive(OverlappedActor);
+		int32 ExistingIdx = FindTrackedPayloadIndex(OverlappedActor);
+
+		if (CurrentState == EChunkRoutingState::OnScalePan)
 		{
-			if (OnShouldIgnorePayloadInPan.IsBound() && OnShouldIgnorePayloadInPan.Execute(OverlappedActor))
+			const bool bWasUnconfirmed = (ExistingIdx == INDEX_NONE) || !TrackedPayloads[ExistingIdx].bHasConfirmedScaleImpact;
+			if (ExistingIdx == INDEX_NONE)
 			{
-				continue;
+				FTrackedPanPayload ReconciledEntry;
+				ReconciledEntry.PayloadActor = OverlappedActor;
+				ReconciledEntry.PayloadPrimitive = PayloadPrim;
+				ReconciledEntry.bHasConfirmedScaleImpact = true;
+				TrackedPayloads.Add(ReconciledEntry);
 			}
+			else
+			{
+				TrackedPayloads[ExistingIdx].PayloadPrimitive = PayloadPrim;
+				TrackedPayloads[ExistingIdx].bHasConfirmedScaleImpact = true;
+			}
+			IMassPayloadInterface::Execute_SetScaleSupportReceiverActor(OverlappedActor, GetOwner());
+			bConfirmedMembershipChanged |= bWasUnconfirmed;
+			continue;
 		}
 
-		const bool bWasMissingFromPan = (ExistingIdx == INDEX_NONE) || (CurrentState != EChunkRoutingState::OnScalePan);
+		// CurrentState == InFlight: NEVER prematurely promote an airborne falling chunk!
+		// Record spatial containment with bHasConfirmedScaleImpact = false, and promote ONLY if physically resting at low speed on the pan or a confirmed stack.
 		if (ExistingIdx == INDEX_NONE)
 		{
-			FTrackedPanPayload ReconciledEntry;
-			ReconciledEntry.PayloadActor = OverlappedActor;
-			ReconciledEntry.PayloadPrimitive = Cast<UPrimitiveComponent>(OverlappedActor->GetRootComponent());
-			TrackedPayloads.Add(ReconciledEntry);
-			bMembershipChanged = true;
+			FTrackedPanPayload AirborneEntry;
+			AirborneEntry.PayloadActor = OverlappedActor;
+			AirborneEntry.PayloadPrimitive = PayloadPrim;
+			AirborneEntry.bHasConfirmedScaleImpact = false;
+			ExistingIdx = TrackedPayloads.Add(AirborneEntry);
+		}
+		else if (!TrackedPayloads[ExistingIdx].PayloadPrimitive.IsValid() && IsValid(PayloadPrim))
+		{
+			TrackedPayloads[ExistingIdx].PayloadPrimitive = PayloadPrim;
 		}
 
-		if (CurrentState != EChunkRoutingState::OnScalePan)
+		if (OnShouldIgnorePayloadInPan.IsBound() && OnShouldIgnorePayloadInPan.Execute(OverlappedActor))
 		{
+			continue;
+		}
+
+		if (IsInFlightPayloadRestingOnPanOrConfirmedStack(OverlappedActor, PayloadPrim))
+		{
+			TrackedPayloads[ExistingIdx].bHasConfirmedScaleImpact = true;
+			IMassPayloadInterface::Execute_SetScaleSupportReceiverActor(OverlappedActor, GetOwner());
 			IMassPayloadInterface::Execute_NotifyRoutingStateChanged(OverlappedActor, EChunkRoutingState::OnScalePan);
-			bMembershipChanged = true;
-		}
-
-		if (bWasMissingFromPan)
-		{
 			const float ChunkMassKg = IMassPayloadInterface::Execute_GetAnalyticalMassKg(OverlappedActor);
 			const bool bContaminated = IMassPayloadInterface::Execute_IsVolatileContaminated(OverlappedActor);
 			NewlyLandedEntries.Add({OverlappedActor, ChunkMassKg, bContaminated});
+			bConfirmedMembershipChanged = true;
 		}
 	}
 
-	if (bMembershipChanged)
+	if (bConfirmedMembershipChanged)
 	{
 		RecomputeAnalyticalPanMass();
 
@@ -483,7 +778,7 @@ bool UScaleWeighingComponent::ReconcileOverlappingPayloads(bool bEnableTickOnCha
 		}
 	}
 
-	return bMembershipChanged || !FMath::IsNearlyEqual(PreviousPanMassKg, PanMassKg, 1.0e-4f);
+	return bConfirmedMembershipChanged || !FMath::IsNearlyEqual(PreviousPanMassKg, PanMassKg, 1.0e-4f);
 }
 
 bool UScaleWeighingComponent::TryRecoverPayloadOnPan(AActor* PayloadActor)
@@ -502,7 +797,9 @@ bool UScaleWeighingComponent::TryRecoverPayloadOnPan(AActor* PayloadActor)
 	}
 
 	const int32 ExistingIdx = FindTrackedPayloadIndex(PayloadActor);
-	if (ExistingIdx != INDEX_NONE && CurrentState == EChunkRoutingState::OnScalePan)
+	if (ExistingIdx != INDEX_NONE &&
+		TrackedPayloads[ExistingIdx].bHasConfirmedScaleImpact &&
+		CurrentState == EChunkRoutingState::OnScalePan)
 	{
 		RecomputeAnalyticalPanMass();
 		return true;
@@ -513,39 +810,17 @@ bool UScaleWeighingComponent::TryRecoverPayloadOnPan(AActor* PayloadActor)
 		return false;
 	}
 
-	if (CurrentState != EChunkRoutingState::OnScalePan &&
-		OnShouldIgnorePayloadInPan.IsBound() &&
-		OnShouldIgnorePayloadInPan.Execute(PayloadActor))
+	UPrimitiveComponent* PayloadPrim = IMassPayloadInterface::Execute_GetPayloadPhysicsPrimitive(PayloadActor);
+	if (IsValid(PayloadPrim) && PayloadPrim->IsSimulatingPhysics())
 	{
-		return false;
+		// Do not prematurely recover a chunk that is still actively free-falling downward inside the pan well.
+		if (PayloadPrim->GetPhysicsLinearVelocity().Z < -25.0)
+		{
+			return false;
+		}
 	}
 
-	if (ExistingIdx == INDEX_NONE)
-	{
-		FTrackedPanPayload RecoveredEntry;
-		RecoveredEntry.PayloadActor = PayloadActor;
-		RecoveredEntry.PayloadPrimitive = Cast<UPrimitiveComponent>(PayloadActor->GetRootComponent());
-		TrackedPayloads.Add(RecoveredEntry);
-	}
-
-	IMassPayloadInterface::Execute_NotifyRoutingStateChanged(PayloadActor, EChunkRoutingState::OnScalePan);
-
-	const float ChunkMassKg = IMassPayloadInterface::Execute_GetAnalyticalMassKg(PayloadActor);
-	const bool bChunkContaminated = IMassPayloadInterface::Execute_IsVolatileContaminated(PayloadActor);
-
-	RecomputeAnalyticalPanMass();
-
-	SettleHoldElapsedSeconds = 0.0f;
-	SetSettledState(false);
-	SetComponentTickEnabled(true);
-
-	OnChunkLandedOnScale.Broadcast(PayloadActor, ChunkMassKg, PanMassKg);
-	if (bChunkContaminated)
-	{
-		OnScaleContaminationDetected.Broadcast(PayloadActor);
-	}
-
-	return true;
+	return ConfirmPayloadScaleImpact(PayloadActor, PayloadPrim, PayloadActor->GetActorLocation(), FVector::ZeroVector);
 }
 
 void UScaleWeighingComponent::RecomputeAnalyticalPanMass()
@@ -555,6 +830,11 @@ void UScaleWeighingComponent::RecomputeAnalyticalPanMass()
 
 	for (const FTrackedPanPayload& Entry : TrackedPayloads)
 	{
+		if (!Entry.bHasConfirmedScaleImpact)
+		{
+			continue;
+		}
+
 		AActor* Actor = Entry.PayloadActor.Get();
 		if (!IsValid(Actor) || !Actor->Implements<UMassPayloadInterface>())
 		{
@@ -585,6 +865,11 @@ bool UScaleWeighingComponent::AreAllPayloadsBelowSettleVelocity() const
 
 	for (const FTrackedPanPayload& Entry : TrackedPayloads)
 	{
+		if (!Entry.bHasConfirmedScaleImpact)
+		{
+			continue;
+		}
+
 		const UPrimitiveComponent* PrimComp = Entry.PayloadPrimitive.Get();
 		if (IsValid(PrimComp) && PrimComp->IsSimulatingPhysics())
 		{
@@ -602,6 +887,11 @@ void UScaleWeighingComponent::WakeOverlappingPayloads()
 {
 	for (const FTrackedPanPayload& Entry : TrackedPayloads)
 	{
+		if (!Entry.bHasConfirmedScaleImpact)
+		{
+			continue;
+		}
+
 		UPrimitiveComponent* PrimComp = Entry.PayloadPrimitive.Get();
 		if (IsValid(PrimComp) && PrimComp->IsSimulatingPhysics())
 		{

@@ -21,15 +21,27 @@ UDiverterGateComponent::UDiverterGateComponent()
 
 void UDiverterGateComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (IsValid(FlapperPrimitiveComponent))
+	{
+		FlapperPrimitiveComponent->OnComponentHit.RemoveDynamic(this, &UDiverterGateComponent::HandleFlapperPrimitiveHit);
+	}
 	if (IsValid(TareChuteTriggerComponent))
 	{
 		TareChuteTriggerComponent->OnComponentBeginOverlap.RemoveDynamic(this, &UDiverterGateComponent::HandleTareTriggerBeginOverlap);
+	}
+	if (IsValid(TareAbyssDespawnTriggerComponent))
+	{
+		TareAbyssDespawnTriggerComponent->OnComponentBeginOverlap.RemoveDynamic(this, &UDiverterGateComponent::HandleTareAbyssDespawnBeginOverlap);
 	}
 	Super::EndPlay(EndPlayReason);
 }
 
 void UDiverterGateComponent::SetFlapperComponent(USceneComponent* InFlapperComponent)
 {
+	if (IsValid(FlapperPrimitiveComponent))
+	{
+		FlapperPrimitiveComponent->OnComponentHit.RemoveDynamic(this, &UDiverterGateComponent::HandleFlapperPrimitiveHit);
+	}
 	FlapperComponent = InFlapperComponent;
 	FlapperPrimitiveComponent = nullptr;
 	if (IsValid(FlapperComponent))
@@ -48,8 +60,20 @@ void UDiverterGateComponent::SetFlapperPivotAndPrimitive(
 	USceneComponent* InPivotComponent,
 	UPrimitiveComponent* InFlapperPrimitive)
 {
+	if (IsValid(FlapperPrimitiveComponent))
+	{
+		FlapperPrimitiveComponent->OnComponentHit.RemoveDynamic(this, &UDiverterGateComponent::HandleFlapperPrimitiveHit);
+	}
+
 	FlapperComponent = InPivotComponent;
 	FlapperPrimitiveComponent = InFlapperPrimitive;
+
+	if (IsValid(FlapperPrimitiveComponent))
+	{
+		FlapperPrimitiveComponent->SetNotifyRigidBodyCollision(true);
+		FlapperPrimitiveComponent->OnComponentHit.AddUniqueDynamic(this, &UDiverterGateComponent::HandleFlapperPrimitiveHit);
+	}
+
 	if (IsValid(FlapperComponent))
 	{
 		BaseFlapperRelativeRotation = FlapperComponent->GetRelativeRotation().Quaternion();
@@ -74,21 +98,42 @@ void UDiverterGateComponent::BindTareChuteTrigger(UPrimitiveComponent* InTareTri
 		TareChuteTriggerComponent->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Overlap);
 		TareChuteTriggerComponent->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Overlap);
 		TareChuteTriggerComponent->SetGenerateOverlapEvents(true);
-		TareChuteTriggerComponent->OnComponentBeginOverlap.AddDynamic(this, &UDiverterGateComponent::HandleTareTriggerBeginOverlap);
+		TareChuteTriggerComponent->OnComponentBeginOverlap.AddUniqueDynamic(this, &UDiverterGateComponent::HandleTareTriggerBeginOverlap);
 	}
 }
 
-void UDiverterGateComponent::ProcessTareChuteOverlap(AActor* OtherActor)
+void UDiverterGateComponent::BindTareAbyssDespawnTrigger(UPrimitiveComponent* InAbyssTriggerComponent)
+{
+	if (IsValid(TareAbyssDespawnTriggerComponent))
+	{
+		TareAbyssDespawnTriggerComponent->OnComponentBeginOverlap.RemoveDynamic(this, &UDiverterGateComponent::HandleTareAbyssDespawnBeginOverlap);
+	}
+
+	TareAbyssDespawnTriggerComponent = InAbyssTriggerComponent;
+
+	if (IsValid(TareAbyssDespawnTriggerComponent))
+	{
+		TareAbyssDespawnTriggerComponent->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		TareAbyssDespawnTriggerComponent->SetCollisionObjectType(ECC_WorldDynamic);
+		TareAbyssDespawnTriggerComponent->SetCollisionResponseToAllChannels(ECR_Ignore);
+		TareAbyssDespawnTriggerComponent->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Overlap);
+		TareAbyssDespawnTriggerComponent->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Overlap);
+		TareAbyssDespawnTriggerComponent->SetGenerateOverlapEvents(true);
+		TareAbyssDespawnTriggerComponent->OnComponentBeginOverlap.AddUniqueDynamic(this, &UDiverterGateComponent::HandleTareAbyssDespawnBeginOverlap);
+	}
+}
+
+bool UDiverterGateComponent::LatchPayloadAsTareOnce(AActor* OtherActor)
 {
 	if (!IsValid(OtherActor) || OtherActor == GetOwner() || !OtherActor->Implements<UMassPayloadInterface>())
 	{
-		return;
+		return false;
 	}
 
 	const EChunkRoutingState PayloadState = IMassPayloadInterface::Execute_GetRoutingState(OtherActor);
 	if (PayloadState == EChunkRoutingState::PooledInactive || PayloadState == EChunkRoutingState::ConsumedAsTare)
 	{
-		return;
+		return false;
 	}
 
 	const float PayloadMassKg = IMassPayloadInterface::Execute_GetAnalyticalMassKg(OtherActor);
@@ -96,12 +141,18 @@ void UDiverterGateComponent::ProcessTareChuteOverlap(AActor* OtherActor)
 	const FVector DisposalWorldLocation = OtherActor->GetActorLocation();
 
 	IMassPayloadInterface::Execute_NotifyRoutingStateChanged(OtherActor, EChunkRoutingState::ConsumedAsTare);
+	IMassPayloadInterface::Execute_ArmTareAbyssFailsafeTimer(OtherActor, TareAbyssFailsafeSeconds);
 	OnChunkRoutedToTare.Broadcast(OtherActor, PayloadMassKg, bWasContaminated);
 
 	const float NormalizedMagnitude = FMath::Clamp(PayloadMassKg / FMath::Max(0.5f, ImpulseReferenceMassKg), 0.05f, 1.0f);
 	OnTelemetryImpulse.Broadcast(ETelemetryImpulseId::ChunkTareDisposed, NormalizedMagnitude, DisposalWorldLocation);
+	return true;
+}
 
-	IMassPayloadInterface::Execute_ReturnToChunkPool(OtherActor);
+void UDiverterGateComponent::ProcessTareChuteOverlap(AActor* OtherActor)
+{
+	// Mouth trigger latches ConsumedAsTare accounting once WITHOUT despawning, allowing the chunk to visibly plunge down the open shaft.
+	LatchPayloadAsTareOnce(OtherActor);
 }
 
 void UDiverterGateComponent::ConfigureForContract(bool bInAllowToggle, EDiverterRoute InitialRoute)
@@ -201,6 +252,51 @@ void UDiverterGateComponent::HandleTareTriggerBeginOverlap(
 	const FHitResult& /*SweepResult*/)
 {
 	ProcessTareChuteOverlap(OtherActor);
+}
+
+void UDiverterGateComponent::HandleTareAbyssDespawnBeginOverlap(
+	UPrimitiveComponent* /*OverlappedComponent*/,
+	AActor* OtherActor,
+	UPrimitiveComponent* /*OtherComp*/,
+	int32 /*OtherBodyIndex*/,
+	bool /*bFromSweep*/,
+	const FHitResult& /*SweepResult*/)
+{
+	if (!IsValid(OtherActor) || OtherActor == GetOwner() || !OtherActor->Implements<UMassPayloadInterface>())
+	{
+		return;
+	}
+
+	const EChunkRoutingState PayloadState = IMassPayloadInterface::Execute_GetRoutingState(OtherActor);
+	if (PayloadState == EChunkRoutingState::PooledInactive)
+	{
+		return;
+	}
+
+	LatchPayloadAsTareOnce(OtherActor);
+	IMassPayloadInterface::Execute_ReturnToChunkPool(OtherActor);
+}
+
+void UDiverterGateComponent::HandleFlapperPrimitiveHit(
+	UPrimitiveComponent* /*HitComponent*/,
+	AActor* OtherActor,
+	UPrimitiveComponent* /*OtherComp*/,
+	FVector /*NormalImpulse*/,
+	const FHitResult& /*Hit*/)
+{
+	if (CurrentRoute != EDiverterRoute::TareChute ||
+		!IsValid(OtherActor) ||
+		OtherActor == GetOwner() ||
+		!OtherActor->Implements<UMassPayloadInterface>())
+	{
+		return;
+	}
+
+	const EChunkRoutingState PayloadState = IMassPayloadInterface::Execute_GetRoutingState(OtherActor);
+	if (PayloadState == EChunkRoutingState::ConsumedAsTare)
+	{
+		IMassPayloadInterface::Execute_ArmTareAbyssFailsafeTimer(OtherActor, TareAbyssFailsafeSeconds);
+	}
 }
 
 void UDiverterGateComponent::ApplyFlapperRotation(bool /*bSweep*/)
