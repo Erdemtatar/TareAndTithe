@@ -6,6 +6,7 @@
 #include "GameFramework/GameModeBase.h"
 #include "TareTitheGameMode.generated.h"
 
+class ACellFramingArchitectureActor;
 class ASceneCapture2D;
 class UCameraComponent;
 class UInspectionShiftSubsystem;
@@ -110,10 +111,13 @@ private:
 	void ApplyBaseline6GbVramScalability();
 	void SpawnMissingGreyboxStationsIfNeeded();
 	void SpawnGreyboxPitEnclosureAndLighting(UWorld* World);
+	void EnsureOuterCellFramingArchitecture(UWorld* World);
 
 	UPROPERTY()
 	TObjectPtr<UStaticMesh> GreyboxCellCubeMesh;
 
 	UPROPERTY()
 	TObjectPtr<UMaterialInterface> GreyboxCellBaseMaterial;
+
+	TWeakObjectPtr<ACellFramingArchitectureActor> ActiveOuterFramingActor;
 };

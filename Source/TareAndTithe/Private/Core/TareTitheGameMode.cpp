@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Core/TareTitheGameMode.h"
+#include "Actors/CellFramingArchitectureActor.h"
 #include "Actors/DirectorBoothActor.h"
 #include "Actors/InspectorPawn.h"
 #include "Actors/MonolithRigActor.h"
@@ -29,6 +30,7 @@
 #include "Engine/TextureCube.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "GameFramework/GameUserSettings.h"
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
@@ -147,6 +149,14 @@ ASceneCapture2D* ATareTitheGameMode::SpawnTransientLitCapture2D(
 		CapturePP.ReflectionMethod = EReflectionMethod::Lumen;
 		CapturePP.bOverride_LumenSurfaceCacheResolution = true;
 		CapturePP.LumenSurfaceCacheResolution = 1.0f;
+		CapturePP.bOverride_LumenFinalGatherScreenTraces = true;
+		CapturePP.LumenFinalGatherScreenTraces = 0;
+		CapturePP.bOverride_LumenReflectionsScreenTraces = true;
+		CapturePP.LumenReflectionsScreenTraces = 0;
+		CapturePP.bOverride_LumenSceneLightingQuality = true;
+		CapturePP.LumenSceneLightingQuality = 2.0f;
+		CapturePP.bOverride_LumenFinalGatherQuality = true;
+		CapturePP.LumenFinalGatherQuality = 2.0f;
 		CaptureComp->PostProcessSettings = CapturePP;
 
 		static const TCHAR* const EnabledFlags[] = {
@@ -264,6 +274,7 @@ void ATareTitheGameMode::SpawnMissingGreyboxStationsIfNeeded()
 
 	if (!bNeedsCoreStations)
 	{
+		EnsureOuterCellFramingArchitecture(World);
 		return;
 	}
 
@@ -775,4 +786,49 @@ void ATareTitheGameMode::SpawnGreyboxPitEnclosureAndLighting(UWorld* World)
 
 	// 5. Unshadowed ~2150K warm foundry shaft tube light pointed +X onto the rear grate shaft & flanking columns.
 	SpawnConfiguredSpotLight(RigCfg.MidgroundWashSpot, false);
+
+	// 6. Phase 12B Outer Left & Right Cell Edge Architectural Pipe/Column Framing (idempotent duplicate-guarded spawn).
+	EnsureOuterCellFramingArchitecture(World);
+}
+
+void ATareTitheGameMode::EnsureOuterCellFramingArchitecture(UWorld* World)
+{
+	if (!IsValid(World))
+	{
+		return;
+	}
+
+	ACellFramingArchitectureActor* ResolvedFramingActor = ActiveOuterFramingActor.Get();
+	for (TActorIterator<ACellFramingArchitectureActor> It(World); It; ++It)
+	{
+		ACellFramingArchitectureActor* Candidate = *It;
+		if (!IsValid(Candidate))
+		{
+			continue;
+		}
+		if (!IsValid(ResolvedFramingActor))
+		{
+			ResolvedFramingActor = Candidate;
+		}
+		else if (Candidate != ResolvedFramingActor)
+		{
+			Candidate->Destroy();
+		}
+	}
+
+	if (!IsValid(ResolvedFramingActor))
+	{
+		FActorSpawnParameters SpawnParams;
+		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		ResolvedFramingActor = World->SpawnActor<ACellFramingArchitectureActor>(
+			ACellFramingArchitectureActor::StaticClass(),
+			FTransform::Identity,
+			SpawnParams);
+	}
+
+	if (IsValid(ResolvedFramingActor))
+	{
+		ActiveOuterFramingActor = ResolvedFramingActor;
+		ResolvedFramingActor->ConfigureFraming(PresentationData);
+	}
 }

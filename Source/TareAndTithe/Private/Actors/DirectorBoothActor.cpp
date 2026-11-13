@@ -2,6 +2,7 @@
 
 #include "Actors/DirectorBoothActor.h"
 #include "Components/AudioComponent.h"
+#include "Components/InstancedStaticMeshComponent.h"
 #include "Components/PointLightComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -9,6 +10,7 @@
 #include "Data/MonolithContractDataAsset.h"
 #include "Data/ShiftProgressionDataAsset.h"
 #include "Data/TareTithePresentationDataAsset.h"
+#include "Engine/CollisionProfile.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -20,6 +22,25 @@ namespace
 {
 	constexpr float ShutterAlphaConvergenceEpsilon = 0.002f;
 	constexpr int32 SingleLineBarkMaxChars = 32;
+
+	void EnforceZeroCostPresentationFlags(UPrimitiveComponent* PrimComp)
+	{
+		if (!IsValid(PrimComp))
+		{
+			return;
+		}
+		PrimComp->PrimaryComponentTick.bCanEverTick = false;
+		PrimComp->SetSimulatePhysics(false);
+		PrimComp->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
+		PrimComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		PrimComp->SetGenerateOverlapEvents(false);
+		PrimComp->SetCanEverAffectNavigation(false);
+		PrimComp->SetCastShadow(false);
+		PrimComp->SetAffectDistanceFieldLighting(false);
+		PrimComp->SetAffectDynamicIndirectLighting(false);
+		PrimComp->SetVisibleInRayTracing(false);
+		PrimComp->bReceivesDecals = false;
+	}
 }
 
 ADirectorBoothActor::ADirectorBoothActor()
@@ -34,6 +55,13 @@ ADirectorBoothActor::ADirectorBoothActor()
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMeshFinder(TEXT("/Engine/BasicShapes/Cube.Cube"));
 	UStaticMesh* CubeMesh = CubeMeshFinder.Succeeded() ? CubeMeshFinder.Object : nullptr;
+	BasicCubeMesh = CubeMesh;
+
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderMeshFinder(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	if (CylinderMeshFinder.Succeeded())
+	{
+		BasicCylinderMesh = CylinderMeshFinder.Object;
+	}
 
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> FlattenMatFinder(
 		TEXT("/Engine/EngineMaterials/FlattenMaterial.FlattenMaterial"));
@@ -89,6 +117,73 @@ ADirectorBoothActor::ADirectorBoothActor()
 		FVector(18.0, 0.0, 39.0),
 		FVector(0.08, 5.92, 1.66),
 		true);
+	EnforceZeroCostPresentationFlags(OverlookRecessBackingVisual);
+
+	// Phase 12B Diffused Frosted Overlook Backlight Cards seated strictly in front of SM_DirectorBoothFrame solid recessed cavities (>= 9.5 mm air gap).
+	LeftWindowGlowCard = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LeftWindowGlowCard"));
+	ConfigurePanopticonMesh(
+		LeftWindowGlowCard,
+		BoothRoot,
+		FVector(8.80, -187.75, 6.05),
+		FVector(0.006, 1.255, 0.388),
+		true);
+	EnforceZeroCostPresentationFlags(LeftWindowGlowCard);
+
+	CenterWindowGlowCard = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("CenterWindowGlowCard"));
+	ConfigurePanopticonMesh(
+		CenterWindowGlowCard,
+		BoothRoot,
+		FVector(4.40, 0.0, 10.50),
+		FVector(0.006, 1.340, 0.316),
+		true);
+	EnforceZeroCostPresentationFlags(CenterWindowGlowCard);
+
+	RightWindowGlowCard = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("RightWindowGlowCard"));
+	ConfigurePanopticonMesh(
+		RightWindowGlowCard,
+		BoothRoot,
+		FVector(8.80, 187.75, 6.05),
+		FVector(0.006, 1.255, 0.388),
+		true);
+	EnforceZeroCostPresentationFlags(RightWindowGlowCard);
+
+	// Phase 12B Batched Horizontal Industrial Louver Slats (1 ISM draw call across all 3 bays, strictly >= 14.6 mm behind shutter travel planes).
+	PanopticonLouverSlatsISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("PanopticonLouverSlatsISM"));
+	PanopticonLouverSlatsISM->SetupAttachment(BoothRoot);
+	EnforceZeroCostPresentationFlags(PanopticonLouverSlatsISM);
+	if (IsValid(BasicCubeMesh))
+	{
+		PanopticonLouverSlatsISM->SetStaticMesh(BasicCubeMesh);
+	}
+	if (IsValid(BaseGreyboxShapeMaterial))
+	{
+		PanopticonLouverSlatsISM->SetMaterial(0, BaseGreyboxShapeMaterial);
+	}
+
+	// Phase 12B Exclusive Right-Bay Watching Director Silhouette + Telemetry Desk/Optics Stanchion (2 ISM batches, zero tick).
+	DirectorSilhouetteCubesISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("DirectorSilhouetteCubesISM"));
+	DirectorSilhouetteCubesISM->SetupAttachment(BoothRoot);
+	EnforceZeroCostPresentationFlags(DirectorSilhouetteCubesISM);
+	if (IsValid(BasicCubeMesh))
+	{
+		DirectorSilhouetteCubesISM->SetStaticMesh(BasicCubeMesh);
+	}
+	if (IsValid(BaseGreyboxShapeMaterial))
+	{
+		DirectorSilhouetteCubesISM->SetMaterial(0, BaseGreyboxShapeMaterial);
+	}
+
+	DirectorSilhouetteCylindersISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("DirectorSilhouetteCylindersISM"));
+	DirectorSilhouetteCylindersISM->SetupAttachment(BoothRoot);
+	EnforceZeroCostPresentationFlags(DirectorSilhouetteCylindersISM);
+	if (IsValid(BasicCylinderMesh))
+	{
+		DirectorSilhouetteCylindersISM->SetStaticMesh(BasicCylinderMesh);
+	}
+	if (IsValid(BaseGreyboxShapeMaterial))
+	{
+		DirectorSilhouetteCylindersISM->SetMaterial(0, BaseGreyboxShapeMaterial);
+	}
 
 	// Towering Central Command Bay (World X=[406.6,441.4], Y=[-110.2,+110.2], Z=[212.0,382.0]; rises +106 cm above clamp housing).
 	CenterBayPivot = CreateDefaultSubobject<USceneComponent>(TEXT("CenterBayPivot"));
@@ -366,13 +461,13 @@ ADirectorBoothActor::ADirectorBoothActor()
 	};
 
 	StatusPointLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("StatusPointLight"));
-	ConfigureBayLight(StatusPointLight, FVector(-18.0, 0.0, 28.0), StatusLightIntensity, StatusLightAttenuationRadiusCm, 84.0f);
+	ConfigureBayLight(StatusPointLight, FVector(-26.0, 0.0, 14.0), StatusLightIntensity * 0.36f, 175.0f, 84.0f);
 
 	LeftBayPointLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("LeftBayPointLight"));
-	ConfigureBayLight(LeftBayPointLight, FVector(-14.0, -155.0, 22.0), FlankBayLightIntensity, FlankBayLightAttenuationRadiusCm, 76.0f);
+	ConfigureBayLight(LeftBayPointLight, FVector(-26.0, -184.0, 4.0), FlankBayLightIntensity * 0.36f, 160.0f, 76.0f);
 
 	RightBayPointLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("RightBayPointLight"));
-	ConfigureBayLight(RightBayPointLight, FVector(-14.0, 155.0, 22.0), FlankBayLightIntensity, FlankBayLightAttenuationRadiusCm, 76.0f);
+	ConfigureBayLight(RightBayPointLight, FVector(-26.0, 184.0, 4.0), FlankBayLightIntensity * 0.36f, 160.0f, 76.0f);
 
 	// Dedicated Spatial PA / Intercom Audio Component anchored on the Central Command Bay overlook deck.
 	IntercomAudioComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("IntercomAudioComponent"));
@@ -484,6 +579,7 @@ void ADirectorBoothActor::BeginPlay()
 
 	SetShutterTargetOpenAlpha(0.0f, true);
 	UpdateLegacySignboardVisibility();
+	RebuildPanopticonSurveillanceVisuals();
 
 	if (UWorld* World = GetWorld())
 	{
@@ -560,6 +656,7 @@ void ADirectorBoothActor::ApplyPresentationData(const UTareTithePresentationData
 		{
 			BoothSignRoot->SetRelativeTransform(FTransform::Identity);
 		}
+		RebuildPanopticonSurveillanceVisuals();
 		UpdateBoothTickEnabled();
 		return;
 	}
@@ -586,6 +683,8 @@ void ADirectorBoothActor::ApplyPresentationData(const UTareTithePresentationData
 	ApplySlotToPanopticonMesh(InPresentationData->ClampSpringHousingMeshSlot, ArmorMullionInnerLeftVisual);
 	ApplySlotToPanopticonMesh(InPresentationData->ClampSpringHousingMeshSlot, ArmorMullionInnerRightVisual);
 	ApplySlotToPanopticonMesh(InPresentationData->ClampSpringHousingMeshSlot, ArmorMullionOuterRightVisual);
+
+	RebuildPanopticonSurveillanceVisuals();
 
 	if (IsValid(IntercomAudioComponent))
 	{
@@ -644,7 +743,13 @@ void ADirectorBoothActor::Tick(float DeltaSeconds)
 		FaultStrobeElapsedSeconds += DeltaSeconds;
 		const float SafeStrobeHz = FMath::Max(1.0f, FaultStrobeFrequencyHz);
 		const float StrobeWave = 0.5f + 0.5f * FMath::Cos(FaultStrobeElapsedSeconds * SafeStrobeHz * 2.0f * UE_PI);
-		SetPanopticonLampState(FaultSlamLampColor, FMath::Lerp(0.22f, 2.35f, StrobeWave));
+		const FPanopticonSurveillanceConfig SurvCfg = IsValid(PresentationData)
+			? PresentationData->PanopticonSurveillance.GetSanitized()
+			: FPanopticonSurveillanceConfig();
+		SetPanopticonLampState(FaultSlamLampColor, FMath::Lerp(0.55f, SurvCfg.FaultStrobePeakMultiplier, StrobeWave));
+		SetWindowGlowCardsState(
+			FMath::Lerp(SurvCfg.FaultWindowCardBaseColor * 0.22f, SurvCfg.FaultWindowCardBaseColor, StrobeWave),
+			FMath::Lerp(SurvCfg.FaultWindowCardEmissive * 0.18f, SurvCfg.FaultWindowCardEmissive, StrobeWave));
 	}
 
 	// Guard 2: Mutate ONLY SetTextRenderColor during bounded Tier 2 brief pulse/fade (NEVER SetText or SetWorldSize in Tick).
@@ -695,6 +800,10 @@ void ADirectorBoothActor::HandleShiftVerdict(EShiftVerdictType Verdict, EContrac
 		RefreshContractDirectiveWingReadout();
 	}
 
+	const FPanopticonSurveillanceConfig SurvCfg = IsValid(PresentationData)
+		? PresentationData->PanopticonSurveillance.GetSanitized()
+		: FPanopticonSurveillanceConfig();
+
 	switch (Verdict)
 	{
 	case EShiftVerdictType::ContractFaultReset:
@@ -702,7 +811,8 @@ void ADirectorBoothActor::HandleShiftVerdict(EShiftVerdictType Verdict, EContrac
 		bUseFastFaultShutterSlam = true;
 		FaultStrobeElapsedSeconds = 0.0f;
 		SetShutterTargetOpenAlpha(0.0f, false);
-		SetPanopticonLampState(FaultSlamLampColor, 2.25f);
+		SetPanopticonLampState(FaultSlamLampColor, SurvCfg.FaultStrobePeakMultiplier);
+		SetWindowGlowCardsState(SurvCfg.FaultWindowCardBaseColor, SurvCfg.FaultWindowCardEmissive);
 		if (CachedSnapshot.DirectorIntercomLine.IsEmpty())
 		{
 			CachedSnapshot.DirectorIntercomLine = DescribeFaultReason(FaultReason);
@@ -715,6 +825,7 @@ void ADirectorBoothActor::HandleShiftVerdict(EShiftVerdictType Verdict, EContrac
 		bUseFastFaultShutterSlam = false;
 		SetShutterTargetOpenAlpha(1.0f, false);
 		SetPanopticonLampState(FLinearColor(1.00f, 0.78f, 0.16f, 1.0f), 1.45f);
+		SetWindowGlowCardsState(SurvCfg.IdleWindowCardBaseColor, SurvCfg.IdleWindowCardEmissive);
 		RefreshDirectorIntercomWingReadout();
 		break;
 	}
@@ -723,6 +834,7 @@ void ADirectorBoothActor::HandleShiftVerdict(EShiftVerdictType Verdict, EContrac
 		bUseFastFaultShutterSlam = false;
 		SetShutterTargetOpenAlpha(1.0f, false);
 		SetPanopticonLampState(VerdictApprovedLampColor, 1.0f);
+		SetWindowGlowCardsState(SurvCfg.IdleWindowCardBaseColor, SurvCfg.IdleWindowCardEmissive);
 		RefreshDirectorIntercomWingReadout();
 		break;
 	}
@@ -731,6 +843,7 @@ void ADirectorBoothActor::HandleShiftVerdict(EShiftVerdictType Verdict, EContrac
 		bUseFastFaultShutterSlam = false;
 		SetShutterTargetOpenAlpha(0.0f, false);
 		SetPanopticonLampState(VerdictApprovedLampColor, 1.0f);
+		SetWindowGlowCardsState(SurvCfg.IdleWindowCardBaseColor, SurvCfg.IdleWindowCardEmissive);
 		RefreshDirectorIntercomWingReadout();
 		break;
 	}
@@ -739,6 +852,7 @@ void ADirectorBoothActor::HandleShiftVerdict(EShiftVerdictType Verdict, EContrac
 		bUseFastFaultShutterSlam = false;
 		SetShutterTargetOpenAlpha(1.0f, false);
 		SetPanopticonLampState(FLinearColor(1.00f, 0.82f, 0.22f, 1.0f), 1.50f);
+		SetWindowGlowCardsState(SurvCfg.IdleWindowCardBaseColor, SurvCfg.IdleWindowCardEmissive);
 		RefreshDirectorIntercomWingReadout();
 		break;
 	}
@@ -808,12 +922,16 @@ void ADirectorBoothActor::HandleContractSnapshotUpdated(const FContractRuntimeSn
 void ADirectorBoothActor::HandleShiftPhaseChanged(EShiftPhase NewPhase)
 {
 	CachedShiftPhase = NewPhase;
+	const FPanopticonSurveillanceConfig SurvCfg = IsValid(PresentationData)
+		? PresentationData->PanopticonSurveillance.GetSanitized()
+		: FPanopticonSurveillanceConfig();
 
 	if (NewPhase == EShiftPhase::ActiveInspection)
 	{
 		bUseFastFaultShutterSlam = false;
 		SetShutterTargetOpenAlpha(1.0f, false);
 		SetPanopticonLampState(ActiveInspectionLampColor, 1.0f);
+		SetWindowGlowCardsState(SurvCfg.IdleWindowCardBaseColor, SurvCfg.IdleWindowCardEmissive);
 		RefreshDirectorIntercomWingReadout();
 	}
 	else if (NewPhase == EShiftPhase::FaultResetDelay)
@@ -821,7 +939,8 @@ void ADirectorBoothActor::HandleShiftPhaseChanged(EShiftPhase NewPhase)
 		bUseFastFaultShutterSlam = true;
 		FaultStrobeElapsedSeconds = 0.0f;
 		SetShutterTargetOpenAlpha(0.0f, false);
-		SetPanopticonLampState(FaultSlamLampColor, 2.25f);
+		SetPanopticonLampState(FaultSlamLampColor, SurvCfg.FaultStrobePeakMultiplier);
+		SetWindowGlowCardsState(SurvCfg.FaultWindowCardBaseColor, SurvCfg.FaultWindowCardEmissive);
 	}
 	else if (bIsBriefPulseActive || bIsBriefFadingOut)
 	{
@@ -1121,20 +1240,463 @@ void ADirectorBoothActor::RefreshDirectorIntercomWingReadout()
 void ADirectorBoothActor::SetPanopticonLampState(const FLinearColor& LampColor, float IntensityMultiplier)
 {
 	const float ClampedMult = FMath::Max(0.0f, IntensityMultiplier);
+	const float IdleScale = IsValid(PresentationData)
+		? PresentationData->PanopticonSurveillance.GetSanitized().IdleBayLightIntensityScale
+		: FPanopticonSurveillanceConfig().IdleBayLightIntensityScale;
+
 	if (IsValid(StatusPointLight))
 	{
 		StatusPointLight->SetLightColor(LampColor);
-		StatusPointLight->SetIntensity(StatusLightIntensity * ClampedMult);
+		StatusPointLight->SetIntensity(StatusLightIntensity * IdleScale * ClampedMult);
 	}
 	if (IsValid(LeftBayPointLight))
 	{
 		LeftBayPointLight->SetLightColor(LampColor);
-		LeftBayPointLight->SetIntensity(FlankBayLightIntensity * ClampedMult);
+		LeftBayPointLight->SetIntensity(FlankBayLightIntensity * IdleScale * ClampedMult);
 	}
 	if (IsValid(RightBayPointLight))
 	{
 		RightBayPointLight->SetLightColor(LampColor);
-		RightBayPointLight->SetIntensity(FlankBayLightIntensity * ClampedMult);
+		RightBayPointLight->SetIntensity(FlankBayLightIntensity * IdleScale * ClampedMult);
+	}
+}
+
+int32 ADirectorBoothActor::GetLouverSlatInstanceCount() const
+{
+	return IsValid(PanopticonLouverSlatsISM) ? PanopticonLouverSlatsISM->GetInstanceCount() : 0;
+}
+
+int32 ADirectorBoothActor::GetDirectorSilhouetteInstanceCount() const
+{
+	const int32 CubeCount = IsValid(DirectorSilhouetteCubesISM) ? DirectorSilhouetteCubesISM->GetInstanceCount() : 0;
+	const int32 CylCount = IsValid(DirectorSilhouetteCylindersISM) ? DirectorSilhouetteCylindersISM->GetInstanceCount() : 0;
+	return CubeCount + CylCount;
+}
+
+void ADirectorBoothActor::SetWindowGlowCardsState(const FLinearColor& BaseColor, const FLinearColor& EmissiveColor)
+{
+	UMaterialInstanceDynamic* const CardMIDs[3] = {
+		LeftWindowGlowCardMID,
+		CenterWindowGlowCardMID,
+		RightWindowGlowCardMID
+	};
+	for (UMaterialInstanceDynamic* MID : CardMIDs)
+	{
+		if (IsValid(MID))
+		{
+			MID->SetVectorParameterValue(TEXT("BaseColorConst"), BaseColor);
+			MID->SetVectorParameterValue(TEXT("Color"), BaseColor);
+			MID->SetVectorParameterValue(TEXT("EmissiveColorConst"), EmissiveColor);
+			MID->SetScalarParameterValue(TEXT("EmissiveScale"), 1.0f);
+		}
+	}
+}
+
+void ADirectorBoothActor::RebuildPanopticonSurveillanceVisuals()
+{
+	EnforceZeroCostPresentationFlags(OverlookRecessBackingVisual);
+	EnforceZeroCostPresentationFlags(LeftWindowGlowCard);
+	EnforceZeroCostPresentationFlags(CenterWindowGlowCard);
+	EnforceZeroCostPresentationFlags(RightWindowGlowCard);
+	EnforceZeroCostPresentationFlags(PanopticonLouverSlatsISM);
+	EnforceZeroCostPresentationFlags(DirectorSilhouetteCubesISM);
+	EnforceZeroCostPresentationFlags(DirectorSilhouetteCylindersISM);
+
+	const FPanopticonSurveillanceConfig SurvCfg = IsValid(PresentationData)
+		? PresentationData->PanopticonSurveillance.GetSanitized()
+		: FPanopticonSurveillanceConfig();
+
+	// 1. Reposition bay lights forward of shutters (eliminating 0.95 cm specular singularity while keeping N.L > 0 on slammed shutters).
+	if (IsValid(StatusPointLight))
+	{
+		StatusPointLight->SetRelativeLocation(FVector(SurvCfg.BayLightForwardLocationX, 0.0, SurvCfg.CenterBayLightLocationZ));
+		StatusPointLight->SetAttenuationRadius(FMath::Min(235.0f, 175.0f));
+		StatusPointLight->SetCastShadows(false);
+	}
+	if (IsValid(LeftBayPointLight))
+	{
+		LeftBayPointLight->SetRelativeLocation(FVector(SurvCfg.BayLightForwardLocationX, -SurvCfg.FlankBayLightLocationY, SurvCfg.FlankBayLightLocationZ));
+		LeftBayPointLight->SetAttenuationRadius(FMath::Min(235.0f, 160.0f));
+		LeftBayPointLight->SetCastShadows(false);
+	}
+	if (IsValid(RightBayPointLight))
+	{
+		RightBayPointLight->SetRelativeLocation(FVector(SurvCfg.BayLightForwardLocationX, SurvCfg.FlankBayLightLocationY, SurvCfg.FlankBayLightLocationZ));
+		RightBayPointLight->SetAttenuationRadius(FMath::Min(235.0f, 160.0f));
+		RightBayPointLight->SetCastShadows(false);
+	}
+
+	auto UnwrapBaseInterface = [](UMaterialInterface* InMat) -> UMaterialInterface*
+	{
+		if (const UMaterialInstanceDynamic* ExistingMID = Cast<UMaterialInstanceDynamic>(InMat))
+		{
+			return ExistingMID->Parent;
+		}
+		return InMat;
+	};
+
+	UMaterialInterface* FrameParentMat = nullptr;
+	UMaterialInterface* ShutterParentMat = nullptr;
+	if (IsValid(PresentationData))
+	{
+		if (PresentationData->DirectorBoothFrameMeshSlot.MaterialOverrides.Num() > 0)
+		{
+			FrameParentMat = UnwrapBaseInterface(PresentationData->DirectorBoothFrameMeshSlot.MaterialOverrides[0]);
+		}
+		if (PresentationData->DirectorShutterMeshSlot.MaterialOverrides.Num() > 0)
+		{
+			ShutterParentMat = UnwrapBaseInterface(PresentationData->DirectorShutterMeshSlot.MaterialOverrides[0]);
+		}
+	}
+	if (!IsValid(FrameParentMat) && IsValid(BoothFrameVisual))
+	{
+		FrameParentMat = UnwrapBaseInterface(BoothFrameVisual->GetMaterial(0));
+	}
+	if (!IsValid(ShutterParentMat) && IsValid(BlastShutterVisual))
+	{
+		ShutterParentMat = UnwrapBaseInterface(BlastShutterVisual->GetMaterial(0));
+	}
+
+	// 2. Dampen booth frame & shutter specular/albedo via C++ MIDs (~45% idle Panopticon luminance suppression, zero .uasset edits).
+	if (IsValid(FrameParentMat))
+	{
+		BoothFrameMID = UMaterialInstanceDynamic::Create(FrameParentMat, this);
+		if (IsValid(BoothFrameMID))
+		{
+			const float FS = SurvCfg.BoothFrameAlbedoScale;
+			BoothFrameMID->SetVectorParameterValue(TEXT("AlbedoTint"), FLinearColor(1.22f * FS, 1.30f * FS, 1.40f * FS, 1.0f));
+			BoothFrameMID->SetVectorParameterValue(TEXT("ConductorMinF0"), FLinearColor(0.15f * FS, 0.17f * FS, 0.20f * FS, 1.0f));
+			BoothFrameMID->SetScalarParameterValue(TEXT("SpecularScale"), SurvCfg.BoothFrameSpecularScale);
+			BoothFrameMID->SetScalarParameterValue(TEXT("RoughnessMin"), 0.38f);
+			BoothFrameMID->SetScalarParameterValue(TEXT("RoughnessMax"), 0.62f);
+
+			UStaticMeshComponent* const FrameComps[3] = { BoothFrameVisual, LeftBoothFrameVisual, RightBoothFrameVisual };
+			for (UStaticMeshComponent* Comp : FrameComps)
+			{
+				if (IsValid(Comp))
+				{
+					Comp->SetMaterial(0, BoothFrameMID);
+				}
+			}
+		}
+	}
+
+	if (IsValid(ShutterParentMat))
+	{
+		DirectorShutterMID = UMaterialInstanceDynamic::Create(ShutterParentMat, this);
+		if (IsValid(DirectorShutterMID))
+		{
+			const float SS = SurvCfg.BoothShutterAlbedoScale;
+			DirectorShutterMID->SetVectorParameterValue(TEXT("AlbedoTint"), FLinearColor(1.18f * SS, 1.24f * SS, 1.32f * SS, 1.0f));
+			DirectorShutterMID->SetVectorParameterValue(TEXT("ConductorMinF0"), FLinearColor(0.14f * SS, 0.16f * SS, 0.19f * SS, 1.0f));
+			DirectorShutterMID->SetScalarParameterValue(TEXT("SpecularScale"), SurvCfg.BoothShutterSpecularScale);
+			DirectorShutterMID->SetScalarParameterValue(TEXT("RoughnessMin"), 0.40f);
+			DirectorShutterMID->SetScalarParameterValue(TEXT("RoughnessMax"), 0.64f);
+
+			UStaticMeshComponent* const ShutterComps[3] = { BlastShutterVisual, LeftBlastShutterVisual, RightBlastShutterVisual };
+			for (UStaticMeshComponent* Comp : ShutterComps)
+			{
+				if (IsValid(Comp))
+				{
+					Comp->SetMaterial(0, DirectorShutterMID);
+				}
+			}
+		}
+	}
+
+	// 3. Diffused Frosted Glass Backlight Cards (Correction A cavity bounds + Correction C Roughness=0.82, Metallic=0.04).
+	if (IsValid(BasicCubeMesh))
+	{
+		const FBox CubeBox = BasicCubeMesh->GetBoundingBox();
+		const FVector CubeSize = CubeBox.GetSize();
+		auto SizeGlowCard = [&](UStaticMeshComponent* CardComp, const FVector& CenterCm, const FVector& SizeCm)
+		{
+			if (!IsValid(CardComp))
+			{
+				return;
+			}
+			CardComp->SetStaticMesh(BasicCubeMesh);
+			CardComp->SetRelativeLocation(CenterCm);
+			CardComp->SetRelativeRotation(FRotator::ZeroRotator);
+			CardComp->SetRelativeScale3D(FVector(
+				SizeCm.X / FMath::Max(1.0, CubeSize.X),
+				SizeCm.Y / FMath::Max(1.0, CubeSize.Y),
+				SizeCm.Z / FMath::Max(1.0, CubeSize.Z)));
+		};
+
+		// Flank cavities: Y in +-[125.00, 250.50] (inside +-[124.5, 251.0]), Z in [-13.35, +25.45] (inside [-13.5, +25.6]), X in [+8.50, +9.10] (9.50 mm before +10.05 solid pane).
+		SizeGlowCard(LeftWindowGlowCard, FVector(8.80, -187.75, 6.05), FVector(0.60, 125.50, 38.80));
+		SizeGlowCard(RightWindowGlowCard, FVector(8.80, 187.75, 6.05), FVector(0.60, 125.50, 38.80));
+		// Center cavity: Y in [-67.00, +67.00] (Width=134 <= 136), Z in [-5.30, +26.30] (inside [-5.5, +26.5]), X in [+4.10, +4.70] (9.58 mm before +5.658 solid pane).
+		SizeGlowCard(CenterWindowGlowCard, FVector(4.40, 0.0, 10.50), FVector(0.60, 134.00, 31.60));
+	}
+
+	if (IsValid(BaseGreyboxShapeMaterial))
+	{
+		auto CreateFrostedCardMID = [&](UStaticMeshComponent* TargetCard) -> UMaterialInstanceDynamic*
+		{
+			if (!IsValid(TargetCard))
+			{
+				return nullptr;
+			}
+			UMaterialInstanceDynamic* CardMID = UMaterialInstanceDynamic::Create(BaseGreyboxShapeMaterial, this);
+			if (IsValid(CardMID))
+			{
+				CardMID->SetScalarParameterValue(TEXT("RoughnessConst"), SurvCfg.WindowCardRoughness);
+				CardMID->SetScalarParameterValue(TEXT("MetallicConst"), SurvCfg.WindowCardMetallic);
+				CardMID->SetScalarParameterValue(TEXT("SpecularConst"), 0.04f);
+				CardMID->SetVectorParameterValue(TEXT("BaseColorConst"), SurvCfg.IdleWindowCardBaseColor);
+				CardMID->SetVectorParameterValue(TEXT("Color"), SurvCfg.IdleWindowCardBaseColor);
+				CardMID->SetVectorParameterValue(TEXT("EmissiveColorConst"), SurvCfg.IdleWindowCardEmissive);
+				CardMID->SetScalarParameterValue(TEXT("EmissiveScale"), 1.0f);
+				TargetCard->SetMaterial(0, CardMID);
+			}
+			return CardMID;
+		};
+
+		LeftWindowGlowCardMID = CreateFrostedCardMID(LeftWindowGlowCard);
+		CenterWindowGlowCardMID = CreateFrostedCardMID(CenterWindowGlowCard);
+		RightWindowGlowCardMID = CreateFrostedCardMID(RightWindowGlowCard);
+	}
+
+	// 4. ISM-Cook-Safe Material Resolution for Louvers & Director Silhouette (M_StationPBR_Master instances have MATUSAGE_INSTANCED_STATIC_MESHES=True).
+	UMaterialInterface* IsmPbrBaseMat = IsValid(ShutterParentMat) ? ShutterParentMat : FrameParentMat;
+	if (!IsValid(IsmPbrBaseMat) && IsValid(PresentationData) && IsValid(PresentationData->DarkGunmetalMaterial))
+	{
+		IsmPbrBaseMat = PresentationData->DarkGunmetalMaterial.Get();
+	}
+	if (!IsValid(IsmPbrBaseMat))
+	{
+		IsmPbrBaseMat = BaseGreyboxShapeMaterial.Get();
+	}
+
+	if (IsValid(IsmPbrBaseMat))
+	{
+		LouverSlatMID = UMaterialInstanceDynamic::Create(IsmPbrBaseMat, this);
+		if (IsValid(LouverSlatMID))
+		{
+			LouverSlatMID->SetVectorParameterValue(TEXT("AlbedoTint"), FLinearColor(0.020f, 0.026f, 0.034f, 1.0f));
+			LouverSlatMID->SetVectorParameterValue(TEXT("ConductorMinF0"), FLinearColor(0.009f, 0.012f, 0.016f, 1.0f));
+			LouverSlatMID->SetScalarParameterValue(TEXT("SpecularScale"), 0.06f);
+			LouverSlatMID->SetScalarParameterValue(TEXT("MetallicScale"), 1.0f);
+			LouverSlatMID->SetScalarParameterValue(TEXT("MetallicMin"), 0.72f);
+			LouverSlatMID->SetScalarParameterValue(TEXT("MetallicMax"), 0.82f);
+			LouverSlatMID->SetScalarParameterValue(TEXT("RoughnessMin"), 0.68f);
+			LouverSlatMID->SetScalarParameterValue(TEXT("RoughnessMax"), 0.82f);
+			LouverSlatMID->SetScalarParameterValue(TEXT("NormalStrength"), 0.15f);
+			LouverSlatMID->SetVectorParameterValue(TEXT("BaseColorConst"), FLinearColor(0.015f, 0.019f, 0.025f, 1.0f));
+			LouverSlatMID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.76f);
+			LouverSlatMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.76f);
+			LouverSlatMID->SetScalarParameterValue(TEXT("SpecularConst"), 0.06f);
+			if (IsValid(PanopticonLouverSlatsISM))
+			{
+				PanopticonLouverSlatsISM->SetMaterial(0, LouverSlatMID);
+			}
+		}
+
+		// Correction B: UE5 PBR F0 Specular Kill on DirectorSilhouetteMID (Specular<=0.02 + Metallic=0.92..0.95 + BaseColor/ConductorMinF0=(0.002,0.003,0.004) + Roughness=0.85..0.95).
+		DirectorSilhouetteMID = UMaterialInstanceDynamic::Create(IsmPbrBaseMat, this);
+		if (IsValid(DirectorSilhouetteMID))
+		{
+			const FLinearColor SootBlackF0(0.002f, 0.003f, 0.004f, 1.0f);
+			DirectorSilhouetteMID->SetVectorParameterValue(TEXT("AlbedoTint"), SootBlackF0);
+			DirectorSilhouetteMID->SetVectorParameterValue(TEXT("ConductorMinF0"), SootBlackF0);
+			DirectorSilhouetteMID->SetScalarParameterValue(TEXT("SpecularScale"), 0.01f);
+			DirectorSilhouetteMID->SetScalarParameterValue(TEXT("MetallicScale"), 1.0f);
+			DirectorSilhouetteMID->SetScalarParameterValue(TEXT("MetallicMin"), 0.92f);
+			DirectorSilhouetteMID->SetScalarParameterValue(TEXT("MetallicMax"), 0.95f);
+			DirectorSilhouetteMID->SetScalarParameterValue(TEXT("RoughnessMin"), 0.85f);
+			DirectorSilhouetteMID->SetScalarParameterValue(TEXT("RoughnessMax"), 0.85f);
+			DirectorSilhouetteMID->SetScalarParameterValue(TEXT("NormalStrength"), 0.0f);
+			DirectorSilhouetteMID->SetScalarParameterValue(TEXT("AOStrength"), 1.0f);
+			DirectorSilhouetteMID->SetVectorParameterValue(TEXT("BaseColorConst"), SootBlackF0);
+			DirectorSilhouetteMID->SetVectorParameterValue(TEXT("Color"), SootBlackF0);
+			DirectorSilhouetteMID->SetScalarParameterValue(TEXT("SpecularConst"), 0.01f);
+			DirectorSilhouetteMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.92f);
+			DirectorSilhouetteMID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.95f);
+			DirectorSilhouetteMID->SetScalarParameterValue(TEXT("EmissiveScale"), 0.0f);
+
+			if (IsValid(DirectorSilhouetteCubesISM))
+			{
+				DirectorSilhouetteCubesISM->SetMaterial(0, DirectorSilhouetteMID);
+			}
+			if (IsValid(DirectorSilhouetteCylindersISM))
+			{
+				DirectorSilhouetteCylindersISM->SetMaterial(0, DirectorSilhouetteMID);
+			}
+		}
+	}
+
+	// 5. Populate PanopticonLouverSlatsISM (1 batched draw call across Left, Right, and Center bays; >= 14.6 mm behind shutter planes).
+	double RightBayLouverRearMaxX = -4.95;
+	if (IsValid(PanopticonLouverSlatsISM))
+	{
+		PanopticonLouverSlatsISM->ClearInstances();
+		if (SurvCfg.bEnablePanopticonLouvers && IsValid(BasicCubeMesh))
+		{
+			PanopticonLouverSlatsISM->SetStaticMesh(BasicCubeMesh);
+			const FBox CubeBox = BasicCubeMesh->GetBoundingBox();
+			const FVector CubeSize = CubeBox.GetSize();
+			const FVector CubeCenter = CubeBox.GetCenter();
+
+			const FQuat SlatQuat = FRotator(SurvCfg.LouverPitchDegrees, 0.0f, 0.0f).Quaternion();
+			const double PitchRad = FMath::DegreesToRadians(FMath::Abs(static_cast<double>(SurvCfg.LouverPitchDegrees)));
+			const double DepthX = static_cast<double>(SurvCfg.LouverDepthCm);
+			const double ThickZ = static_cast<double>(SurvCfg.LouverThicknessCm);
+			const double SlatHalfX = 0.5 * (DepthX * FMath::Cos(PitchRad) + ThickZ * FMath::Sin(PitchRad));
+			const double SlatHalfZ = 0.5 * (ThickZ * FMath::Cos(PitchRad) + DepthX * FMath::Sin(PitchRad));
+
+			// Flank shutter rear is -4.95 cm; clamp flank slat center so front edge stays >= -4.05 cm (>= 9.0 mm gap).
+			const double FlankSlatCenterX = FMath::Max(-2.20, -4.95 + 0.90 + SlatHalfX);
+			RightBayLouverRearMaxX = FlankSlatCenterX + SlatHalfX;
+
+			// Center shutter rear is -10.50 cm, Center glow card front is +4.10 cm.
+			const double CenterSlatCenterX = FMath::Clamp(-7.20, -10.50 + 0.90 + SlatHalfX, 4.10 - 0.90 - SlatHalfX);
+
+			auto AddBaySlats = [&](
+				double CenterX,
+				double CenterY,
+				double WidthY,
+				int32 SlatCount,
+				double MinCavityZ,
+				double MaxCavityZ,
+				double PreferredBottomCenterZ)
+			{
+				const double SafeMinZ = MinCavityZ + SlatHalfZ + 0.15;
+				const double SafeMaxZ = MaxCavityZ - SlatHalfZ - 0.15;
+				if (SlatCount <= 0 || SafeMaxZ <= SafeMinZ)
+				{
+					return;
+				}
+				const FVector Scale(
+					DepthX / FMath::Max(1.0, CubeSize.X),
+					WidthY / FMath::Max(1.0, CubeSize.Y),
+					ThickZ / FMath::Max(1.0, CubeSize.Z));
+
+				const double DesiredSpan = static_cast<double>(FMath::Max(0, SlatCount - 1)) * static_cast<double>(SurvCfg.LouverVerticalPitchCm);
+				const double MaxAvailSpan = SafeMaxZ - SafeMinZ;
+				const double EffectiveStepZ = (SlatCount > 1)
+					? (FMath::Min(DesiredSpan, MaxAvailSpan) / static_cast<double>(SlatCount - 1))
+					: 0.0;
+				const double StartZ = FMath::Clamp(PreferredBottomCenterZ, SafeMinZ, SafeMaxZ - (EffectiveStepZ * static_cast<double>(SlatCount - 1)));
+
+				for (int32 Idx = 0; Idx < SlatCount; ++Idx)
+				{
+					const double SlatZ = FMath::Clamp(StartZ + (static_cast<double>(Idx) * EffectiveStepZ), SafeMinZ, SafeMaxZ);
+					const FVector DesiredPos(CenterX, CenterY, SlatZ);
+					const FVector PivotPos = DesiredPos - SlatQuat.RotateVector(Scale * CubeCenter);
+					PanopticonLouverSlatsISM->AddInstance(FTransform(SlatQuat, PivotPos, Scale), false);
+				}
+			};
+
+			// Flank bays: Width=125.0 cm -> Y in +-[125.25, 250.25] (inside +-[124.5, 251.0]), Z in [-13.5, +25.6].
+			AddBaySlats(FlankSlatCenterX, -187.75, 125.0, SurvCfg.FlankLouverSlatCount, -13.50, 25.60, -11.20);
+			AddBaySlats(FlankSlatCenterX, 187.75, 125.0, SurvCfg.FlankLouverSlatCount, -13.50, 25.60, -11.20);
+			// Center bay: Width=134.0 cm -> Y in [-67.0, +67.0] (inside [-68.0, +68.0]), Z in [-5.5, +26.5].
+			AddBaySlats(CenterSlatCenterX, 0.0, 134.0, SurvCfg.CenterLouverSlatCount, -5.50, 26.50, -3.20);
+		}
+	}
+
+	// 6. Populate Exclusive Right-Bay Watching Director Silhouette + Telemetry Console & Optics Stanchion (Decision 1).
+	if (IsValid(DirectorSilhouetteCubesISM))
+	{
+		DirectorSilhouetteCubesISM->ClearInstances();
+	}
+	if (IsValid(DirectorSilhouetteCylindersISM))
+	{
+		DirectorSilhouetteCylindersISM->ClearInstances();
+	}
+
+	if (SurvCfg.bEnableWatchingDirectorSilhouette && IsValid(BasicCubeMesh) && IsValid(BasicCylinderMesh) &&
+		IsValid(DirectorSilhouetteCubesISM) && IsValid(DirectorSilhouetteCylindersISM))
+	{
+		DirectorSilhouetteCubesISM->SetStaticMesh(BasicCubeMesh);
+		DirectorSilhouetteCylindersISM->SetStaticMesh(BasicCylinderMesh);
+
+		// Strict >= 9.0 mm (>= 8.5 mm required) air gap behind Right Bay louver rear (-0.92 cm) and before RightWindowGlowCard front (+8.50 cm).
+		const double SafeMinX = RightBayLouverRearMaxX + 0.92;
+		constexpr double SafeMaxX = 8.50 - 0.92;
+		constexpr double SafeMinY = 125.00;
+		constexpr double SafeMaxY = 250.50;
+		constexpr double SafeMinZ = -13.35;
+		constexpr double SafeMaxZ = 25.30;
+
+		auto AddClampedSilhouettePart = [&](
+			UInstancedStaticMeshComponent* TargetISM,
+			const UStaticMesh* SourceMesh,
+			FVector DesiredCenter,
+			FVector SizeCm,
+			const FRotator& PartRot)
+		{
+			const FBox MeshBox = SourceMesh->GetBoundingBox();
+			const FVector MeshSize = MeshBox.GetSize();
+			const FVector MeshCenter = MeshBox.GetCenter();
+			const FQuat Quat = PartRot.Quaternion();
+			const FVector AxisX = Quat.GetAxisX();
+			const FVector AxisY = Quat.GetAxisY();
+			const FVector AxisZ = Quat.GetAxisZ();
+
+			const double PocketHalfSpanX = FMath::Max(0.40, 0.5 * (SafeMaxX - SafeMinX) - 0.04);
+			const double HalfXFromYZ = 0.5 * (FMath::Abs(AxisY.X) * SizeCm.Y + FMath::Abs(AxisZ.X) * SizeCm.Z);
+			if (FMath::Abs(AxisX.X) > 1.0e-3)
+			{
+				const double MaxAllowedDepthX = FMath::Max(0.40, 2.0 * (PocketHalfSpanX - HalfXFromYZ) / FMath::Abs(AxisX.X));
+				SizeCm.X = FMath::Min(SizeCm.X, MaxAllowedDepthX);
+			}
+
+			const FVector RotHalfExtents(
+				0.5 * (FMath::Abs(AxisX.X) * SizeCm.X + FMath::Abs(AxisY.X) * SizeCm.Y + FMath::Abs(AxisZ.X) * SizeCm.Z),
+				0.5 * (FMath::Abs(AxisX.Y) * SizeCm.X + FMath::Abs(AxisY.Y) * SizeCm.Y + FMath::Abs(AxisZ.Y) * SizeCm.Z),
+				0.5 * (FMath::Abs(AxisX.Z) * SizeCm.X + FMath::Abs(AxisY.Z) * SizeCm.Y + FMath::Abs(AxisZ.Z) * SizeCm.Z));
+
+			DesiredCenter.X = FMath::Clamp(DesiredCenter.X, SafeMinX + RotHalfExtents.X, SafeMaxX - RotHalfExtents.X);
+			DesiredCenter.Y = FMath::Clamp(DesiredCenter.Y, SafeMinY + RotHalfExtents.Y, SafeMaxY - RotHalfExtents.Y);
+			DesiredCenter.Z = FMath::Clamp(DesiredCenter.Z, SafeMinZ + RotHalfExtents.Z, SafeMaxZ - RotHalfExtents.Z);
+
+			const FVector Scale(
+				SizeCm.X / FMath::Max(1.0, MeshSize.X),
+				SizeCm.Y / FMath::Max(1.0, MeshSize.Y),
+				SizeCm.Z / FMath::Max(1.0, MeshSize.Z));
+			const FVector PivotPos = DesiredCenter - Quat.RotateVector(Scale * MeshCenter);
+			TargetISM->AddInstance(FTransform(Quat, PivotPos, Scale), false);
+		};
+
+		const double BaseY = static_cast<double>(SurvCfg.DirectorBayLocalY);
+		const double S = static_cast<double>(SurvCfg.DirectorScale);
+		const float InwardTurnDeg = FMath::UnwindDegrees(SurvCfg.DirectorInwardYawDegrees - (-180.0f));
+		const FRotator FigRot(0.0f, InwardTurnDeg, 0.0f);
+		const double MidX = 0.5 * (SafeMinX + SafeMaxX);
+		const double WingStepX = 8.8 * S * FMath::Sin(FMath::DegreesToRadians(static_cast<double>(InwardTurnDeg))) * 0.5;
+
+		// Overlook telemetry console plinth & sloped monitor hood along the lower Right-Bay sill.
+		AddClampedSilhouettePart(DirectorSilhouetteCubesISM, BasicCubeMesh, FVector(MidX, BaseY, -10.80), FVector(1.60, 58.0 * S, 5.00), FRotator::ZeroRotator);
+		AddClampedSilhouettePart(DirectorSilhouetteCubesISM, BasicCubeMesh, FVector(MidX - 0.10, BaseY + 22.0 * S, -6.90), FVector(1.60, 13.5 * S, 3.80), FRotator(12.0f, 0.0f, 0.0f));
+
+		// Surveillance optics stanchion & dual-barrel scope aimed toward the inspection rig.
+		AddClampedSilhouettePart(DirectorSilhouetteCylindersISM, BasicCylinderMesh, FVector(MidX, BaseY - 22.5 * S, -4.20), FVector(2.00, 2.40 * S, 9.20 * S), FRotator::ZeroRotator);
+		AddClampedSilhouettePart(DirectorSilhouetteCylindersISM, BasicCylinderMesh, FVector(MidX - 0.15, BaseY - 22.5 * S, 0.90 * S), FVector(3.60 * S, 4.40 * S, 3.00), FRotator(90.0f, 0.0f, 0.0f));
+
+		// Authoritative greatcoat torso, stepped broad shoulder wings (continuous -168 deg inward stance), upturned collar, cranium & visor cap.
+		AddClampedSilhouettePart(DirectorSilhouetteCubesISM, BasicCubeMesh, FVector(MidX, BaseY, -5.60 * S), FVector(1.25, 27.5 * S, 11.20 * S), FigRot);
+		AddClampedSilhouettePart(DirectorSilhouetteCubesISM, BasicCubeMesh, FVector(MidX + WingStepX, BaseY - 9.2 * S, 1.50 * S), FVector(1.25, 20.5 * S, 6.80 * S), FigRot);
+		AddClampedSilhouettePart(DirectorSilhouetteCubesISM, BasicCubeMesh, FVector(MidX - WingStepX, BaseY + 9.2 * S, 1.50 * S), FVector(1.25, 20.5 * S, 6.80 * S), FigRot);
+		AddClampedSilhouettePart(DirectorSilhouetteCubesISM, BasicCubeMesh, FVector(MidX + WingStepX, BaseY - 12.0 * S, 4.10 * S), FVector(1.20, 15.0 * S, 3.40 * S), FRotator(0.0f, InwardTurnDeg, 12.0f));
+		AddClampedSilhouettePart(DirectorSilhouetteCubesISM, BasicCubeMesh, FVector(MidX - WingStepX, BaseY + 12.0 * S, 4.10 * S), FVector(1.20, 15.0 * S, 3.40 * S), FRotator(0.0f, InwardTurnDeg, -12.0f));
+		AddClampedSilhouettePart(DirectorSilhouetteCubesISM, BasicCubeMesh, FVector(MidX, BaseY, 6.40 * S), FVector(1.30, 16.5 * S, 4.20 * S), FigRot);
+		AddClampedSilhouettePart(DirectorSilhouetteCylindersISM, BasicCylinderMesh, FVector(MidX, BaseY, 11.10 * S), FVector(2.50, 11.4 * S, 7.40 * S), FigRot);
+		AddClampedSilhouettePart(DirectorSilhouetteCubesISM, BasicCubeMesh, FVector(MidX - 0.20, BaseY, 14.70 * S), FVector(2.70, 13.8 * S, 2.30 * S), FRotator(-8.0f, InwardTurnDeg, 0.0f));
+	}
+
+	// 7. Re-synchronize bay lamp intensity & frosted window card state with current phase.
+	if (CachedShiftPhase == EShiftPhase::FaultResetDelay)
+	{
+		SetPanopticonLampState(FaultSlamLampColor, SurvCfg.FaultStrobePeakMultiplier);
+		SetWindowGlowCardsState(SurvCfg.FaultWindowCardBaseColor, SurvCfg.FaultWindowCardEmissive);
+	}
+	else
+	{
+		SetPanopticonLampState(ActiveInspectionLampColor, 1.0f);
+		SetWindowGlowCardsState(SurvCfg.IdleWindowCardBaseColor, SurvCfg.IdleWindowCardEmissive);
 	}
 }
 

@@ -336,6 +336,163 @@ struct TAREANDTITHE_API FHudPresentationConfig
 	FLinearColor PanelBorderGunmetalTint = FLinearColor(0.19f, 0.23f, 0.28f, 0.92f);
 };
 
+USTRUCT(BlueprintType)
+struct TAREANDTITHE_API FPanopticonSurveillanceConfig
+{
+	GENERATED_BODY()
+
+	/** Scales serialized idle Panopticon bay point-light intensities down so window luminance drops ~45% below the hero monolith. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panopticon|Luminance", meta = (ClampMin = "0.05", ClampMax = "1.00"))
+	float IdleBayLightIntensityScale = 0.36f;
+
+	/** Compensated 9 Hz crimson strobe peak multiplier relative to suppressed idle bay intensity during FaultResetDelay. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panopticon|Luminance", meta = (ClampMin = "1.00", ClampMax = "15.00"))
+	float FaultStrobePeakMultiplier = 6.80f;
+
+	/** Pulls bay point lights forward in front of corrugated blast shutters (-13.05 cm) to eliminate the 0.95 cm specular singularity while preserving N.L > 0 on slammed shutters. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panopticon|Luminance", meta = (ClampMin = "-45.0", ClampMax = "-16.0"))
+	float BayLightForwardLocationX = -26.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panopticon|Luminance", meta = (ClampMin = "140.0", ClampMax = "230.0"))
+	float FlankBayLightLocationY = 204.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panopticon|Luminance", meta = (ClampMin = "-12.0", ClampMax = "28.0"))
+	float FlankBayLightLocationZ = 4.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panopticon|Luminance", meta = (ClampMin = "-5.0", ClampMax = "36.0"))
+	float CenterBayLightLocationZ = 14.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panopticon|Materials", meta = (ClampMin = "0.20", ClampMax = "1.20"))
+	float BoothFrameAlbedoScale = 0.56f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panopticon|Materials", meta = (ClampMin = "0.05", ClampMax = "1.00"))
+	float BoothFrameSpecularScale = 0.38f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panopticon|Materials", meta = (ClampMin = "0.20", ClampMax = "1.20"))
+	float BoothShutterAlbedoScale = 0.58f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panopticon|Materials", meta = (ClampMin = "0.05", ClampMax = "1.00"))
+	float BoothShutterSpecularScale = 0.34f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panopticon|FrostedWindow")
+	FLinearColor IdleWindowCardBaseColor = FLinearColor(0.28f, 0.40f, 0.54f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panopticon|FrostedWindow")
+	FLinearColor FaultWindowCardBaseColor = FLinearColor(0.88f, 0.09f, 0.05f, 1.0f);
+
+	/** Strictly bloom-safe (< 1.65 BloomThreshold) cold overlook emissive backing behind louvers and Director silhouette. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panopticon|FrostedWindow")
+	FLinearColor IdleWindowCardEmissive = FLinearColor(0.044f, 0.070f, 0.102f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panopticon|FrostedWindow")
+	FLinearColor FaultWindowCardEmissive = FLinearColor(0.55f, 0.045f, 0.025f, 1.0f);
+
+	/** Diffused frosted roughness preventing sharp foreground point-light tube reflections behind the silhouette. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panopticon|FrostedWindow", meta = (ClampMin = "0.50", ClampMax = "1.00"))
+	float WindowCardRoughness = 0.82f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panopticon|FrostedWindow", meta = (ClampMin = "0.00", ClampMax = "0.25"))
+	float WindowCardMetallic = 0.04f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panopticon|Louvers")
+	bool bEnablePanopticonLouvers = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panopticon|Louvers", meta = (ClampMin = "4", ClampMax = "12"))
+	int32 FlankLouverSlatCount = 6;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panopticon|Louvers", meta = (ClampMin = "3", ClampMax = "10"))
+	int32 CenterLouverSlatCount = 5;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panopticon|Louvers", meta = (ClampMin = "3.80", ClampMax = "9.00"))
+	float LouverVerticalPitchCm = 6.20f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panopticon|Louvers", meta = (ClampMin = "1.20", ClampMax = "3.40"))
+	float LouverDepthCm = 2.40f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panopticon|Louvers", meta = (ClampMin = "0.50", ClampMax = "1.60"))
+	float LouverThicknessCm = 1.05f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panopticon|Louvers", meta = (ClampMin = "-25.0", ClampMax = "10.0"))
+	float LouverPitchDegrees = -12.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panopticon|DirectorSilhouette")
+	bool bEnableWatchingDirectorSilhouette = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panopticon|DirectorSilhouette", meta = (ClampMin = "150.0", ClampMax = "205.0"))
+	float DirectorBayLocalY = 176.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panopticon|DirectorSilhouette", meta = (ClampMin = "0.75", ClampMax = "1.15"))
+	float DirectorScale = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panopticon|DirectorSilhouette", meta = (ClampMin = "-180.0", ClampMax = "-155.0"))
+	float DirectorInwardYawDegrees = -168.0f;
+
+	FPanopticonSurveillanceConfig GetSanitized() const;
+};
+
+USTRUCT(BlueprintType)
+struct TAREANDTITHE_API FOuterEdgeFramingConfig
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Layout")
+	bool bEnableOuterArchitecturalFraming = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Layout", meta = (ClampMin = "155.0", ClampMax = "225.0"))
+	float ForegroundPipeWorldX = 176.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Layout", meta = (ClampMin = "188.0", ClampMax = "245.0"))
+	float ForegroundPipeAbsY = 198.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Layout", meta = (ClampMin = "8.0", ClampMax = "19.0"))
+	float ForegroundPipeRadiusCm = 15.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Layout", meta = (ClampMin = "215.0", ClampMax = "335.0"))
+	float MidgroundColumnWorldX = 232.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Layout", meta = (ClampMin = "210.0", ClampMax = "315.0"))
+	float MidgroundColumnAbsY = 248.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Layout", meta = (ClampMin = "0.60", ClampMax = "1.30"))
+	float MidgroundColumnXYScale = 1.00f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Layout", meta = (ClampMin = "205.0", ClampMax = "320.0"))
+	float CompanionPipeWorldX = 210.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Layout", meta = (ClampMin = "200.0", ClampMax = "275.0"))
+	float CompanionPipeAbsY = 208.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Layout", meta = (ClampMin = "5.0", ClampMax = "15.0"))
+	float CompanionPipeRadiusCm = 13.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Material", meta = (ClampMin = "0.30", ClampMax = "2.20"))
+	float OuterMetalAlbedoScale = 1.52f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Material", meta = (ClampMin = "0.16", ClampMax = "0.70"))
+	float OuterMetalRoughnessMin = 0.48f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Material", meta = (ClampMin = "0.20", ClampMax = "0.85"))
+	float OuterMetalRoughnessMax = 0.65f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Material", meta = (ClampMin = "0.20", ClampMax = "0.95"))
+	float OuterMetalMetallic = 0.36f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Material", meta = (ClampMin = "0.15", ClampMax = "1.00"))
+	float OuterMetalSpecularScale = 0.30f;
+
+	/** Strategy 1 locked shipping default (false): zero extra lights; catches grazing rim from CellFillPoint + cross-axis RimSpotLeft/Right + TC_CellAmbientCubemap. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|RimLighting")
+	bool bEnableDedicatedOuterRimLights = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|RimLighting", meta = (ClampMin = "0.0", ClampMax = "600.0"))
+	float DedicatedOuterRimIntensity = 180.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|RimLighting", meta = (ClampMin = "60.0", ClampMax = "220.0"))
+	float DedicatedOuterRimRadius = 135.0f;
+
+	FOuterEdgeFramingConfig GetSanitized() const;
+};
+
 UCLASS(BlueprintType)
 class TAREANDTITHE_API UTareTithePresentationDataAsset : public UPrimaryDataAsset
 {
@@ -461,6 +618,16 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD")
 	FHudPresentationConfig HudConfig;
+
+	// ============================================================================
+	// Phase 12B Panopticon Surveillance Suppression & Outer Cell Edge Framing
+	// ============================================================================
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PanopticonSurveillance")
+	FPanopticonSurveillanceConfig PanopticonSurveillance;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterEdgeFraming")
+	FOuterEdgeFramingConfig OuterEdgeFraming;
 
 	// ============================================================================
 	// Niagara VFX

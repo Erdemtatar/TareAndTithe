@@ -9,12 +9,15 @@
 #include "DirectorBoothActor.generated.h"
 
 class UAudioComponent;
+class UInstancedStaticMeshComponent;
+class UMaterialInstanceDynamic;
 class UMaterialInterface;
 class UMonolithContractDataAsset;
 class UPointLightComponent;
 class USceneComponent;
 class UShiftProgressionDataAsset;
 class USoundBase;
+class UStaticMesh;
 class UStaticMeshComponent;
 class UTareTithePresentationDataAsset;
 class UTextRenderComponent;
@@ -44,6 +47,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "DirectorBooth|Diagnostics")
 	float GetCurrentShutterOpenAlpha() const { return CurrentShutterOpenAlpha; }
 
+	UFUNCTION(BlueprintPure, Category = "DirectorBooth|Diagnostics")
+	int32 GetLouverSlatInstanceCount() const;
+
+	UFUNCTION(BlueprintPure, Category = "DirectorBooth|Diagnostics")
+	int32 GetDirectorSilhouetteInstanceCount() const;
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -52,6 +61,24 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "DirectorBooth|Panopticon")
 	TObjectPtr<UStaticMeshComponent> OverlookRecessBackingVisual;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "DirectorBooth|Panopticon")
+	TObjectPtr<UStaticMeshComponent> LeftWindowGlowCard;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "DirectorBooth|Panopticon")
+	TObjectPtr<UStaticMeshComponent> CenterWindowGlowCard;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "DirectorBooth|Panopticon")
+	TObjectPtr<UStaticMeshComponent> RightWindowGlowCard;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "DirectorBooth|Panopticon")
+	TObjectPtr<UInstancedStaticMeshComponent> PanopticonLouverSlatsISM;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "DirectorBooth|Panopticon")
+	TObjectPtr<UInstancedStaticMeshComponent> DirectorSilhouetteCubesISM;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "DirectorBooth|Panopticon")
+	TObjectPtr<UInstancedStaticMeshComponent> DirectorSilhouetteCylindersISM;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "DirectorBooth|Panopticon")
 	TObjectPtr<USceneComponent> CenterBayPivot;
@@ -270,7 +297,7 @@ protected:
 	FLinearColor ActiveInspectionLampColor = FLinearColor(0.54f, 0.78f, 1.00f, 1.0f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Lighting")
-	FLinearColor FaultSlamLampColor = FLinearColor(1.0f, 0.10f, 0.06f, 1.0f);
+	FLinearColor FaultSlamLampColor = FLinearColor(1.0f, 0.05f, 0.015f, 1.0f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Lighting")
 	FLinearColor VerdictApprovedLampColor = FLinearColor(0.16f, 0.96f, 0.38f, 1.0f);
@@ -289,6 +316,8 @@ private:
 		int32 ContractIndex);
 	bool IsLegacyWorldSpaceReadoutEnabled() const;
 	void UpdateLegacySignboardVisibility();
+	void RebuildPanopticonSurveillanceVisuals();
+	void SetWindowGlowCardsState(const FLinearColor& BaseColor, const FLinearColor& EmissiveColor);
 	void RefreshContractDirectiveWingReadout();
 	void RefreshRequisitionCornerReadout();
 	void RefreshDirectorIntercomWingReadout();
@@ -308,10 +337,37 @@ private:
 	static FString DescribeFaultReason(EContractFaultReason FaultReason);
 
 	UPROPERTY()
+	TObjectPtr<UStaticMesh> BasicCubeMesh;
+
+	UPROPERTY()
+	TObjectPtr<UStaticMesh> BasicCylinderMesh;
+
+	UPROPERTY()
 	TObjectPtr<UMaterialInterface> BaseGreyboxShapeMaterial;
 
 	UPROPERTY()
 	TObjectPtr<UMaterialInterface> UnlitSignboardTextMaterial;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> BoothFrameMID;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> DirectorShutterMID;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> LouverSlatMID;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> DirectorSilhouetteMID;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> LeftWindowGlowCardMID;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> CenterWindowGlowCardMID;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> RightWindowGlowCardMID;
 
 	UPROPERTY(Transient)
 	TObjectPtr<const UTareTithePresentationDataAsset> PresentationData;
