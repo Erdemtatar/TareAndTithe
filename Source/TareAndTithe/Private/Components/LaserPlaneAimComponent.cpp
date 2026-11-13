@@ -128,6 +128,36 @@ void ULaserPlaneAimComponent::SetLaserVisualComponent(USceneComponent* InVisualC
 	}
 }
 
+void ULaserPlaneAimComponent::SetSheetApertureExtents(float InHalfDepthCm, float InHalfWidthCm)
+{
+	const float ClampedHalfDepth = FMath::Max(1.0f, InHalfDepthCm);
+	const float ClampedHalfWidth = FMath::Max(1.0f, InHalfWidthCm);
+	if (FMath::IsNearlyEqual(SheetHalfDepthCm, ClampedHalfDepth) &&
+		FMath::IsNearlyEqual(SheetHalfWidthCm, ClampedHalfWidth))
+	{
+		return;
+	}
+
+	SheetHalfDepthCm = ClampedHalfDepth;
+	SheetHalfWidthCm = ClampedHalfWidth;
+	bPlaneStateDirty = true;
+	if (bIsAimingEnabled)
+	{
+		RecomputePlaneAndDispatchPreview();
+	}
+}
+
+FLaserSliceAperture ULaserPlaneAimComponent::GetCurrentSliceAperture() const
+{
+	FLaserSliceAperture Aperture;
+	Aperture.SheetForwardWorld = CurrentPlaneOrientationWorld.GetAxisX();
+	Aperture.SheetRightWorld = CurrentPlaneOrientationWorld.GetAxisY();
+	Aperture.HalfDepthCm = SheetHalfDepthCm;
+	Aperture.HalfWidthCm = SheetHalfWidthCm;
+	Aperture.bEnforceFiniteSheetBounds = true;
+	return Aperture;
+}
+
 void ULaserPlaneAimComponent::SetFrameBasis(const FVector& InFrameAnchorWorld, const FVector& InFrameForwardWorld)
 {
 	FrameAnchorWorld = InFrameAnchorWorld;
@@ -398,7 +428,8 @@ void ULaserPlaneAimComponent::DispatchSlicePreview()
 		LastPreviewTelemetry = ISliceableTargetInterface::Execute_PreviewSlicePlane(
 			TargetObj,
 			CurrentPlaneOriginWorld,
-			CurrentPlaneNormalWorld);
+			CurrentPlaneNormalWorld,
+			GetCurrentSliceAperture());
 	}
 	else
 	{

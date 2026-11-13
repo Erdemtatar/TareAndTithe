@@ -109,6 +109,27 @@ struct FVolatileVeinDefinition
 };
 
 USTRUCT(BlueprintType)
+struct TAREANDTITHE_API FLaserSliceAperture
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Slice")
+	FVector SheetForwardWorld = FVector::ForwardVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Slice")
+	FVector SheetRightWorld = FVector::RightVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Slice")
+	float HalfDepthCm = 36.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Slice")
+	float HalfWidthCm = 34.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Slice")
+	bool bEnforceFiniteSheetBounds = false;
+};
+
+USTRUCT(BlueprintType)
 struct FSlicePreviewTelemetry
 {
 	GENERATED_BODY()

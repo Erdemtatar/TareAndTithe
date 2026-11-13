@@ -9,12 +9,13 @@
 
 class UShiftProgressionDataAsset;
 
-DECLARE_DELEGATE_RetVal_ThreeParams(
+DECLARE_DELEGATE_RetVal_FourParams(
 	bool,
 	FQueryLaserSliceTargetSignature,
 	UObject*& /*OutSliceableTarget*/,
 	FVector& /*OutPlaneOriginWorld*/,
-	FVector& /*OutPlaneNormalWorld*/);
+	FVector& /*OutPlaneNormalWorld*/,
+	FLaserSliceAperture& /*OutSheetAperture*/);
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnLaserSliceCommittedSignature, const FSliceResultSummary& /*SliceResult*/);
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnLaserChargeStateChangedSignature, bool /*bIsNowCharging*/);
@@ -32,7 +33,7 @@ public:
 	void ConfigureFromShiftProgression(const UShiftProgressionDataAsset* ShiftConfig);
 	void ResetCapacitorState();
 
-	void BeginCharge();
+	bool BeginCharge();
 	bool CancelCharge();
 
 	bool IsCharging() const { return bIsCharging; }

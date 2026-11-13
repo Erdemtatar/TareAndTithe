@@ -49,16 +49,192 @@ namespace
 		bool bIsContaminated = false;
 	};
 
-	double ComputeSignedMeshVolume(const UE::Geometry::FDynamicMesh3& Mesh)
+	// In UE5's left-handed FDynamicMesh3 convention (matching TMeshQueries::GetVolumeArea where N = (V2 - V0).Cross(V1 - V0)),
+	// 6 * SignedTetrahedronVolume(0, A, B, C) = A.Dot(C.Cross(B)) = -A.Dot(B.Cross(C)).
+	inline double SignedTetSixVolumeUE(const FVector3d& A, const FVector3d& B, const FVector3d& C)
 	{
-		double SixTimesSignedVolume = 0.0;
-		for (int32 Tid : Mesh.TriangleIndicesItr())
+		return A.Dot(C.Cross(B));
+	}
+
+	bool DoesSegment2DOverlapRect(
+		const FVector2d& A,
+		const FVector2d& B,
+		double HalfU,
+		double HalfV)
+	{
+		double TMin = 0.0;
+		double TMax = 1.0;
+		const double Du = B.X - A.X;
+		const double Dv = B.Y - A.Y;
+
+		auto ClipAxis = [&TMin, &TMax](double P, double Q) -> bool
 		{
-			FVector3d A, B, C;
-			Mesh.GetTriVertices(Tid, A, B, C);
-			SixTimesSignedVolume += A.Dot(B.Cross(C));
+			if (FMath::Abs(P) <= 1.0e-12)
+			{
+				return Q >= -1.0e-6;
+			}
+			const double R = Q / P;
+			if (P < 0.0)
+			{
+				if (R > TMax)
+				{
+					return false;
+				}
+				if (R > TMin)
+				{
+					TMin = R;
+				}
+			}
+			else
+			{
+				if (R < TMin)
+				{
+					return false;
+				}
+				if (R < TMax)
+				{
+					TMax = R;
+				}
+			}
+			return TMin <= TMax;
+		};
+
+		return ClipAxis(-Du, A.X + HalfU) &&
+		       ClipAxis(+Du, HalfU - A.X) &&
+		       ClipAxis(-Dv, A.Y + HalfV) &&
+		       ClipAxis(+Dv, HalfV - A.Y);
+	}
+
+	bool IsOrigin2DInsideTriangle(const FVector2d& A, const FVector2d& B, const FVector2d& C)
+	{
+		const double C0 = (B.X - A.X) * (-A.Y) - (B.Y - A.Y) * (-A.X);
+		const double C1 = (C.X - B.X) * (-B.Y) - (C.Y - B.Y) * (-B.X);
+		const double C2 = (A.X - C.X) * (-C.Y) - (A.Y - C.Y) * (-C.X);
+		const bool bHasNeg = (C0 < -1.0e-6) || (C1 < -1.0e-6) || (C2 < -1.0e-6);
+		const bool bHasPos = (C0 > 1.0e-6) || (C1 > 1.0e-6) || (C2 > 1.0e-6);
+		return !(bHasNeg && bHasPos);
+	}
+
+	bool DoesPlaneAndApertureIntersectMesh(
+		const UE::Geometry::FDynamicMesh3& SourceMesh,
+		const FTransform& RemainderTransform,
+		const FVector& PlaneOriginWorld,
+		const FVector3d& LocalOrigin,
+		const FVector3d& LocalNormal,
+		const FLaserSliceAperture& SheetAperture)
+	{
+		double MinSignedDist = TNumericLimits<double>::Max();
+		double MaxSignedDist = TNumericLimits<double>::Lowest();
+
+		for (int32 Vid : SourceMesh.VertexIndicesItr())
+		{
+			const double SignedDist = (SourceMesh.GetVertex(Vid) - LocalOrigin).Dot(LocalNormal);
+			MinSignedDist = FMath::Min(MinSignedDist, SignedDist);
+			MaxSignedDist = FMath::Max(MaxSignedDist, SignedDist);
 		}
-		return SixTimesSignedVolume / 6.0;
+
+		if (!(MinSignedDist < -SliceVertexSignEpsilon && MaxSignedDist > SliceVertexSignEpsilon))
+		{
+			return false;
+		}
+
+		if (!SheetAperture.bEnforceFiniteSheetBounds)
+		{
+			return true;
+		}
+
+		const FVector3d AxisU = static_cast<FVector3d>(SheetAperture.SheetForwardWorld).GetSafeNormal();
+		const FVector3d AxisV = static_cast<FVector3d>(SheetAperture.SheetRightWorld).GetSafeNormal();
+		if (AxisU.IsNearlyZero() || AxisV.IsNearlyZero())
+		{
+			return true;
+		}
+
+		const FVector3d OriginW = static_cast<FVector3d>(PlaneOriginWorld);
+		const double HalfU = FMath::Max(1.0, static_cast<double>(SheetAperture.HalfDepthCm));
+		const double HalfV = FMath::Max(1.0, static_cast<double>(SheetAperture.HalfWidthCm));
+		constexpr double TriPlaneEps = 1.0e-5;
+
+		auto ProjectLocalPointToSheet2D = [&RemainderTransform, &OriginW, &AxisU, &AxisV](const FVector3d& LocalPt) -> FVector2d
+		{
+			const FVector3d WorldPt = static_cast<FVector3d>(RemainderTransform.TransformPosition(static_cast<FVector>(LocalPt)));
+			const FVector3d RelW = WorldPt - OriginW;
+			return FVector2d(RelW.Dot(AxisU), RelW.Dot(AxisV));
+		};
+
+		for (int32 Tid : SourceMesh.TriangleIndicesItr())
+		{
+			FVector3d V[3];
+			SourceMesh.GetTriVertices(Tid, V[0], V[1], V[2]);
+
+			const double D[3] = {
+				(V[0] - LocalOrigin).Dot(LocalNormal),
+				(V[1] - LocalOrigin).Dot(LocalNormal),
+				(V[2] - LocalOrigin).Dot(LocalNormal)
+			};
+
+			if ((D[0] > TriPlaneEps && D[1] > TriPlaneEps && D[2] > TriPlaneEps) ||
+				(D[0] < -TriPlaneEps && D[1] < -TriPlaneEps && D[2] < -TriPlaneEps))
+			{
+				continue;
+			}
+
+			FVector3d HitLocal[3];
+			int32 HitCount = 0;
+
+			for (int32 m = 0; m < 3; ++m)
+			{
+				if (FMath::Abs(D[m]) <= TriPlaneEps)
+				{
+					HitLocal[HitCount++] = V[m];
+				}
+			}
+
+			for (int32 EdgeIdx = 0; EdgeIdx < 3 && HitCount < 3; ++EdgeIdx)
+			{
+				const int32 AIdx = EdgeIdx;
+				const int32 BIdx = (EdgeIdx + 1) % 3;
+				if ((D[AIdx] < -TriPlaneEps && D[BIdx] > TriPlaneEps) ||
+					(D[AIdx] > TriPlaneEps && D[BIdx] < -TriPlaneEps))
+				{
+					const double Alpha = D[AIdx] / (D[AIdx] - D[BIdx]);
+					HitLocal[HitCount++] = V[AIdx] + Alpha * (V[BIdx] - V[AIdx]);
+				}
+			}
+
+			if (HitCount == 1)
+			{
+				const FVector2d Pt2D = ProjectLocalPointToSheet2D(HitLocal[0]);
+				if (DoesSegment2DOverlapRect(Pt2D, Pt2D, HalfU, HalfV))
+				{
+					return true;
+				}
+			}
+			else if (HitCount == 2)
+			{
+				const FVector2d SegA = ProjectLocalPointToSheet2D(HitLocal[0]);
+				const FVector2d SegB = ProjectLocalPointToSheet2D(HitLocal[1]);
+				if (DoesSegment2DOverlapRect(SegA, SegB, HalfU, HalfV))
+				{
+					return true;
+				}
+			}
+			else if (HitCount == 3)
+			{
+				const FVector2d P0 = ProjectLocalPointToSheet2D(HitLocal[0]);
+				const FVector2d P1 = ProjectLocalPointToSheet2D(HitLocal[1]);
+				const FVector2d P2 = ProjectLocalPointToSheet2D(HitLocal[2]);
+				if (DoesSegment2DOverlapRect(P0, P1, HalfU, HalfV) ||
+					DoesSegment2DOverlapRect(P1, P2, HalfU, HalfV) ||
+					DoesSegment2DOverlapRect(P2, P0, HalfU, HalfV) ||
+					IsOrigin2DInsideTriangle(P0, P1, P2))
+				{
+					return true;
+				}
+			}
+		}
+
+		return false;
 	}
 
 	UE::Geometry::FAxisAlignedBox3d ComputeTopGripLocalBounds3d(
@@ -260,7 +436,7 @@ namespace
 			OutMesh.AppendTriangle(FrontVids[i], BackVids[Next], BackVids[i]);
 		}
 
-		if (ComputeSignedMeshVolume(OutMesh) < 0.0)
+		if (UE::Geometry::TMeshQueries<UE::Geometry::FDynamicMesh3>::GetVolumeArea(OutMesh).X < 0.0)
 		{
 			OutMesh.ReverseOrientation();
 		}
@@ -526,6 +702,17 @@ bool UMonolithSliceComponent::InitializeMonolithFromContract(
 		BuildProceduralMonolithShape(RemainderDynMesh, FallbackOrTargetShape, Contract->DimensionsCm);
 	}
 
+	// Ensure outward-facing UE5 triangle orientation prior to UV projection and volume/CoM integration.
+	RemainderDynMesh->EditMesh([](UE::Geometry::FDynamicMesh3& EditMesh)
+	{
+		if (EditMesh.TriangleCount() >= MinValidIslandTriangles &&
+			EditMesh.IsClosed() &&
+			UE::Geometry::TMeshQueries<UE::Geometry::FDynamicMesh3>::GetVolumeArea(EditMesh).X < 0.0)
+		{
+			EditMesh.ReverseOrientation(true);
+		}
+	});
+
 	// Step 3: Bake static object-space Box-Projection UVs into UV0 once at spawn to prevent texture swimming.
 	const double UVScaleCm = FMath::Max(10.0, static_cast<double>(Contract->BoxProjectionUVScaleCm));
 	const FTransform BoxProjTransform(FQuat::Identity, FVector::ZeroVector, FVector(UVScaleCm));
@@ -636,7 +823,8 @@ FSliceResultSummary UMonolithSliceComponent::ExecuteSlice(
 	const FVector& PlaneOriginWorld,
 	const FVector& PlaneNormalWorld,
 	TArray<FVolatileVeinDefinition>& InOutActiveVeins,
-	TArray<ASeveredChunkActor*>& OutSpawnedChunks)
+	TArray<ASeveredChunkActor*>& OutSpawnedChunks,
+	const FLaserSliceAperture& SheetAperture)
 {
 	OutSpawnedChunks.Reset();
 
@@ -671,10 +859,11 @@ FSliceResultSummary UMonolithSliceComponent::ExecuteSlice(
 		return Summary;
 	}
 
-	// Step 0: Zero-Allocation Vertex Sign Miss Check.
+	// Step 0: Zero-Allocation Plane + Finite Laser Sheet Aperture Miss Check.
 	bool bHasValidMesh = false;
 	bool bMissedTarget = false;
-	RemainderDynMesh->ProcessMesh([&LocalOrigin, &LocalNormal, &bHasValidMesh, &bMissedTarget](const UE::Geometry::FDynamicMesh3& SourceMesh)
+	RemainderDynMesh->ProcessMesh([&RemainderTransform, &PlaneOriginWorld, &LocalOrigin, &LocalNormal, &SheetAperture, &bHasValidMesh, &bMissedTarget](
+		const UE::Geometry::FDynamicMesh3& SourceMesh)
 	{
 		if (SourceMesh.TriangleCount() < MinValidIslandTriangles)
 		{
@@ -683,20 +872,13 @@ FSliceResultSummary UMonolithSliceComponent::ExecuteSlice(
 		}
 
 		bHasValidMesh = true;
-		double MinSignedDist = TNumericLimits<double>::Max();
-		double MaxSignedDist = TNumericLimits<double>::Lowest();
-
-		for (int32 Vid : SourceMesh.VertexIndicesItr())
-		{
-			const double SignedDist = (SourceMesh.GetVertex(Vid) - LocalOrigin).Dot(LocalNormal);
-			MinSignedDist = FMath::Min(MinSignedDist, SignedDist);
-			MaxSignedDist = FMath::Max(MaxSignedDist, SignedDist);
-		}
-
-		if (MinSignedDist >= -SliceVertexSignEpsilon || MaxSignedDist <= SliceVertexSignEpsilon)
-		{
-			bMissedTarget = true;
-		}
+		bMissedTarget = !DoesPlaneAndApertureIntersectMesh(
+			SourceMesh,
+			RemainderTransform,
+			PlaneOriginWorld,
+			LocalOrigin,
+			LocalNormal,
+			SheetAperture);
 	});
 
 	if (!bHasValidMesh)
@@ -1061,9 +1243,10 @@ FSliceResultSummary UMonolithSliceComponent::ExecuteSlice(
 
 bool UMonolithSliceComponent::DoesPlaneIntersectRemainder(
 	const FVector& PlaneOriginWorld,
-	const FVector& PlaneNormalWorld) const
+	const FVector& PlaneNormalWorld,
+	const FLaserSliceAperture& SheetAperture) const
 {
-	if (!IsValid(RemainderMeshComponent))
+	if (!IsValid(RemainderMeshComponent) || CurrentRemainderMassKg <= 0.0f)
 	{
 		return false;
 	}
@@ -1089,24 +1272,21 @@ bool UMonolithSliceComponent::DoesPlaneIntersectRemainder(
 	}
 
 	bool bIntersects = false;
-	RemainderDynMesh->ProcessMesh([&LocalOrigin, &LocalNormal, &bIntersects](const UE::Geometry::FDynamicMesh3& SourceMesh)
+	RemainderDynMesh->ProcessMesh([&RemainderTransform, &PlaneOriginWorld, &LocalOrigin, &LocalNormal, &SheetAperture, &bIntersects](
+		const UE::Geometry::FDynamicMesh3& SourceMesh)
 	{
 		if (SourceMesh.TriangleCount() < MinValidIslandTriangles)
 		{
 			return;
 		}
 
-		double MinSignedDist = TNumericLimits<double>::Max();
-		double MaxSignedDist = TNumericLimits<double>::Lowest();
-
-		for (int32 Vid : SourceMesh.VertexIndicesItr())
-		{
-			const double SignedDist = (SourceMesh.GetVertex(Vid) - LocalOrigin).Dot(LocalNormal);
-			MinSignedDist = FMath::Min(MinSignedDist, SignedDist);
-			MaxSignedDist = FMath::Max(MaxSignedDist, SignedDist);
-		}
-
-		bIntersects = (MinSignedDist < -SliceVertexSignEpsilon && MaxSignedDist > SliceVertexSignEpsilon);
+		bIntersects = DoesPlaneAndApertureIntersectMesh(
+			SourceMesh,
+			RemainderTransform,
+			PlaneOriginWorld,
+			LocalOrigin,
+			LocalNormal,
+			SheetAperture);
 	});
 
 	return bIntersects;
@@ -1204,7 +1384,7 @@ bool UMonolithSliceComponent::EstimateSeveredMassKg(
 			}
 			if (PosCount == 3)
 			{
-				AccumSixVol += P[0].Dot(P[1].Cross(P[2]));
+				AccumSixVol += SignedTetSixVolumeUE(P[0], P[1], P[2]);
 				continue;
 			}
 			if (PosCount == 1)
@@ -1219,7 +1399,7 @@ bool UMonolithSliceComponent::EstimateSeveredMassKg(
 				const FVector3d Qij = P[i] + Tij * (P[j] - P[i]);
 				const FVector3d Qik = P[i] + Tik * (P[k] - P[i]);
 
-				AccumSixVol += P[i].Dot(Qij.Cross(Qik));
+				AccumSixVol += SignedTetSixVolumeUE(P[i], Qij, Qik);
 			}
 			else // PosCount == 2
 			{
@@ -1233,8 +1413,8 @@ bool UMonolithSliceComponent::EstimateSeveredMassKg(
 				const FVector3d Qji = P[j] + Tji * (P[i] - P[j]);
 				const FVector3d Qki = P[k] + Tki * (P[i] - P[k]);
 
-				AccumSixVol += P[j].Dot(P[k].Cross(Qki));
-				AccumSixVol += P[j].Dot(Qki.Cross(Qji));
+				AccumSixVol += SignedTetSixVolumeUE(P[j], P[k], Qki);
+				AccumSixVol += SignedTetSixVolumeUE(P[j], Qki, Qji);
 			}
 		}
 
@@ -1255,8 +1435,12 @@ bool UMonolithSliceComponent::EstimateSeveredMassKg(
 
 FBox UMonolithSliceComponent::GetRemainderWorldBounds() const
 {
-	if (IsValid(RemainderMeshComponent))
+	if (IsValid(RemainderMeshComponent) && CurrentRemainderMassKg > 0.0f)
 	{
+		if (CurrentRemainderLocalBounds.IsValid)
+		{
+			return CurrentRemainderLocalBounds.TransformBy(RemainderMeshComponent->GetComponentTransform());
+		}
 		return RemainderMeshComponent->Bounds.GetBox();
 	}
 	return FBox(ForceInit);

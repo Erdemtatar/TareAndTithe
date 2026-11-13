@@ -145,10 +145,10 @@ protected:
 	float LaserReticleLateralOffsetCm = 52.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry", meta = (ClampMin = "2.0", ClampMax = "24.0"))
-	float LaserReticleSheetClearanceGapCm = 6.0f;
+	float LaserReticleSheetClearanceGapCm = 8.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry", meta = (ClampMin = "40.0", ClampMax = "140.0"))
-	float LaserReticleMaxLateralOffsetCm = 96.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry", meta = (ClampMin = "40.0", ClampMax = "200.0"))
+	float LaserReticleMaxLateralOffsetCm = 148.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry", meta = (ClampMin = "20.0", ClampMax = "80.0"))
 	float LaserReticleFrontOffsetCm = 46.0f;
@@ -223,7 +223,7 @@ protected:
 	float MaxUpwardCameraPitchCeilingDegrees = -2.2f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Camera", meta = (ClampMin = "20.0", ClampMax = "250.0"))
-	float ParallaxReferenceHorizontalSpanCm = 75.0f;
+	float ParallaxReferenceHorizontalSpanCm = 58.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Camera", meta = (ClampMin = "20.0", ClampMax = "250.0"))
 	float ParallaxReferenceVerticalSpanCm = 85.0f;
@@ -291,7 +291,8 @@ private:
 	bool HandleQueryLaserSliceTarget(
 		UObject*& OutSliceableTarget,
 		FVector& OutPlaneOriginWorld,
-		FVector& OutPlaneNormalWorld);
+		FVector& OutPlaneNormalWorld,
+		FLaserSliceAperture& OutSheetAperture);
 
 	void HandlePreviewTelemetryUpdated(const FSlicePreviewTelemetry& PreviewTelemetry);
 	void HandleCapacitorChargeStateChanged(bool bIsNowCharging);

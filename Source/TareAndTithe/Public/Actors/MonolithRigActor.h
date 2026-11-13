@@ -39,11 +39,13 @@ public:
 	// ISliceableTargetInterface
 	virtual FSlicePreviewTelemetry PreviewSlicePlane_Implementation(
 		const FVector& PlaneOriginWorld,
-		const FVector& PlaneNormalWorld) override;
+		const FVector& PlaneNormalWorld,
+		const FLaserSliceAperture& SheetAperture) override;
 
 	virtual FSliceResultSummary CommitSlicePlane_Implementation(
 		const FVector& PlaneOriginWorld,
-		const FVector& PlaneNormalWorld) override;
+		const FVector& PlaneNormalWorld,
+		const FLaserSliceAperture& SheetAperture) override;
 
 	virtual FBox GetTargetWorldBounds_Implementation() const override;
 
@@ -113,7 +115,7 @@ protected:
 	float JawPocketSeatEmbedZCm = 1.2f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rig|ClampFit", meta = (ClampMin = "0.5", ClampMax = "8.0"))
-	float JawProngOuterProtrusionCm = 3.2f;
+	float JawProngOuterProtrusionCm = 2.6f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rig|ClampFit", meta = (ClampMin = "0.25", ClampMax = "0.95"))
 	float CustomJawProngInnerRatioX = 0.52f;

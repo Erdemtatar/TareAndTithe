@@ -102,6 +102,7 @@ public:
 	void UnregisterSliceableRig(UObject* RigObject);
 	bool HasRegisteredSliceableRig() const { return IsValid(RigBinding.SliceableTarget.GetObject()); }
 	UObject* GetRegisteredSliceableTargetObject() const { return RigBinding.SliceableTarget.GetObject(); }
+	FVector GetSliceableRigWorldLocation() const { return QueryRigLocationOrZero(); }
 
 	void RegisterQuotaReceiver(const FShiftQuotaReceiverBinding& InBinding);
 	void UnregisterQuotaReceiver(UObject* ReceiverObject);

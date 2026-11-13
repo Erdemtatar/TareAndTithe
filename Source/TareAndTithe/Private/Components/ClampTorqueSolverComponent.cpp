@@ -146,7 +146,8 @@ void UClampTorqueSolverComponent::TickComponent(
 	const double Stiffness = static_cast<double>(ClampSpringStiffness);
 	const double Damping = static_cast<double>(ClampSpringDamping);
 	const double InvInertia = 1.0 / FMath::Max(0.25, static_cast<double>(EffectiveInertiaKgM2));
-	const double MaxThetaRad = FMath::DegreesToRadians(static_cast<double>(ThetaMaxDegrees));
+	const double MaxRollRad = FMath::DegreesToRadians(static_cast<double>(ThetaMaxDegrees));
+	const double MaxPitchRad = FMath::DegreesToRadians(static_cast<double>(FMath::Min(ThetaMaxDegrees, MaxPitchTiltDegrees)));
 	const double OnsetThreshold = static_cast<double>(FatigueOnsetStrainRatio);
 	const double ShearThreshold = static_cast<double>(CatastrophicShearStrainRatio);
 	const double GraceSeconds = FMath::Max(0.1, static_cast<double>(ClampFatigueGraceSeconds));
@@ -154,7 +155,7 @@ void UClampTorqueSolverComponent::TickComponent(
 
 	for (int32 StepIdx = 0; StepIdx < NumSubsteps; ++StepIdx)
 	{
-		// 2-axis semi-implicit Euler spring-damper integration.
+		// 2-axis semi-implicit Euler spring-damper integration (X = Roll around +X, Y = Pitch around +Y).
 		const FVector2d AccelRadPerSec2(
 			(TorqueNeutralNm.X - (Stiffness * ThetaRad.X) - (Damping * OmegaRadPerSec.X)) * InvInertia,
 			(TorqueNeutralNm.Y - (Stiffness * ThetaRad.Y) - (Damping * OmegaRadPerSec.Y)) * InvInertia);
@@ -162,25 +163,25 @@ void UClampTorqueSolverComponent::TickComponent(
 		OmegaRadPerSec += AccelRadPerSec2 * SubDt;
 		ThetaRad += OmegaRadPerSec * SubDt;
 
-		if (ThetaRad.X > MaxThetaRad)
+		if (ThetaRad.X > MaxRollRad)
 		{
-			ThetaRad.X = MaxThetaRad;
+			ThetaRad.X = MaxRollRad;
 			OmegaRadPerSec.X = FMath::Min(0.0, OmegaRadPerSec.X);
 		}
-		else if (ThetaRad.X < -MaxThetaRad)
+		else if (ThetaRad.X < -MaxRollRad)
 		{
-			ThetaRad.X = -MaxThetaRad;
+			ThetaRad.X = -MaxRollRad;
 			OmegaRadPerSec.X = FMath::Max(0.0, OmegaRadPerSec.X);
 		}
 
-		if (ThetaRad.Y > MaxThetaRad)
+		if (ThetaRad.Y > MaxPitchRad)
 		{
-			ThetaRad.Y = MaxThetaRad;
+			ThetaRad.Y = MaxPitchRad;
 			OmegaRadPerSec.Y = FMath::Min(0.0, OmegaRadPerSec.Y);
 		}
-		else if (ThetaRad.Y < -MaxThetaRad)
+		else if (ThetaRad.Y < -MaxPitchRad)
 		{
-			ThetaRad.Y = -MaxThetaRad;
+			ThetaRad.Y = -MaxPitchRad;
 			OmegaRadPerSec.Y = FMath::Max(0.0, OmegaRadPerSec.Y);
 		}
 
@@ -249,9 +250,13 @@ void UClampTorqueSolverComponent::RecomputeNeutralFrameTorqueAndInertia()
 	const FVector PivotWorldCm = NeutralPivotWorld.GetLocation();
 	const FVector LeverArmMeters = (NeutralWorldCoMCm - PivotWorldCm) * CentimetersToMeters;
 
+	// UE5 FRotationTranslationMatrix(FRotator(Pitch, 0, Roll)): z_world = x*sin(Pitch) - y*sin(Roll)*cos(Pitch) + z*cos(Roll)*cos(Pitch).
+	// Generalized gravity torque -d(m*g*z_world)/d(Roll, Pitch) at neutral (0, 0):
+	//   tau_Roll  (X) = +LeverArmMeters.Y * m * g  (+Y foot overhang pulls +Y jaw downward in Roll, zero Pitch)
+	//   tau_Pitch (Y) = -LeverArmMeters.X * m * g  (+X depth overhang pulls +X jaw downward in Pitch)
 	const double MassKg = static_cast<double>(RemainderMassKg);
-	TorqueNeutralNm.X = -LeverArmMeters.Y * MassKg * GravityAccelerationMps2;
-	TorqueNeutralNm.Y = +LeverArmMeters.X * MassKg * GravityAccelerationMps2;
+	TorqueNeutralNm.X = +LeverArmMeters.Y * MassKg * GravityAccelerationMps2;
+	TorqueNeutralNm.Y = -LeverArmMeters.X * MassKg * GravityAccelerationMps2;
 
 	const double HorizontalTorqueMagNm = TorqueNeutralNm.Length();
 	const double SafeMaxTorqueNm = FMath::Max(1.0, static_cast<double>(ClampMaxSafeTorqueNm));

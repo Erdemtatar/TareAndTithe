@@ -30,6 +30,9 @@ public:
 	void SetLaserVisualComponent(USceneComponent* InVisualComponent);
 	USceneComponent* GetLaserVisualComponent() const { return LaserVisualComponent; }
 
+	void SetSheetApertureExtents(float InHalfDepthCm, float InHalfWidthCm);
+	FLaserSliceAperture GetCurrentSliceAperture() const;
+
 	void SetFrameBasis(const FVector& InFrameAnchorWorld, const FVector& InFrameForwardWorld);
 	const FVector& GetFrameAnchorWorld() const { return FrameAnchorWorld; }
 	FVector GetFrameForwardUnit() const;
@@ -69,7 +72,7 @@ protected:
 	FVector FrameForwardWorld = FVector(1.0, 0.0, 0.0);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "LaserAim|Frame", meta = (ClampMin = "10.0", ClampMax = "250.0"))
-	float MaxHorizontalOffsetCm = 75.0f;
+	float MaxHorizontalOffsetCm = 58.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "LaserAim|Frame", meta = (ClampMin = "10.0", ClampMax = "250.0"))
 	float MaxVerticalOffsetCm = 85.0f;
@@ -116,6 +119,8 @@ private:
 	float PitchBevelDegrees = 0.0f;
 	float ChargeLockedRollDegrees = 0.0f;
 	float ChargeLockedPitchBevelDegrees = 0.0f;
+	float SheetHalfDepthCm = 36.0f;
+	float SheetHalfWidthCm = 34.0f;
 
 	bool bIsAimingEnabled = false;
 	bool bIsBevelButtonHeld = false;

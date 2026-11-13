@@ -43,9 +43,13 @@ public:
 		const FVector& PlaneOriginWorld,
 		const FVector& PlaneNormalWorld,
 		TArray<FVolatileVeinDefinition>& InOutActiveVeins,
-		TArray<ASeveredChunkActor*>& OutSpawnedChunks);
+		TArray<ASeveredChunkActor*>& OutSpawnedChunks,
+		const FLaserSliceAperture& SheetAperture = FLaserSliceAperture());
 
-	bool DoesPlaneIntersectRemainder(const FVector& PlaneOriginWorld, const FVector& PlaneNormalWorld) const;
+	bool DoesPlaneIntersectRemainder(
+		const FVector& PlaneOriginWorld,
+		const FVector& PlaneNormalWorld,
+		const FLaserSliceAperture& SheetAperture = FLaserSliceAperture()) const;
 	bool EstimateSeveredMassKg(
 		const FVector& PlaneOriginWorld,
 		const FVector& PlaneNormalWorld,

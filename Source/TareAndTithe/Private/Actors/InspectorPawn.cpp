@@ -327,6 +327,9 @@ void AInspectorPawn::BeginPlay()
 	if (IsValid(LaserPlaneAimComponent))
 	{
 		LaserPlaneAimComponent->SetLaserVisualComponent(LaserPlaneVisualPivot);
+		LaserPlaneAimComponent->SetSheetApertureExtents(
+			0.5f * FMath::Max(20.0f, LaserFrameDepthCm),
+			0.5f * FMath::Max(20.0f, LaserFrameWidthCm));
 		LaserPlaneAimComponent->OnPreviewUpdated.AddUObject(this, &AInspectorPawn::HandlePreviewTelemetryUpdated);
 	}
 
@@ -529,13 +532,27 @@ void AInspectorPawn::RefreshAimTargetAndFrameFromShift()
 
 	LaserPlaneAimComponent->SetSliceableTarget(TargetObj);
 
-	FVector AnchorWorld = GetActorLocation() + (GetActorForwardVector() * 220.0);
+	FVector AnchorWorld = GetActorLocation() + (GetActorForwardVector() * 260.0);
+	const FVector RigWorldLoc = IsValid(ShiftSubsystem) ? ShiftSubsystem->GetSliceableRigWorldLocation() : FVector::ZeroVector;
+	const bool bHasRigWorldLoc = !RigWorldLoc.IsNearlyZero();
+	if (bHasRigWorldLoc)
+	{
+		AnchorWorld.X = RigWorldLoc.X;
+		AnchorWorld.Y = RigWorldLoc.Y;
+	}
+
 	if (IsValid(TargetObj) && TargetObj->Implements<USliceableTargetInterface>())
 	{
 		const FBox TargetBounds = ISliceableTargetInterface::Execute_GetTargetWorldBounds(TargetObj);
 		if (TargetBounds.IsValid)
 		{
-			AnchorWorld = TargetBounds.GetCenter();
+			const FVector BoundsCenter = TargetBounds.GetCenter();
+			AnchorWorld.Z = BoundsCenter.Z;
+			if (!bHasRigWorldLoc)
+			{
+				AnchorWorld.X = BoundsCenter.X;
+				AnchorWorld.Y = BoundsCenter.Y;
+			}
 		}
 	}
 
@@ -656,6 +673,12 @@ void AInspectorPawn::ConfigureLaserFrameGeometry()
 
 	const double HalfDepth = 0.5 * SafeDepthCm;
 	const double HalfWidth = 0.5 * SafeWidthCm;
+	if (IsValid(LaserPlaneAimComponent))
+	{
+		LaserPlaneAimComponent->SetSheetApertureExtents(
+			static_cast<float>(HalfDepth),
+			static_cast<float>(HalfWidth));
+	}
 	const double BarWidthScale = SafeBarWidthCm / 100.0;
 	const double BarThickScale = SafeBarThickCm / 100.0;
 	const double SpanWidthScale = (SafeWidthCm + SafeBarWidthCm) / 100.0;
@@ -913,29 +936,50 @@ void AInspectorPawn::UpdateLaserReticleTransform()
 	const FVector PlaneOrigin = LaserPlaneAimComponent->GetCurrentPlaneOriginWorld();
 	const FQuat PlaneOrient = LaserPlaneAimComponent->GetCurrentPlaneOrientationWorld();
 
-	// Dynamically keep reticle readout clear of the right-most projected edge of the laser frame bar.
-	const double PlaneRightOffsetCm = FVector::DotProduct(PlaneOrigin - FrameAnchor, FrameRight);
+	// Dynamically keep reticle readout clear of both world and perspective-projected right-most edges of the 3D laser frame.
 	const double HalfSpanDepthCm = 0.5 * (
 		FMath::Max(20.0, static_cast<double>(LaserFrameDepthCm)) +
 		FMath::Max(0.2, static_cast<double>(LaserFrameBarWidthCm)));
 	const double HalfSpanWidthCm = 0.5 * (
 		FMath::Max(20.0, static_cast<double>(LaserFrameWidthCm)) +
 		FMath::Max(0.2, static_cast<double>(LaserFrameBarWidthCm)));
-	const double ProjectedHalfRightSpanCm =
-		(HalfSpanDepthCm * FMath::Abs(FVector::DotProduct(PlaneOrient.GetAxisX(), FrameRight))) +
-		(HalfSpanWidthCm * FMath::Abs(FVector::DotProduct(PlaneOrient.GetAxisY(), FrameRight)));
+
+	const FVector ReticlePlanePoint = FrameAnchor - (FrameForward * static_cast<double>(LaserReticleFrontOffsetCm));
+	const FVector CamWorldLoc = IsValid(InspectorCamera) ? InspectorCamera->GetComponentLocation() : GetActorLocation();
+	const double DepthReticleFromCam = FMath::Max(20.0, FVector::DotProduct(ReticlePlanePoint - CamWorldLoc, FrameForward));
+	const double CamRightOffsetFromAnchor = FVector::DotProduct(CamWorldLoc - FrameAnchor, FrameRight);
+
+	const FVector AxisU = PlaneOrient.GetAxisX();
+	const FVector AxisV = PlaneOrient.GetAxisY();
+	double MaxSheetRightAtReticleCm = FVector::DotProduct(PlaneOrigin - FrameAnchor, FrameRight);
+
+	for (int32 SignU = -1; SignU <= 1; SignU += 2)
+	{
+		for (int32 SignV = -1; SignV <= 1; SignV += 2)
+		{
+			const FVector CornerWorld =
+				PlaneOrigin +
+				(AxisU * (static_cast<double>(SignU) * HalfSpanDepthCm)) +
+				(AxisV * (static_cast<double>(SignV) * HalfSpanWidthCm));
+
+			const double WorldRightOffsetCm = FVector::DotProduct(CornerWorld - FrameAnchor, FrameRight);
+			const double DepthCornerFromCam = FMath::Max(20.0, FVector::DotProduct(CornerWorld - CamWorldLoc, FrameForward));
+			const double CornerRightFromCam = FVector::DotProduct(CornerWorld - CamWorldLoc, FrameRight);
+			const double PerspRightAtReticleCm =
+				CamRightOffsetFromAnchor + (CornerRightFromCam * (DepthReticleFromCam / DepthCornerFromCam));
+
+			MaxSheetRightAtReticleCm = FMath::Max3(MaxSheetRightAtReticleCm, WorldRightOffsetCm, PerspRightAtReticleCm);
+		}
+	}
+
 	const double MinClearLateralCm =
-		PlaneRightOffsetCm +
-		ProjectedHalfRightSpanCm +
+		MaxSheetRightAtReticleCm +
 		static_cast<double>(LaserReticleSheetClearanceGapCm);
 	const double BaseLateralCm = static_cast<double>(LaserReticleLateralOffsetCm);
 	const double MaxLateralCm = FMath::Max(BaseLateralCm, static_cast<double>(LaserReticleMaxLateralOffsetCm));
 	const double EffectiveLateralOffsetCm = FMath::Clamp(FMath::Max(BaseLateralCm, MinClearLateralCm), BaseLateralCm, MaxLateralCm);
 
-	FVector ReticleWorldLocation =
-		FrameAnchor
-		- (FrameForward * static_cast<double>(LaserReticleFrontOffsetCm))
-		+ (FrameRight * EffectiveLateralOffsetCm);
+	FVector ReticleWorldLocation = ReticlePlanePoint + (FrameRight * EffectiveLateralOffsetCm);
 	ReticleWorldLocation.Z = PlaneOrigin.Z;
 
 	FRotator ReticleWorldRotation = FRotationMatrix::MakeFromX(-FrameForward).Rotator();
@@ -1112,17 +1156,24 @@ void AInspectorPawn::ApplyNativeScalabilityPreset(int32 QualityLevel, float TsrR
 bool AInspectorPawn::HandleQueryLaserSliceTarget(
 	UObject*& OutSliceableTarget,
 	FVector& OutPlaneOriginWorld,
-	FVector& OutPlaneNormalWorld)
+	FVector& OutPlaneNormalWorld,
+	FLaserSliceAperture& OutSheetAperture)
 {
 	if (!IsValid(LaserPlaneAimComponent) || !LaserPlaneAimComponent->IsAimingEnabled())
 	{
 		return false;
 	}
 
+	if (!LaserPlaneAimComponent->IsChargePlaneLocked())
+	{
+		LaserPlaneAimComponent->ForceRefreshPreview();
+	}
+
 	OutSliceableTarget = LaserPlaneAimComponent->GetSliceableTarget();
 	OutPlaneOriginWorld = LaserPlaneAimComponent->GetCurrentPlaneOriginWorld();
 	OutPlaneNormalWorld = LaserPlaneAimComponent->GetCurrentPlaneNormalWorld();
-	return IsValid(OutSliceableTarget);
+	OutSheetAperture = LaserPlaneAimComponent->GetCurrentSliceAperture();
+	return IsValid(OutSliceableTarget) && LaserPlaneAimComponent->GetLastPreviewTelemetry().bIntersectsMonolith;
 }
 
 void AInspectorPawn::HandlePreviewTelemetryUpdated(const FSlicePreviewTelemetry& PreviewTelemetry)
@@ -1130,6 +1181,14 @@ void AInspectorPawn::HandlePreviewTelemetryUpdated(const FSlicePreviewTelemetry&
 	CachedPreviewTelemetry = PreviewTelemetry;
 	bCachedIntersectsMonolith = PreviewTelemetry.bIntersectsMonolith;
 	CachedVeinProximityNormalized = PreviewTelemetry.VeinProximityNormalized;
+
+	if (!PreviewTelemetry.bIntersectsMonolith &&
+		IsValid(LaserCapacitorComponent) &&
+		LaserCapacitorComponent->IsCharging())
+	{
+		LaserCapacitorComponent->CancelCharge();
+	}
+
 	UpdateCameraParallaxFromAim();
 	UpdateLaserSheetMaterialVisuals();
 	UpdateLaserReticleTransform();
@@ -1201,11 +1260,13 @@ void AInspectorPawn::HandleActiveContractLoaded(
 	const UShiftProgressionDataAsset* ShiftConfig,
 	int32 /*ContractIndex*/)
 {
+	bool bActiveInspectionPhase = true;
 	if (UWorld* World = GetWorld())
 	{
 		if (const UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
 		{
 			CachedHudSnapshot = ShiftSubsystem->GetCurrentSnapshot();
+			bActiveInspectionPhase = (ShiftSubsystem->GetCurrentPhase() == EShiftPhase::ActiveInspection);
 		}
 	}
 
@@ -1217,6 +1278,7 @@ void AInspectorPawn::HandleActiveContractLoaded(
 
 	if (IsValid(LaserPlaneAimComponent))
 	{
+		LaserPlaneAimComponent->SetAimingEnabled(bActiveInspectionPhase);
 		LaserPlaneAimComponent->ResetAimAndOrientation();
 	}
 
@@ -1238,6 +1300,10 @@ void AInspectorPawn::HandleActiveContractLoaded(
 	}
 
 	RefreshAimTargetAndFrameFromShift();
+	if (IsValid(LaserPlaneAimComponent) && bActiveInspectionPhase)
+	{
+		LaserPlaneAimComponent->ForceRefreshPreview();
+	}
 	UpdateCameraParallaxFromAim();
 	UpdateLaserSheetMaterialVisuals();
 	UpdateLaserReticleTransform();

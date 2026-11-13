@@ -164,14 +164,18 @@ void AMonolithRigActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 FSlicePreviewTelemetry AMonolithRigActor::PreviewSlicePlane_Implementation(
 	const FVector& PlaneOriginWorld,
-	const FVector& PlaneNormalWorld)
+	const FVector& PlaneNormalWorld,
+	const FLaserSliceAperture& SheetAperture)
 {
 	if (!IsValid(MonolithSliceComponent) || !IsValid(VeinScannerComponent))
 	{
 		return FSlicePreviewTelemetry();
 	}
 
-	const bool bIntersects = MonolithSliceComponent->DoesPlaneIntersectRemainder(PlaneOriginWorld, PlaneNormalWorld);
+	const bool bIntersects = MonolithSliceComponent->DoesPlaneIntersectRemainder(
+		PlaneOriginWorld,
+		PlaneNormalWorld,
+		SheetAperture);
 	FSlicePreviewTelemetry Telemetry = VeinScannerComponent->EvaluateWorldPlane(PlaneOriginWorld, PlaneNormalWorld, bIntersects);
 	if (bIntersects)
 	{
@@ -189,7 +193,8 @@ FSlicePreviewTelemetry AMonolithRigActor::PreviewSlicePlane_Implementation(
 
 FSliceResultSummary AMonolithRigActor::CommitSlicePlane_Implementation(
 	const FVector& PlaneOriginWorld,
-	const FVector& PlaneNormalWorld)
+	const FVector& PlaneNormalWorld,
+	const FLaserSliceAperture& SheetAperture)
 {
 	FSliceResultSummary Summary;
 	if (!IsValid(MonolithSliceComponent) || !IsValid(VeinScannerComponent))
@@ -202,7 +207,8 @@ FSliceResultSummary AMonolithRigActor::CommitSlicePlane_Implementation(
 		PlaneOriginWorld,
 		PlaneNormalWorld,
 		VeinScannerComponent->GetMutableActiveVeins(),
-		SpawnedChunks);
+		SpawnedChunks,
+		SheetAperture);
 
 	if (Summary.Outcome == ECommitSliceOutcome::Success && IsValid(RemainderMeshComponent))
 	{

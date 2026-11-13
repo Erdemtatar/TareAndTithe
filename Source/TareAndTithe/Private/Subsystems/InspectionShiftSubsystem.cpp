@@ -842,11 +842,18 @@ bool UInspectionShiftSubsystem::LoadAndBeginContract(int32 ContractIndex)
 
 	InitialContractMassKg = FMath::Max(0.0f, SpawnedInitialMassKg);
 	RemainderMassKg = InitialContractMassKg;
+	if (InitialContractMassKg <= KINDA_SMALL_NUMBER)
+	{
+		UE_LOG(LogTareAndTithe, Error,
+			TEXT("UInspectionShiftSubsystem: Contract '%s' initialized with non-positive mass (%.3f kg)."),
+			*ActiveContract->GetName(),
+			InitialContractMassKg);
+	}
 
-	CurrentPhase = EShiftPhase::ActiveInspection;
+	// Activate inspection phase BEFORE snapshot & contract-loaded broadcasts so aiming and live preview queries run immediately.
+	SetShiftPhase(EShiftPhase::ActiveInspection);
 	RefreshAndBroadcastSnapshot();
 	OnActiveContractLoaded.Broadcast(ActiveContract, ActiveProgressionAsset, CurrentContractIndex);
-	OnShiftPhaseChanged.Broadcast(CurrentPhase);
 
 	return true;
 }

@@ -68,6 +68,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Clamp|Solver", meta = (ClampMin = "5.0", ClampMax = "45.0"))
 	float ThetaMaxDegrees = 22.0f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Clamp|Solver", meta = (ClampMin = "1.0", ClampMax = "15.0"))
+	float MaxPitchTiltDegrees = 6.0f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Clamp|Solver", meta = (ClampMin = "0.02", ClampMax = "0.25"))
 	float MaxFrameDeltaSeconds = 0.1f;
 

@@ -65,11 +65,22 @@ void ULaserCapacitorComponent::ResetCapacitorState()
 	UpdateTickEnablement();
 }
 
-void ULaserCapacitorComponent::BeginCharge()
+bool ULaserCapacitorComponent::BeginCharge()
 {
 	if (bIsCharging || IsCoolingDown())
 	{
-		return;
+		return false;
+	}
+
+	UObject* TargetObj = nullptr;
+	FVector PlaneOriginWorld = FVector::ZeroVector;
+	FVector PlaneNormalWorld = FVector::UpVector;
+	FLaserSliceAperture SheetAperture;
+	if (!OnQuerySliceTarget.IsBound() ||
+		!OnQuerySliceTarget.Execute(TargetObj, PlaneOriginWorld, PlaneNormalWorld, SheetAperture) ||
+		!IsValid(TargetObj))
+	{
+		return false;
 	}
 
 	bIsCharging = true;
@@ -77,6 +88,7 @@ void ULaserCapacitorComponent::BeginCharge()
 	OnChargeStateChanged.Broadcast(true);
 	EmitChargeTelemetry(0.0f, true);
 	UpdateTickEnablement();
+	return true;
 }
 
 bool ULaserCapacitorComponent::CancelCharge()
@@ -116,10 +128,11 @@ void ULaserCapacitorComponent::CommitFullChargeSlice()
 	UObject* TargetObj = nullptr;
 	FVector PlaneOriginWorld = FVector::ZeroVector;
 	FVector PlaneNormalWorld = FVector::UpVector;
+	FLaserSliceAperture SheetAperture;
 
 	// Query and commit BEFORE unlocking the capacitor plane so the executed cut matches the locked preview plane bitwise.
 	if (OnQuerySliceTarget.IsBound() &&
-		OnQuerySliceTarget.Execute(TargetObj, PlaneOriginWorld, PlaneNormalWorld) &&
+		OnQuerySliceTarget.Execute(TargetObj, PlaneOriginWorld, PlaneNormalWorld, SheetAperture) &&
 		IsValid(TargetObj) &&
 		TargetObj->Implements<USliceableTargetInterface>())
 	{
@@ -127,7 +140,8 @@ void ULaserCapacitorComponent::CommitFullChargeSlice()
 		SliceResult = ISliceableTargetInterface::Execute_CommitSlicePlane(
 			TargetObj,
 			PlaneOriginWorld,
-			PlaneNormalWorld);
+			PlaneNormalWorld,
+			SheetAperture);
 	}
 
 	OnChargeStateChanged.Broadcast(false);
