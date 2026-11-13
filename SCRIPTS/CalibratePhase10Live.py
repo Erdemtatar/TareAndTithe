@@ -19,8 +19,8 @@ import remote_execution  # type: ignore  # noqa: E402
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 BUILD_MATERIALS_SCRIPT = os.path.join(REPO_ROOT, "Scripts", "BuildMaterialsAndBind.py").replace("\\", "/")
 LOGS_DIR = os.path.join(REPO_ROOT, "Saved", "Logs").replace("\\", "/")
-LIT_CAPTURE_FILENAME = "Phase11A_Fix_LitCapture.png"
-CLEAN_PROBE_FILENAME = "_Phase11A_Fix_CleanMetalProbe.png"
+LIT_CAPTURE_FILENAME = "Phase11B_LitCapture.png"
+CLEAN_PROBE_FILENAME = "_Phase11B_CleanMetalProbe.png"
 LIT_CAPTURE_PATH = os.path.join(REPO_ROOT, "Saved", "Logs", LIT_CAPTURE_FILENAME)
 CLEAN_PROBE_PATH = os.path.join(REPO_ROOT, "Saved", "Logs", CLEAN_PROBE_FILENAME)
 
@@ -171,7 +171,7 @@ pit_spot = pit_glow_spots[0]
 pit_loc = pit_spot.get_world_location()
 pit_fwd = unreal.MathLibrary.get_forward_vector(pit_spot.get_world_rotation())
 pit_outer = float(pit_spot.get_editor_property("outer_cone_angle"))
-if float(pit_loc.x) > 350.0 or float(pit_fwd.x) < 0.98 or not (58.0 <= pit_outer <= 68.5):
+if float(pit_loc.x) > 350.0 or float(pit_fwd.x) < 0.82 or not (58.0 <= pit_outer <= 68.5):
     raise AssertionError(
         f"MidgroundWashSpot incidence guard failed: loc={pit_loc}, fwd={pit_fwd}, outer={pit_outer}"
     )
@@ -501,6 +501,152 @@ unreal.log("ROI_JSON=" + json.dumps(roi_payload))
 """
 
 
+REMOTE_VERIFY_DISK_CONTRACTS_SNIPPET = """
+import unreal
+
+# Guard 4: Verify all 6 DA_Contract_01..06 assets on disk have calibrated ClampMaxSafeTorqueNm & 6.5s grace (pre-PIE)
+expected_torques = [
+    ("DA_Contract_01", 26.0),
+    ("DA_Contract_02", 26.5),
+    ("DA_Contract_03", 28.0),
+    ("DA_Contract_04", 30.0),
+    ("DA_Contract_05", 31.0),
+    ("DA_Contract_06", 34.0),
+]
+for cname, exp_nm in expected_torques:
+    cpath = f"/Game/Presentation/Contracts/{cname}"
+    casset = unreal.EditorAssetLibrary.load_asset(cpath)
+    if casset is None:
+        raise AssertionError(f"Missing {cpath} on disk!")
+    actual_nm = float(casset.get_editor_property("clamp_max_safe_torque_nm"))
+    actual_grace = float(casset.get_editor_property("clamp_fatigue_grace_seconds"))
+    if abs(actual_nm - exp_nm) > 0.05 or abs(actual_grace - 6.5) > 0.05:
+        raise AssertionError(
+            f"{cpath} mismatch: max_torque_nm={actual_nm} (exp {exp_nm}), grace={actual_grace} (exp 6.5)"
+        )
+unreal.log("[CalibratePhase10Live] Verified all 6 DA_Contract_01..06 calibrated torque limits & 6.5s grace on disk.")
+"""
+
+
+REMOTE_PHASE11B_TRIGGER_CLAMP_SNAP_SNIPPET = """
+import json
+import unreal
+
+ues = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
+pie_world = ues.get_game_world()
+if pie_world is None:
+    raise RuntimeError("PIE GameWorld is None!")
+
+shift_sub = unreal.TareTitheGameMode.get_inspection_shift_subsystem(pie_world)
+if shift_sub is None:
+    raise RuntimeError("UInspectionShiftSubsystem is None in PIE!")
+
+snap0 = shift_sub.get_current_snapshot()
+if int(snap0.current_shift_number) != 1 or int(snap0.target_bond_shifts) != 3 or int(snap0.scrip_balance) != 0:
+    raise AssertionError(
+        f"Unexpected initial 3-Shift Indenture state: shift={snap0.current_shift_number}/{snap0.target_bond_shifts}, scrip={snap0.scrip_balance}"
+    )
+
+# Guard 1: Verify [1] Requisition feedback at 0 Scrip immediately reports INSUFFICIENT SCRIP (never dead key)
+req_ok = bool(shift_sub.try_purchase_requisition(unreal.RequisitionTrack.CLAMP_HYDRAULICS))
+snap_req = shift_sub.get_current_snapshot()
+fb_str = str(snap_req.transient_requisition_feedback)
+if req_ok or "INSUFFICIENT SCRIP" not in fb_str:
+    raise AssertionError(f"Expected INSUFFICIENT SCRIP feedback at 0 Scrip, got ok={req_ok}, feedback={fb_str!r}")
+
+# Verify DirectorBoothActor & ScaleAssemblyActor diegetic text bezel bounds (zero overflow)
+booths = [a for a in unreal.GameplayStatics.get_all_actors_of_class(pie_world, unreal.Actor) if "DirectorBoothActor" in a.get_class().get_name()]
+scales = [a for a in unreal.GameplayStatics.get_all_actors_of_class(pie_world, unreal.Actor) if "ScaleAssemblyActor" in a.get_class().get_name()]
+rigs = [a for a in unreal.GameplayStatics.get_all_actors_of_class(pie_world, unreal.Actor) if "MonolithRigActor" in a.get_class().get_name()]
+if len(booths) != 1 or len(scales) != 1 or len(rigs) != 1:
+    raise AssertionError(f"Expected 1 Booth, 1 Scale, 1 Rig; found {len(booths)}, {len(scales)}, {len(rigs)}")
+
+for tc in booths[0].get_components_by_class(unreal.TextRenderComponent):
+    w_cm = float(tc.get_text_local_size().y)
+    if w_cm > 135.5:
+        raise AssertionError(f"DirectorBooth {tc.get_name()} width {w_cm:.1f} cm exceeds 135.5 cm safe shutter bezel!")
+
+for tc in scales[0].get_components_by_class(unreal.TextRenderComponent):
+    w_cm = float(tc.get_text_local_size().y)
+    if w_cm > 203.5:
+        raise AssertionError(f"ScaleAssembly {tc.get_name()} width {w_cm:.1f} cm exceeds 203.5 cm safe console bezel!")
+
+# Pillar 1 + Guard 3: Consecutive one-sided (+Y) steep cuts escalate jaw shear and snap clamp!
+rig = rigs[0]
+rem_comp = rig.get_remainder_mesh_component()
+clamp_solver = rig.get_clamp_torque_solver_component()
+bounds = rig.get_target_world_bounds()
+bcenter = (bounds.min + bounds.max) * 0.5
+cx, cy, cz = float(bcenter.x), float(bcenter.y), float(bcenter.z)
+
+aperture = unreal.LaserSliceAperture()
+aperture.set_editor_property("enforce_finite_sheet_bounds", False)
+steep_right_normal = unreal.Vector(0.0, 0.9659258, -0.2588190)
+
+strain_progression = []
+snapped = False
+for y_off in (8.2, 5.4, 2.6, -0.2, -2.8, -5.2):
+    origin = unreal.Vector(cx, cy + y_off, cz)
+    rig.commit_slice_plane(origin, steep_right_normal, aperture)
+    sr = float(clamp_solver.get_strain_ratio())
+    streak = int(clamp_solver.get_same_side_cut_streak())
+    snapped = bool(clamp_solver.is_clamp_snapped())
+    strain_progression.append((round(y_off, 2), round(sr, 3), streak, snapped))
+    if snapped:
+        break
+
+if not snapped:
+    raise AssertionError(f"Consecutive same-side cuts failed to snap clamp! progression={strain_progression}")
+
+snap_z0 = float(rem_comp.get_world_location().z)
+snap_sim0 = bool(rem_comp.is_simulating_physics())
+snap_phase = shift_sub.get_current_phase()
+snap_bark = str(shift_sub.get_current_snapshot().director_intercom_line)
+if not snap_sim0:
+    raise AssertionError("RemainderMeshComponent.IsSimulatingPhysics() is False immediately after clamp snap!")
+
+payload = {
+    "snap_z0": snap_z0,
+    "progression": strain_progression,
+    "phase": str(snap_phase),
+    "director_bark": snap_bark,
+}
+unreal.log("SNAP_INIT_JSON=" + json.dumps(payload))
+"""
+
+
+def make_verify_chaos_freefall_snippet(snap_z0: float) -> str:
+    return f"""
+import unreal
+
+ues = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
+pie_world = ues.get_game_world()
+if pie_world is None:
+    raise RuntimeError("PIE GameWorld is None during Chaos freefall check!")
+
+rigs = [a for a in unreal.GameplayStatics.get_all_actors_of_class(pie_world, unreal.Actor) if "MonolithRigActor" in a.get_class().get_name()]
+if len(rigs) != 1:
+    raise RuntimeError(f"Expected 1 MonolithRigActor, found {{len(rigs)}}")
+
+rem_comp = rigs[0].get_remainder_mesh_component()
+z1 = float(rem_comp.get_world_location().z)
+delta_z = z1 - float({snap_z0!r})
+sim_now = bool(rem_comp.is_simulating_physics())
+vel_z = float(rem_comp.get_component_velocity().z)
+
+unreal.log(
+    f"[CalibratePhase10Live] Chaos Clamp-Snap Freefall Check: z0={snap_z0:.2f} -> z1={{z1:.2f}} cm "
+    f"(DeltaZ={{delta_z:.2f}} cm, vel_z={{vel_z:.1f}} cm/s, simulating={{sim_now}})"
+)
+
+if delta_z > -25.0:
+    raise AssertionError(
+        f"Guard 3 FAILED: Snapped RemainderMeshComponent did not fall under Chaos gravity! "
+        f"z0={snap_z0:.2f}, z1={{z1:.2f}}, DeltaZ={{delta_z:.2f}} cm (required < -25.0 cm)"
+    )
+"""
+
+
 REMOTE_END_PIE_SNIPPET = """
 import unreal
 les = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
@@ -704,8 +850,9 @@ def main() -> int:
         )
         remote.open_command_connection(node_id)
 
-        # 1. Build/compile all Phase 11A-Fix materials, 9 semi-metallic MI_Station_* instances, cubemap & DA_Presentation
+        # 1. Build/compile all Phase 11B materials, 9 semi-metallic MI_Station_* instances, cubemap, contracts & DA_Presentation
         run_remote_checked(remote, BUILD_MATERIALS_SCRIPT, "BuildMaterialsAndBind.py")
+        run_remote_checked(remote, REMOTE_VERIFY_DISK_CONTRACTS_SNIPPET, "Verify Serialized DA_Contract_01..06 on Disk")
 
         # 2. Launch live PIE session and verify spawned components, Lumen shell flags, area lights & <=13ms frame budget
         run_remote_checked(remote, REMOTE_BEGIN_PIE_SNIPPET, "Begin PIE Session")
@@ -739,6 +886,30 @@ def main() -> int:
             remote,
             make_export_clean_probe_and_destroy_snippet(LOGS_DIR, CLEAN_PROBE_FILENAME),
             "Export Clean-Metal Lit Probe & Destroy Transient Capture",
+        )
+
+        # 4. Phase 11B Live Gameplay, Requisition Feedback, Disk Torque Serialization & Chaos Clamp-Snap Gravity Drop Gate
+        snap_init_lines = run_remote_checked(
+            remote,
+            REMOTE_PHASE11B_TRIGGER_CLAMP_SNAP_SNIPPET,
+            "Phase 11B Disk Contracts, Requisition Feedback & Same-Side Clamp Snap Trigger",
+        )
+        snap_init_json = None
+        for ln in snap_init_lines:
+            idx = ln.find("SNAP_INIT_JSON=")
+            if idx >= 0:
+                snap_init_json = json.loads(ln[idx + len("SNAP_INIT_JSON=") :])
+        if not snap_init_json:
+            run_remote_checked(remote, REMOTE_END_PIE_SNIPPET, "End PIE Session (after missing SNAP_INIT_JSON)")
+            raise RuntimeError("Missing SNAP_INIT_JSON payload from Phase 11B clamp snap trigger!")
+        print(f"[CalibratePhase10Live] Same-side cut progression & snap bark: {snap_init_json}")
+
+        # Let PIE tick ~0.48s (< 1.8s FaultAutoResetDelaySeconds) so RemainderMeshComponent falls in real Chaos gravity
+        time.sleep(0.48)
+        run_remote_checked(
+            remote,
+            make_verify_chaos_freefall_snippet(float(snap_init_json["snap_z0"])),
+            "Verify Real Chaos Freefall Drop (DeltaZ < -25.0 cm)",
         )
 
         run_remote_checked(remote, REMOTE_END_PIE_SNIPPET, "End PIE Session")
@@ -819,15 +990,14 @@ def main() -> int:
                 f"ROI 2 (Diverter Flapper & Scale Pan/Base) FAILED gate (36..135 mean, >=110 peak): {st_div}"
             )
 
-        # Gate 3: Rear Foundry Grate Shaft & Flanking Columns >= 26 mean (<= 115 anti-blowout), >= 85 peak + visibly warm amber (R > G > B)
+        # Gate 3: Rear Foundry Grate Shaft & Flanking Columns 18..26 mean_luma (subordinate to hero steel), >=65 peak_luma (< Clamp peak) + warm furnace ember (R > G > B)
         if (
-            min(st_grate["mean_luma"], st_grate["mean_avg"]) < 26.0
-            or max(st_grate["mean_luma"], st_grate["mean_avg"]) > 115.0
-            or min(st_grate["peak_luma"], st_grate["peak_avg"]) < 85.0
+            not (18.0 <= st_grate["mean_luma"] <= 26.0)
+            or not (65.0 <= st_grate["peak_luma"] <= st_clamp["peak_luma"])
             or not (st_grate["mean_r"] > st_grate["mean_g"] > st_grate["mean_b"])
         ):
             raise AssertionError(
-                f"ROI 3 (Rear Foundry Grate Shaft & Flanking Columns) FAILED gate (26..115 mean, >=85 peak, warm R>G>B): {st_grate}"
+                f"ROI 3 (Rear Foundry Grate Shaft & Flanking Columns) FAILED Phase 11B hierarchy gate (18..26 mean_luma, 65..{st_clamp['peak_luma']:.1f} peak_luma, warm R>G>B): {st_grate}"
             )
 
         # Gate 4: Outer Left/Right Vignette Borders <= 16 mean

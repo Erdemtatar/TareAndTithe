@@ -8,6 +8,7 @@
 
 class ASceneCapture2D;
 class UCameraComponent;
+class UInspectionShiftSubsystem;
 class UMaterialInterface;
 class UShiftProgressionDataAsset;
 class UStaticMesh;
@@ -27,6 +28,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Presentation|Diagnostics")
 	static ASceneCapture2D* SpawnTransientLitCapture2D(UCameraComponent* SourceCamera, UTextureRenderTarget2D* RenderTarget);
+
+	UFUNCTION(BlueprintCallable, Category = "Presentation|Diagnostics")
+	static UInspectionShiftSubsystem* GetInspectionShiftSubsystem(const UObject* WorldContextObject);
 
 protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation")

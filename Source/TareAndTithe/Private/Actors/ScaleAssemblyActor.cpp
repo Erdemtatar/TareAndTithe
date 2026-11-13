@@ -277,7 +277,12 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 
 	HeaderStencilText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("HeaderStencilText"));
 	HeaderStencilText->SetupAttachment(ScaleConsoleRoot);
-	ConfigureReadoutText(HeaderStencilText, FVector(-2.0, 0.0, 14.8), 5.4f, ReadoutHeaderCyanColor, TEXT("DIRECTOR'S CUT"));
+	ConfigureReadoutText(
+		HeaderStencilText,
+		FVector(-2.0, 0.0, 14.8),
+		4.8f,
+		ReadoutHeaderCyanColor,
+		TEXT("SHIFT 01/03 | SCRIP: 00 || [1]HYD L0(2) [2]TARE L0(2) [3]SCAN L0(2)"));
 
 	ContractCodeText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("ContractCodeText"));
 	ContractCodeText->SetupAttachment(ScaleConsoleRoot);
@@ -316,7 +321,7 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 		FVector(-2.0, 0.0, -15.6),
 		ControlStencilDefaultWorldSize,
 		ReadoutControlStencilColor,
-		TEXT("SCROLL: ROTATE | RMB: BEVEL | [SPACE]: TITHE/TARE | [E]: STAMP | HOLD [R]: RESET"));
+		TEXT("SCROLL: ROLL | RMB: BEVEL | [SPACE]: ROUTE | [E]: STAMP | [1-3]: UPGRADE | HOLD [R]: RESET"));
 }
 
 void AScaleAssemblyActor::BeginPlay()
@@ -515,8 +520,17 @@ void AScaleAssemblyActor::ConfigureForContract(const UMonolithContractDataAsset*
 	{
 		if (const UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
 		{
+			CachedSnapshot = ShiftSubsystem->GetCurrentSnapshot();
 			CachedContractIndex = ShiftSubsystem->GetCurrentContractIndex();
 			CachedTotalContracts = FMath::Max(1, ShiftSubsystem->GetTotalContractCount());
+			if (IsValid(Contract))
+			{
+				const float EffTolKg = ShiftSubsystem->GetEffectiveQuotaToleranceKg(Contract);
+				CachedSnapshot.TargetTitheMassKg = Contract->TargetTitheMassKg;
+				CachedSnapshot.QuotaToleranceKg = EffTolKg;
+				CachedSnapshot.DirectorsCutToleranceKg = ShiftSubsystem->GetDirectorsCutToleranceKg(EffTolKg);
+				CachedSnapshot.MaxAllowedTareWasteKg = ShiftSubsystem->GetEffectiveMaxTareWasteKg(Contract);
+			}
 		}
 	}
 
@@ -615,11 +629,18 @@ void AScaleAssemblyActor::HandleContractSnapshotUpdated(const FContractRuntimeSn
 	CachedSnapshot = Snapshot;
 	CachedContractIndex = Snapshot.ContractIndex;
 
+	if (IsValid(ScaleWeighingComponent))
+	{
+		const float SettleMultiplier = 1.0f + (0.25f * static_cast<float>(Snapshot.VeinScannerDamperLevel));
+		ScaleWeighingComponent->SetSettleDampingMultiplier(SettleMultiplier);
+	}
+
 	if (UWorld* World = GetWorld())
 	{
 		if (const UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
 		{
 			CachedTotalContracts = FMath::Max(1, ShiftSubsystem->GetTotalContractCount());
+			CachedShiftPhase = ShiftSubsystem->GetCurrentPhase();
 		}
 	}
 
@@ -726,6 +747,14 @@ void AScaleAssemblyActor::HandleActiveContractLoaded(
 		CachedSnapshot.TargetTitheMassKg = Contract->TargetTitheMassKg;
 		CachedSnapshot.QuotaToleranceKg = Contract->QuotaToleranceKg;
 		CachedSnapshot.MaxAllowedTareWasteKg = Contract->MaxAllowedTareWasteKg;
+
+		if (UWorld* World = GetWorld())
+		{
+			if (const UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
+			{
+				CachedSnapshot = ShiftSubsystem->GetCurrentSnapshot();
+			}
+		}
 	}
 
 	bHasLatchedVerdictBanner = false;
@@ -903,21 +932,50 @@ void AScaleAssemblyActor::RefreshContractHeaderReadout()
 	const float TargetKg = FMath::Max(0.0f, CachedSnapshot.TargetTitheMassKg);
 	const float MinValidKg = FMath::Max(0.0f, TargetKg - CachedSnapshot.QuotaToleranceKg);
 	const float MaxValidKg = TargetKg + CachedSnapshot.QuotaToleranceKg;
+	const float DirCutTolKg = FMath::Max(0.15f, CachedSnapshot.DirectorsCutToleranceKg);
 
 	const FString HeaderLine = FString::Printf(
-		TEXT("CONTRACT %02d/%02d | TARGET: %.2f KG [%.2f - %.2f]"),
+		TEXT("CTR %02d/%02d | TARGET: %.2f KG [%.2f-%.2f] | DIR.CUT +-%.2f KG"),
 		DisplayIndex,
 		DisplayTotal,
 		TargetKg,
 		MinValidKg,
-		MaxValidKg);
+		MaxValidKg,
+		DirCutTolKg);
 
 	ContractCodeText->SetText(FText::FromString(HeaderLine));
 	ContractCodeText->SetTextRenderColor(ReadoutHeaderCyanColor);
-	FitReadoutLineWidth(ContractCodeText, 4.6f, 3.4f, StatusBannerMaxSafeWidthCm);
+	FitReadoutLineWidth(ContractCodeText, 4.5f, 3.2f, StatusBannerMaxSafeWidthCm);
+
 	if (IsValid(HeaderStencilText))
 	{
+		auto FormatUpgradeSlot = [](const TCHAR* KeyLabel, uint8 Level) -> FString
+		{
+			const int32 ClampedLv = FMath::Clamp(static_cast<int32>(Level), 0, 3);
+			if (ClampedLv >= 3)
+			{
+				return FString::Printf(TEXT("%s L3(MAX)"), KeyLabel);
+			}
+			return FString::Printf(TEXT("%s L%d(%d)"), KeyLabel, ClampedLv, ClampedLv + 2);
+		};
+
+		const int32 ShiftNum = FMath::Max(1, CachedSnapshot.CurrentShiftNumber);
+		const int32 TargetShifts = FMath::Max(1, CachedSnapshot.TargetBondShifts);
+		const FString ShiftTag = (ShiftNum <= TargetShifts)
+			? FString::Printf(TEXT("SHIFT %02d/%02d"), ShiftNum, TargetShifts)
+			: FString::Printf(TEXT("OVT S%02d"), ShiftNum);
+
+		const FString TopStencilLine = FString::Printf(
+			TEXT("%s | SCRIP: %02d || %s %s %s"),
+			*ShiftTag,
+			FMath::Max(0, CachedSnapshot.ScripBalance),
+			*FormatUpgradeSlot(TEXT("[1]HYD"), CachedSnapshot.ClampHydraulicsLevel),
+			*FormatUpgradeSlot(TEXT("[2]TARE"), CachedSnapshot.TareHopperLevel),
+			*FormatUpgradeSlot(TEXT("[3]SCAN"), CachedSnapshot.VeinScannerDamperLevel));
+
+		HeaderStencilText->SetText(FText::FromString(TopStencilLine));
 		HeaderStencilText->SetTextRenderColor(ReadoutHeaderCyanColor);
+		FitReadoutLineWidth(HeaderStencilText, 4.8f, 3.1f, StatusBannerMaxSafeWidthCm);
 	}
 	if (IsValid(ControlStencilText))
 	{
@@ -933,24 +991,66 @@ void AScaleAssemblyActor::RefreshStatusBannerReadout()
 		return;
 	}
 
-	if (bHasLatchedVerdictBanner ||
-		CachedShiftPhase == EShiftPhase::FaultResetDelay ||
-		CachedShiftPhase == EShiftPhase::ContractPassTransition ||
-		CachedShiftPhase == EShiftPhase::ShiftCompleted)
+	if (CachedShiftPhase == EShiftPhase::FaultResetDelay ||
+		(bHasLatchedVerdictBanner && LatchedVerdict == EShiftVerdictType::ContractFaultReset))
 	{
-		if (LatchedVerdict == EShiftVerdictType::ContractFaultReset || CachedShiftPhase == EShiftPhase::FaultResetDelay)
+		SetStatusBannerTextFitted(FormatFaultReasonBanner(LatchedFaultReason), ReadoutFaultBannerColor);
+		return;
+	}
+
+	// Guard 1: Immediate crisp console feedback on [1] [2] [3] requisition purchase / insufficient Scrip / max level.
+	if (!CachedSnapshot.TransientRequisitionFeedback.IsEmpty())
+	{
+		SetStatusBannerTextFitted(
+			CachedSnapshot.TransientRequisitionFeedback,
+			CachedSnapshot.bLastRequisitionSucceeded ? ReadoutEmeraldColor : ReadoutBriefAmberColor);
+		return;
+	}
+
+	if (bHasLatchedVerdictBanner ||
+		CachedShiftPhase == EShiftPhase::ContractPassTransition ||
+		CachedShiftPhase == EShiftPhase::ShiftCompleted ||
+		CachedShiftPhase == EShiftPhase::BondCleared)
+	{
+		if (LatchedVerdict == EShiftVerdictType::BondCleared || CachedShiftPhase == EShiftPhase::BondCleared)
 		{
-			SetStatusBannerTextFitted(FormatFaultReasonBanner(LatchedFaultReason), ReadoutFaultBannerColor);
+			SetStatusBannerTextFitted(
+				TEXT("BOND CLEARED - #409 RELEASED | [E] OVERTIME S04+ | [1-3] UPGRADE | HOLD [R] CAREER RESET"),
+				ReadoutGoldColor);
 			return;
 		}
 		if (LatchedVerdict == EShiftVerdictType::ShiftCompleted || CachedShiftPhase == EShiftPhase::ShiftCompleted)
 		{
-			SetStatusBannerTextFitted(TEXT("SHIFT COMPLETE - HOLD [R] TO RESTART"), ReadoutEmeraldColor);
+			const int32 CurShift = FMath::Max(1, CachedSnapshot.CurrentShiftNumber);
+			const int32 NextShift = CurShift + 1;
+			const int32 TargetShifts = FMath::Max(1, CachedSnapshot.TargetBondShifts);
+			const FString ShiftBanner = (NextShift <= TargetShifts)
+				? FString::Printf(
+					TEXT("SHIFT %02d/%02d COMPLETE | [E] BEGIN SHIFT %02d/%02d | [1-3] REQUISITION | HOLD [R] CAREER RESET"),
+					CurShift,
+					TargetShifts,
+					NextShift,
+					TargetShifts)
+				: FString::Printf(
+					TEXT("OVERTIME S%02d COMPLETE | [E] BEGIN OVT S%02d | [1-3] REQUISITION | HOLD [R] CAREER RESET"),
+					CurShift,
+					NextShift);
+			SetStatusBannerTextFitted(ShiftBanner, ReadoutEmeraldColor);
+			return;
+		}
+		if (LatchedVerdict == EShiftVerdictType::DirectorsCutPassed ||
+			(CachedShiftPhase == EShiftPhase::ContractPassTransition && CachedSnapshot.bLastStampWasDirectorsCut))
+		{
+			SetStatusBannerTextFitted(
+				TEXT("DIRECTOR'S CUT STAMPED (+2 SCRIP) - LOADING NEXT CONTRACT"),
+				ReadoutGoldColor);
 			return;
 		}
 		if (LatchedVerdict == EShiftVerdictType::ContractPassed || CachedShiftPhase == EShiftPhase::ContractPassTransition)
 		{
-			SetStatusBannerTextFitted(TEXT("QUOTA STAMPED - LOADING NEXT CONTRACT"), ReadoutEmeraldColor);
+			SetStatusBannerTextFitted(
+				TEXT("QUOTA STAMPED (+1 SCRIP) - LOADING NEXT CONTRACT"),
+				ReadoutEmeraldColor);
 			return;
 		}
 	}
@@ -977,7 +1077,26 @@ void AScaleAssemblyActor::RefreshStatusBannerReadout()
 
 	if (CachedSnapshot.bScaleSettledForStamp || CachedSnapshot.bIsWithinQuotaWindow)
 	{
-		SetStatusBannerTextFitted(TEXT("QUOTA MET - PRESS [E] TO STAMP"), ReadoutEmeraldColor);
+		if (CachedSnapshot.bIsWithinDirectorsCutWindow)
+		{
+			SetStatusBannerTextFitted(
+				TEXT("DIRECTOR'S CUT LOCKED! PRESS [E] STAMP (+2 SCRIP)"),
+				ReadoutGoldColor);
+		}
+		else
+		{
+			SetStatusBannerTextFitted(
+				TEXT("QUOTA MET - PRESS [E] TO STAMP (+1 SCRIP)"),
+				ReadoutEmeraldColor);
+		}
+		return;
+	}
+
+	if (CachedSnapshot.ClampStrainNormalized >= 0.78f)
+	{
+		SetStatusBannerTextFitted(
+			TEXT("!! JAW SHEAR CRITICAL - BALANCE CUTS TO OPPOSITE SIDE !!"),
+			ReadoutFaultBannerColor);
 		return;
 	}
 
@@ -1064,21 +1183,21 @@ FString AScaleAssemblyActor::FormatFaultReasonBanner(EContractFaultReason FaultR
 	switch (FaultReason)
 	{
 	case EContractFaultReason::QuotaOvershoot:
-		return TEXT("FAULT: OVERWEIGHT - EXCEEDED MAX QUOTA");
+		return TEXT("FAULT: OVERWEIGHT SLOP - EXCEEDED MAX TOLERANCE");
 	case EContractFaultReason::VolatileDetonation:
-		return TEXT("FAULT: VOLATILE VEIN SEVERED");
+		return TEXT("FAULT: VOLATILE ISOTOPE VEIN DETONATED");
 	case EContractFaultReason::ClampStructuralSnap:
-		return TEXT("FAULT: CLAMP TORQUE SNAP");
+		return TEXT("FAULT: CLAMP JAW SHEARED - BALANCE YOUR CUTS!");
 	case EContractFaultReason::ScaleContaminated:
-		return TEXT("FAULT: VEIN IN TITHE PAN - HOLD [R] TO RESET (SWITCH [SPACE] TO TARE BEFORE CUT)");
+		return TEXT("FAULT: CONTAMINATED TITHE - ROUTE VEINS TO TARE [SPACE]");
 	case EContractFaultReason::TareAllowanceExceeded:
-		return TEXT("FAULT: MAX TARE WASTE EXCEEDED");
+		return TEXT("FAULT: TARE HOPPER CHOKED - MAX WASTE EXCEEDED");
 	case EContractFaultReason::MathematicallyUnreachable:
-		return TEXT("FAULT: INSUFFICIENT MASS REMAINING");
+		return TEXT("FAULT: CORE RUINED - INSUFFICIENT MASS FOR QUOTA");
 	case EContractFaultReason::ManualOperatorReset:
-		return TEXT("MANUAL RESET [R]");
+		return TEXT("CELL PURGED BY #409 [R] - NO SCRIP ISSUED");
 	default:
-		return TEXT("FAULT: RESETTING INSPECTION CELL");
+		return TEXT("FAULT: RESETTING INSPECTION CELL 09");
 	}
 }
 

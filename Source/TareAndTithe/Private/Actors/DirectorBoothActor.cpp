@@ -159,7 +159,7 @@ ADirectorBoothActor::ADirectorBoothActor()
 		FVector(-2.0, LeftOutwardY, 5.2),
 		WingHeaderWorldSize,
 		BoothHeaderCyanColor,
-		TEXT("CONTRACT 01/06 // DIRECTIVE"));
+		TEXT("INDENTURE #409 // S01/03 C01/06"));
 
 	ContractDirectiveReadoutText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("ContractDirectiveReadoutText"));
 	ConfigureWingText(
@@ -190,7 +190,7 @@ ADirectorBoothActor::ADirectorBoothActor()
 		FVector(-2.0, RightOutwardY, 5.2),
 		WingHeaderWorldSize,
 		BoothHeaderCyanColor,
-		TEXT("OFFICE OF THE DIRECTOR"));
+		TEXT("OFFICE OF THE DIRECTOR // SCRIP: 00"));
 
 	VerdictBannerText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("VerdictBannerText"));
 	ConfigureWingText(
@@ -199,7 +199,7 @@ ADirectorBoothActor::ADirectorBoothActor()
 		FVector(-2.0, RightOutwardY, -4.4),
 		WingVerdictWorldSize,
 		BoothNormalSkyBlueColor,
-		TEXT("CELL STANDBY"));
+		TEXT("#409: WORK OFF YOUR 3-SHIFT BOND. CARVE."));
 
 	StatusPointLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("StatusPointLight"));
 	StatusPointLight->SetupAttachment(BoothRoot);
@@ -289,6 +289,7 @@ void ADirectorBoothActor::BeginPlay()
 			CachedTotalContracts = FMath::Max(1, ShiftSubsystem->GetTotalContractCount());
 			CachedShiftPhase = ShiftSubsystem->GetCurrentPhase();
 			const FContractRuntimeSnapshot InitialSnapshot = ShiftSubsystem->GetCurrentSnapshot();
+			CachedSnapshot = InitialSnapshot;
 			CachedDirectiveText = InitialSnapshot.ContractDirectiveText;
 			CachedBriefText = InitialSnapshot.ContractBriefText;
 			bIsBriefPulseActive = (CachedShiftPhase == EShiftPhase::ActiveInspection) &&
@@ -300,6 +301,7 @@ void ADirectorBoothActor::BeginPlay()
 
 			HandleShiftPhaseChanged(CachedShiftPhase);
 			RefreshContractDirectiveWingReadout();
+			RefreshDirectorIntercomWingReadout();
 			UpdateBoothTickEnabled();
 		}
 	}
@@ -356,8 +358,10 @@ void ADirectorBoothActor::Tick(float DeltaSeconds)
 
 	if (!FMath::IsNearlyEqual(CurrentShutterOpenAlpha, TargetShutterOpenAlpha, ShutterAlphaConvergenceEpsilon))
 	{
-		const float SafeDuration = FMath::Max(0.05f, ShutterTransitionDurationSeconds);
-		const float AlphaSpeedPerSec = 1.0f / SafeDuration;
+		const float ActiveDuration = bUseFastFaultShutterSlam
+			? FMath::Max(0.04f, FaultShutterSlamDurationSeconds)
+			: FMath::Max(0.05f, ShutterTransitionDurationSeconds);
+		const float AlphaSpeedPerSec = 1.0f / ActiveDuration;
 
 		CurrentShutterOpenAlpha = FMath::FInterpConstantTo(
 			CurrentShutterOpenAlpha,
@@ -371,6 +375,16 @@ void ADirectorBoothActor::Tick(float DeltaSeconds)
 		}
 
 		ApplyShutterPositionFromAlpha();
+	}
+
+	// Bounded Tier 2 crimson booth alarm strobe active STRICTLY during FaultResetDelay (~1.8s), sleeping at 0.0 ms otherwise.
+	if (CachedShiftPhase == EShiftPhase::FaultResetDelay && IsValid(StatusPointLight))
+	{
+		FaultStrobeElapsedSeconds += DeltaSeconds;
+		const float SafeStrobeHz = FMath::Max(1.0f, FaultStrobeFrequencyHz);
+		const float StrobeWave = 0.5f + 0.5f * FMath::Cos(FaultStrobeElapsedSeconds * SafeStrobeHz * 2.0f * UE_PI);
+		StatusPointLight->SetLightColor(FaultSlamLampColor);
+		StatusPointLight->SetIntensity(StatusLightIntensity * FMath::Lerp(0.22f, 2.35f, StrobeWave));
 	}
 
 	// Guard 2: Mutate ONLY SetTextRenderColor during bounded Tier 2 brief pulse/fade (NEVER SetText or SetWorldSize in Tick).
@@ -425,10 +439,13 @@ void ADirectorBoothActor::HandleShiftVerdict(EShiftVerdictType Verdict, EContrac
 	{
 	case EShiftVerdictType::ContractFaultReset:
 	{
+		bUseFastFaultShutterSlam = true;
+		FaultStrobeElapsedSeconds = 0.0f;
 		SetShutterTargetOpenAlpha(0.0f, false);
 		if (IsValid(StatusPointLight))
 		{
 			StatusPointLight->SetLightColor(FaultSlamLampColor);
+			StatusPointLight->SetIntensity(StatusLightIntensity * 2.25f);
 		}
 		if (IsValid(VerdictBannerText))
 		{
@@ -442,19 +459,42 @@ void ADirectorBoothActor::HandleShiftVerdict(EShiftVerdictType Verdict, EContrac
 		}
 		break;
 	}
+	case EShiftVerdictType::DirectorsCutPassed:
+	{
+		bUseFastFaultShutterSlam = false;
+		SetShutterTargetOpenAlpha(1.0f, false);
+		if (IsValid(StatusPointLight))
+		{
+			StatusPointLight->SetLightColor(FLinearColor(1.00f, 0.78f, 0.16f, 1.0f));
+			StatusPointLight->SetIntensity(StatusLightIntensity * 1.45f);
+		}
+		if (IsValid(VerdictBannerText))
+		{
+			VerdictBannerText->SetTextRenderColor(BoothDirectiveGoldColor);
+			ApplyFittedWingText(
+				VerdictBannerText,
+				TEXT("DIRECTOR'S CUT! EXEMPLARY (+2 SCRIP)"),
+				WingVerdictWorldSize,
+				WingDirectiveMinWorldSize,
+				WingDirectiveMaxSafeWidthCm);
+		}
+		break;
+	}
 	case EShiftVerdictType::ContractPassed:
 	{
+		bUseFastFaultShutterSlam = false;
 		SetShutterTargetOpenAlpha(1.0f, false);
 		if (IsValid(StatusPointLight))
 		{
 			StatusPointLight->SetLightColor(VerdictApprovedLampColor);
+			StatusPointLight->SetIntensity(StatusLightIntensity);
 		}
 		if (IsValid(VerdictBannerText))
 		{
 			VerdictBannerText->SetTextRenderColor(BoothApprovedEmeraldColor);
 			ApplyFittedWingText(
 				VerdictBannerText,
-				TEXT("TITHE VERIFIED // ADVANCING"),
+				TEXT("ACCEPTABLE YIELD, #409 (+1 SCRIP)"),
 				WingVerdictWorldSize,
 				WingDirectiveMinWorldSize,
 				WingDirectiveMaxSafeWidthCm);
@@ -463,21 +503,26 @@ void ADirectorBoothActor::HandleShiftVerdict(EShiftVerdictType Verdict, EContrac
 	}
 	case EShiftVerdictType::ShiftCompleted:
 	{
+		bUseFastFaultShutterSlam = false;
 		SetShutterTargetOpenAlpha(0.0f, false);
 		if (IsValid(StatusPointLight))
 		{
 			StatusPointLight->SetLightColor(VerdictApprovedLampColor);
+			StatusPointLight->SetIntensity(StatusLightIntensity);
 		}
-		if (IsValid(VerdictBannerText))
+		RefreshDirectorIntercomWingReadout();
+		break;
+	}
+	case EShiftVerdictType::BondCleared:
+	{
+		bUseFastFaultShutterSlam = false;
+		SetShutterTargetOpenAlpha(1.0f, false);
+		if (IsValid(StatusPointLight))
 		{
-			VerdictBannerText->SetTextRenderColor(BoothApprovedEmeraldColor);
-			ApplyFittedWingText(
-				VerdictBannerText,
-				TEXT("SHIFT COMPLETE // HOLD [R] TO REPLAY"),
-				WingVerdictWorldSize,
-				WingDirectiveMinWorldSize,
-				WingDirectiveMaxSafeWidthCm);
+			StatusPointLight->SetLightColor(FLinearColor(1.00f, 0.82f, 0.22f, 1.0f));
+			StatusPointLight->SetIntensity(StatusLightIntensity * 1.50f);
 		}
+		RefreshDirectorIntercomWingReadout();
 		break;
 	}
 	default:
@@ -489,6 +534,7 @@ void ADirectorBoothActor::HandleShiftVerdict(EShiftVerdictType Verdict, EContrac
 
 void ADirectorBoothActor::HandleContractSnapshotUpdated(const FContractRuntimeSnapshot& Snapshot)
 {
+	CachedSnapshot = Snapshot;
 	CachedContractIndex = Snapshot.ContractIndex;
 	if (!Snapshot.ContractDirectiveText.IsEmpty())
 	{
@@ -535,6 +581,7 @@ void ADirectorBoothActor::HandleContractSnapshotUpdated(const FContractRuntimeSn
 	}
 
 	RefreshContractDirectiveWingReadout();
+	RefreshDirectorIntercomWingReadout();
 	UpdateBoothTickEnabled();
 }
 
@@ -544,21 +591,14 @@ void ADirectorBoothActor::HandleShiftPhaseChanged(EShiftPhase NewPhase)
 
 	if (NewPhase == EShiftPhase::ActiveInspection)
 	{
+		bUseFastFaultShutterSlam = false;
 		SetShutterTargetOpenAlpha(1.0f, false);
 		if (IsValid(StatusPointLight))
 		{
 			StatusPointLight->SetLightColor(ActiveInspectionLampColor);
+			StatusPointLight->SetIntensity(StatusLightIntensity);
 		}
-		if (IsValid(VerdictBannerText))
-		{
-			VerdictBannerText->SetTextRenderColor(BoothNormalSkyBlueColor);
-			ApplyFittedWingText(
-				VerdictBannerText,
-				TEXT("INSPECTION IN PROGRESS"),
-				WingVerdictWorldSize,
-				WingDirectiveMinWorldSize,
-				WingDirectiveMaxSafeWidthCm);
-		}
+		RefreshDirectorIntercomWingReadout();
 	}
 	else if (bIsBriefPulseActive || bIsBriefFadingOut)
 	{
@@ -594,12 +634,21 @@ void ADirectorBoothActor::RefreshContractDirectiveWingReadout()
 {
 	const int32 DisplayContractNum = FMath::Clamp(CachedContractIndex + 1, 1, FMath::Max(1, CachedTotalContracts));
 	const int32 DisplayTotalCount = FMath::Max(1, CachedTotalContracts);
+	const int32 ShiftNum = FMath::Max(1, CachedSnapshot.CurrentShiftNumber);
+	const int32 TargetShifts = FMath::Max(1, CachedSnapshot.TargetBondShifts);
 
 	if (IsValid(BoothStencilText))
 	{
 		BoothStencilText->SetTextRenderColor(BoothHeaderCyanColor);
-		BoothStencilText->SetText(
-			FText::FromString(FString::Printf(TEXT("CONTRACT %02d/%02d // DIRECTIVE"), DisplayContractNum, DisplayTotalCount)));
+		const FString LeftHeader = (ShiftNum <= TargetShifts)
+			? FString::Printf(TEXT("INDENTURE #409 // S%02d/%02d C%02d/%02d"), ShiftNum, TargetShifts, DisplayContractNum, DisplayTotalCount)
+			: FString::Printf(TEXT("INDENTURE #409 // OVT-%02d C%02d/%02d"), ShiftNum, DisplayContractNum, DisplayTotalCount);
+		ApplyFittedWingText(
+			BoothStencilText,
+			LeftHeader,
+			WingHeaderWorldSize,
+			WingDirectiveMinWorldSize,
+			WingDirectiveMaxSafeWidthCm);
 	}
 
 	if (IsValid(ContractDirectiveReadoutText))
@@ -632,6 +681,71 @@ void ADirectorBoothActor::RefreshContractDirectiveWingReadout()
 	}
 }
 
+void ADirectorBoothActor::RefreshDirectorIntercomWingReadout()
+{
+	if (IsValid(BoothRightHeaderText))
+	{
+		BoothRightHeaderText->SetTextRenderColor(BoothHeaderCyanColor);
+		ApplyFittedWingText(
+			BoothRightHeaderText,
+			FString::Printf(TEXT("OFFICE OF THE DIRECTOR // SCRIP: %02d"), FMath::Max(0, CachedSnapshot.ScripBalance)),
+			WingHeaderWorldSize,
+			WingDirectiveMinWorldSize,
+			WingDirectiveMaxSafeWidthCm);
+	}
+
+	if (!IsValid(VerdictBannerText))
+	{
+		return;
+	}
+
+	const FString IntercomLine = CachedSnapshot.DirectorIntercomLine.IsEmpty()
+		? TEXT("#409: WORK OFF YOUR 3-SHIFT BOND. CARVE.")
+		: CachedSnapshot.DirectorIntercomLine;
+
+	FColor BannerColor = BoothNormalSkyBlueColor;
+	if (!CachedSnapshot.TransientRequisitionFeedback.IsEmpty())
+	{
+		BannerColor = CachedSnapshot.bLastRequisitionSucceeded ? BoothApprovedEmeraldColor : BoothDirectiveGoldColor;
+	}
+	else if (CachedShiftPhase == EShiftPhase::FaultResetDelay)
+	{
+		BannerColor = BoothFaultBannerColor;
+	}
+	else if (CachedShiftPhase == EShiftPhase::ContractPassTransition)
+	{
+		BannerColor = CachedSnapshot.bLastStampWasDirectorsCut ? BoothDirectiveGoldColor : BoothApprovedEmeraldColor;
+	}
+	else if (CachedShiftPhase == EShiftPhase::BondCleared)
+	{
+		BannerColor = BoothDirectiveGoldColor;
+	}
+	else if (CachedShiftPhase == EShiftPhase::ShiftCompleted)
+	{
+		BannerColor = BoothApprovedEmeraldColor;
+	}
+	else if (CachedSnapshot.ClampStrainNormalized >= 0.78f)
+	{
+		BannerColor = BoothFaultBannerColor;
+	}
+	else if (CachedSnapshot.bScaleSettledForStamp && CachedSnapshot.bIsWithinDirectorsCutWindow)
+	{
+		BannerColor = BoothDirectiveGoldColor;
+	}
+	else if (CachedSnapshot.bScaleSettledForStamp)
+	{
+		BannerColor = BoothApprovedEmeraldColor;
+	}
+
+	VerdictBannerText->SetTextRenderColor(BannerColor);
+	ApplyFittedWingText(
+		VerdictBannerText,
+		IntercomLine,
+		WingVerdictWorldSize,
+		WingDirectiveMinWorldSize,
+		WingDirectiveMaxSafeWidthCm);
+}
+
 void ADirectorBoothActor::SetShutterTargetOpenAlpha(float InTargetOpenAlpha, bool bInstant)
 {
 	TargetShutterOpenAlpha = FMath::Clamp(InTargetOpenAlpha, 0.0f, 1.0f);
@@ -662,7 +776,8 @@ void ADirectorBoothActor::UpdateBoothTickEnabled()
 		CurrentShutterOpenAlpha,
 		TargetShutterOpenAlpha,
 		ShutterAlphaConvergenceEpsilon);
-	const bool bShouldTick = bNeedShutterTick || bIsBriefPulseActive || bIsBriefFadingOut;
+	const bool bNeedFaultStrobeTick = (CachedShiftPhase == EShiftPhase::FaultResetDelay);
+	const bool bShouldTick = bNeedShutterTick || bIsBriefPulseActive || bIsBriefFadingOut || bNeedFaultStrobeTick;
 	SetActorTickEnabled(bShouldTick);
 }
 
@@ -718,20 +833,20 @@ FString ADirectorBoothActor::DescribeFaultReason(EContractFaultReason FaultReaso
 	switch (FaultReason)
 	{
 	case EContractFaultReason::VolatileDetonation:
-		return TEXT("FAULT: VOLATILE VEIN SEVERED");
+		return TEXT("ISOTOPE DETONATED! DEBT PENALTY LOGGED!");
 	case EContractFaultReason::ClampStructuralSnap:
-		return TEXT("FAULT: CLAMP TORQUE SNAP");
+		return TEXT("YOU SHEARED MY CLAMP! BALANCE YOUR CUTS!");
 	case EContractFaultReason::ScaleContaminated:
-		return TEXT("FAULT: CONTAMINATED | HOLD [R] RESET");
+		return TEXT("CONTAMINATED TITHE! DUMP VEINS TO TARE!");
 	case EContractFaultReason::QuotaOvershoot:
-		return TEXT("FAULT: OVERWEIGHT | MAX QUOTA");
+		return TEXT("OVERWEIGHT SLOP! READ YOUR TOLERANCE!");
 	case EContractFaultReason::TareAllowanceExceeded:
-		return TEXT("FAULT: MAX TARE WASTE EXCEEDED");
+		return TEXT("TARE HOPPER CHOKED! STOP WASTING ORE!");
 	case EContractFaultReason::MathematicallyUnreachable:
-		return TEXT("FAULT: INSUFFICIENT MASS LEFT");
+		return TEXT("CORE RUINED! NOT ENOUGH MASS FOR QUOTA!");
 	case EContractFaultReason::ManualOperatorReset:
-		return TEXT("MANUAL RESET [R]");
+		return TEXT("CELL PURGED BY #409. NO SCRIP ISSUED.");
 	default:
-		return TEXT("CELL RESETTING");
+		return TEXT("INSPECTION FAULT! RESETTING CELL 09!");
 	}
 }

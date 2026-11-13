@@ -87,6 +87,11 @@ void UScaleWeighingComponent::SetTargetQuotaMassKg(float InTargetQuotaMassKg)
 	EmitFillRatioTelemetry(FillRatio);
 }
 
+void UScaleWeighingComponent::SetSettleDampingMultiplier(float InMultiplier)
+{
+	SettleDampingMultiplier = FMath::Clamp(InMultiplier, 0.5f, 4.0f);
+}
+
 void UScaleWeighingComponent::ResetScaleState()
 {
 	TrackedPayloads.Reset();
@@ -137,8 +142,12 @@ void UScaleWeighingComponent::TickComponent(
 	const int32 NumSubsteps = FMath::Max(1, FMath::CeilToInt(ClampedDelta / SafeMaxSubstep));
 	const double SubDt = static_cast<double>(ClampedDelta) / static_cast<double>(NumSubsteps);
 
-	const double OmegaN = FMath::Max(1.0, static_cast<double>(NaturalFrequencyRadPerSec));
-	const double Zeta = FMath::Max(0.05, static_cast<double>(DampingRatio));
+	const double SafeDampMult = FMath::Clamp(static_cast<double>(SettleDampingMultiplier), 0.5, 4.0);
+	const double OmegaN = FMath::Max(1.0, static_cast<double>(NaturalFrequencyRadPerSec) * SafeDampMult);
+	const double Zeta = FMath::Clamp(
+		static_cast<double>(DampingRatio) * (1.0 + 0.14 * (SafeDampMult - 1.0)),
+		0.05,
+		0.96);
 	const double MaxTravelDown = -static_cast<double>(MaxDepressionCm) * 1.25;
 
 	for (int32 StepIdx = 0; StepIdx < NumSubsteps; ++StepIdx)
@@ -160,10 +169,11 @@ void UScaleWeighingComponent::TickComponent(
 	}
 
 	const bool bPayloadsQuiet = AreAllPayloadsBelowSettleVelocity();
+	const float EffectiveSettleHoldSeconds = FMath::Max(0.03f, SettleHoldRequiredSeconds / static_cast<float>(SafeDampMult));
 	if (bPanPosConverged && bPanVelConverged && bPayloadsQuiet)
 	{
 		SettleHoldElapsedSeconds += ClampedDelta;
-		if (SettleHoldElapsedSeconds >= SettleHoldRequiredSeconds)
+		if (SettleHoldElapsedSeconds >= EffectiveSettleHoldSeconds)
 		{
 			if (ReconcileOverlappingPayloads(false))
 			{

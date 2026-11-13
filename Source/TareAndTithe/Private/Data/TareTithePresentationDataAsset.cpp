@@ -45,16 +45,16 @@ FCellLightingRigConfig::FCellLightingRigConfig()
 	RimSpotRight.LightColor = FLinearColor(0.72f, 0.87f, 1.00f, 1.0f);
 	RimSpotRight.bCastShadows = false;
 
-	// Direct +X frontal foundry shaft glow (dX = 112 cm onto X = 444 grate, 67 deg outer cone reaching Y = +-155 flanking columns; R = 325 < 360 -> 0.000 side-wall spill).
-	MidgroundWashSpot.Location = FVector(332.0, 0.0, 72.0);
-	MidgroundWashSpot.TargetLocation = FVector(445.0, 0.0, 82.0);
-	MidgroundWashSpot.Intensity = 10800.0f;
+	// Direct +X frontal foundry shaft glow (lowered & cooled deep furnace ember so foreground hero steel dominates ROI hierarchy; R = 325 < 360 -> 0.000 side-wall spill).
+	MidgroundWashSpot.Location = FVector(332.0, 0.0, 44.0);
+	MidgroundWashSpot.TargetLocation = FVector(445.0, 0.0, 94.0);
+	MidgroundWashSpot.Intensity = 5700.0f;
 	MidgroundWashSpot.AttenuationRadius = 325.0f;
 	MidgroundWashSpot.InnerConeAngle = 38.0f;
 	MidgroundWashSpot.OuterConeAngle = 67.0f;
-	MidgroundWashSpot.SourceRadius = 28.0f;
+	MidgroundWashSpot.SourceRadius = 32.0f;
 	MidgroundWashSpot.SourceLength = 120.0f;
-	MidgroundWashSpot.LightColor = FLinearColor(1.00f, 0.38f, 0.09f, 1.0f);
+	MidgroundWashSpot.LightColor = FLinearColor(1.00f, 0.32f, 0.065f, 1.0f);
 	MidgroundWashSpot.bCastShadows = false;
 }
 

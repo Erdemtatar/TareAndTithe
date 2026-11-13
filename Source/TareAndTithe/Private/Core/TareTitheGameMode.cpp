@@ -18,6 +18,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Data/ShiftProgressionDataAsset.h"
 #include "Data/TareTithePresentationDataAsset.h"
+#include "Engine/Engine.h"
 #include "Engine/ExponentialHeightFog.h"
 #include "Engine/PointLight.h"
 #include "Engine/SceneCapture2D.h"
@@ -77,6 +78,18 @@ void ATareTitheGameMode::StartPlay()
 	{
 		SpawnMissingGreyboxStationsIfNeeded();
 	}
+}
+
+UInspectionShiftSubsystem* ATareTitheGameMode::GetInspectionShiftSubsystem(const UObject* WorldContextObject)
+{
+	if (!IsValid(WorldContextObject))
+	{
+		return nullptr;
+	}
+	UWorld* World = (GEngine != nullptr)
+		? GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::ReturnNull)
+		: WorldContextObject->GetWorld();
+	return IsValid(World) ? World->GetSubsystem<UInspectionShiftSubsystem>() : nullptr;
 }
 
 ASceneCapture2D* ATareTitheGameMode::SpawnTransientLitCapture2D(

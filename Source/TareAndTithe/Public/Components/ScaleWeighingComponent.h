@@ -41,6 +41,8 @@ public:
 
 	void ConfigureForContract(const UMonolithContractDataAsset* Contract);
 	void SetTargetQuotaMassKg(float InTargetQuotaMassKg);
+	void SetSettleDampingMultiplier(float InMultiplier);
+	float GetSettleDampingMultiplier() const { return SettleDampingMultiplier; }
 	void ResetScaleState();
 	bool ReconcileOverlappingPayloads(bool bEnableTickOnChange = false);
 	bool TryRecoverPayloadOnPan(AActor* PayloadActor);
@@ -152,6 +154,7 @@ private:
 
 	float PanMassKg = 0.0f;
 	float TargetQuotaMassKg = 10.0f;
+	float SettleDampingMultiplier = 1.0f;
 	float SettleHoldElapsedSeconds = 0.0f;
 	float LastEmittedFillRatio = -1.0f;
 

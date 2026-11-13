@@ -18,7 +18,8 @@ namespace
 {
 	constexpr float DefaultTransitionDelaySeconds = 1.8f;
 	constexpr float DefaultContractBriefDurationSeconds = 3.5f;
-	constexpr float DefaultTightTorqueBriefThresholdNm = 42.0f;
+	constexpr float RequisitionFeedbackDisplaySeconds = 2.2f;
+	constexpr float DefaultTightTorqueBriefThresholdNm = 29.0f;
 	constexpr float QuotaBoundaryFloatEpsilonKg = 1.0e-3f;
 	constexpr float WatchdogActiveFallVelocityThresholdZCmPerSec = -25.0f;
 	constexpr float WatchdogActiveFallMinCellFloorZCm = -75.0f;
@@ -63,12 +64,15 @@ void UInspectionShiftSubsystem::Deinitialize()
 	{
 		World->GetTimerManager().ClearTimer(TransitionTimerHandle);
 		World->GetTimerManager().ClearTimer(ContractBriefTimerHandle);
+		World->GetTimerManager().ClearTimer(RequisitionFeedbackTimerHandle);
 		if (UChunkPoolSubsystem* PoolSubsystem = World->GetSubsystem<UChunkPoolSubsystem>())
 		{
 			PoolSubsystem->OnAnyChunkWatchdogExpired.RemoveAll(this);
 		}
 	}
 	bIsContractBriefActive = false;
+	TransientRequisitionFeedback.Empty();
+	bLastRequisitionSucceeded = false;
 
 	UnregisterTelemetryPublisher(this);
 	AudioBridges.Reset();
@@ -119,6 +123,35 @@ void UInspectionShiftSubsystem::SetShiftProgressionAsset(const UShiftProgression
 int32 UInspectionShiftSubsystem::GetTotalContractCount() const
 {
 	return IsValid(ActiveProgressionAsset) ? ActiveProgressionAsset->OrderedContracts.Num() : 0;
+}
+
+float UInspectionShiftSubsystem::GetEffectiveQuotaToleranceKg(const UMonolithContractDataAsset* Contract) const
+{
+	if (!IsValid(Contract))
+	{
+		return 0.5f;
+	}
+
+	const float ShiftScale = FMath::Max(
+		0.60f,
+		FMath::Pow(0.88f, static_cast<float>(FMath::Max(0, CurrentShiftNumber - 1))));
+	return FMath::Max(0.20f, Contract->QuotaToleranceKg * ShiftScale);
+}
+
+float UInspectionShiftSubsystem::GetDirectorsCutToleranceKg(float EffectiveToleranceKg) const
+{
+	return FMath::Max(0.15f, EffectiveToleranceKg * 0.25f);
+}
+
+float UInspectionShiftSubsystem::GetEffectiveMaxTareWasteKg(const UMonolithContractDataAsset* Contract) const
+{
+	const float BaseTareKg = IsValid(Contract) ? Contract->MaxAllowedTareWasteKg : 15.0f;
+	return BaseTareKg + (5.0f * static_cast<float>(TareHopperLevel));
+}
+
+int32 UInspectionShiftSubsystem::GetRequisitionNextCost(uint8 CurrentLevel)
+{
+	return (CurrentLevel >= 3) ? 0 : (static_cast<int32>(CurrentLevel) + 2);
 }
 
 void UInspectionShiftSubsystem::RegisterSliceableRig(const FShiftSliceableRigBinding& InBinding)
@@ -237,6 +270,11 @@ void UInspectionShiftSubsystem::RegisterTelemetryPublisher(
 	Entry.LifetimeOwner = LifetimeOwner;
 	TelemetryPublishers.Add(Entry);
 
+	if (Publisher != static_cast<ITelemetryPublisherInterface*>(this))
+	{
+		Publisher->GetTelemetryStreamDelegate().AddUObject(this, &UInspectionShiftSubsystem::HandlePublisherTelemetryStream);
+	}
+
 	for (int32 Idx = AudioBridges.Num() - 1; Idx >= 0; --Idx)
 	{
 		UAudioTelemetryBridgeComponent* Bridge = AudioBridges[Idx].Get();
@@ -254,6 +292,11 @@ void UInspectionShiftSubsystem::UnregisterTelemetryPublisher(ITelemetryPublisher
 	if (Publisher == nullptr)
 	{
 		return;
+	}
+
+	if (Publisher != static_cast<ITelemetryPublisherInterface*>(this))
+	{
+		Publisher->GetTelemetryStreamDelegate().RemoveAll(this);
 	}
 
 	for (int32 Idx = AudioBridges.Num() - 1; Idx >= 0; --Idx)
@@ -479,14 +522,23 @@ bool UInspectionShiftSubsystem::TryStampQuotaVerdict()
 		return false;
 	}
 
+	const float EffectiveToleranceKg = GetEffectiveQuotaToleranceKg(ActiveContract);
 	const float SettledMassKg = IQuotaReceiverInterface::Execute_GetSettledMassKg(ReceiverObj);
-	const float LowerBoundKg = ActiveContract->TargetTitheMassKg - ActiveContract->QuotaToleranceKg - QuotaBoundaryFloatEpsilonKg;
-	const float UpperBoundKg = ActiveContract->TargetTitheMassKg + ActiveContract->QuotaToleranceKg + QuotaBoundaryFloatEpsilonKg;
+	const float LowerBoundKg = ActiveContract->TargetTitheMassKg - EffectiveToleranceKg - QuotaBoundaryFloatEpsilonKg;
+	const float UpperBoundKg = ActiveContract->TargetTitheMassKg + EffectiveToleranceKg + QuotaBoundaryFloatEpsilonKg;
 
 	if (SettledMassKg < LowerBoundKg || SettledMassKg > UpperBoundKg)
 	{
 		return false;
 	}
+
+	const float DirectorsCutTolKg = GetDirectorsCutToleranceKg(EffectiveToleranceKg);
+	const bool bPrecisionStamp = FMath::Abs(SettledMassKg - ActiveContract->TargetTitheMassKg) <= (DirectorsCutTolKg + QuotaBoundaryFloatEpsilonKg);
+	const int32 AwardedScrip = bPrecisionStamp ? 2 : 1;
+	ScripBalance += AwardedScrip;
+	LastStampScripAwarded = AwardedScrip;
+	bLastStampWasDirectorsCut = bPrecisionStamp;
+	ClearTransientRequisitionFeedback();
 
 	OnTelemetryImpulse.Broadcast(ETelemetryImpulseId::VerdictStamped, 1.0f, QueryReceiverLocationOrZero());
 
@@ -501,7 +553,9 @@ bool UInspectionShiftSubsystem::TryStampQuotaVerdict()
 	{
 		SetShiftPhase(EShiftPhase::ContractPassTransition);
 		RefreshAndBroadcastSnapshot();
-		OnShiftVerdict.Broadcast(EShiftVerdictType::ContractPassed, EContractFaultReason::None);
+		OnShiftVerdict.Broadcast(
+			bPrecisionStamp ? EShiftVerdictType::DirectorsCutPassed : EShiftVerdictType::ContractPassed,
+			EContractFaultReason::None);
 
 		if (UWorld* World = GetWorld())
 		{
@@ -517,6 +571,12 @@ bool UInspectionShiftSubsystem::TryStampQuotaVerdict()
 				false);
 		}
 	}
+	else if (CurrentShiftNumber == TargetBondShifts)
+	{
+		SetShiftPhase(EShiftPhase::BondCleared);
+		RefreshAndBroadcastSnapshot();
+		OnShiftVerdict.Broadcast(EShiftVerdictType::BondCleared, EContractFaultReason::None);
+	}
 	else
 	{
 		SetShiftPhase(EShiftPhase::ShiftCompleted);
@@ -527,14 +587,130 @@ bool UInspectionShiftSubsystem::TryStampQuotaVerdict()
 	return true;
 }
 
-void UInspectionShiftSubsystem::RequestManualContractReset()
+bool UInspectionShiftSubsystem::TryConfirmOrStampAction()
 {
 	if (CurrentPhase == EShiftPhase::ActiveInspection)
 	{
+		return TryStampQuotaVerdict();
+	}
+
+	if (CurrentPhase == EShiftPhase::ShiftCompleted || CurrentPhase == EShiftPhase::BondCleared)
+	{
+		++CurrentShiftNumber;
+		LastStampScripAwarded = 0;
+		bLastStampWasDirectorsCut = false;
+		ClearTransientRequisitionFeedback();
+		OnTelemetryImpulse.Broadcast(ETelemetryImpulseId::VerdictStamped, 0.90f, QueryReceiverLocationOrZero());
+		return StartShiftFromContract(0);
+	}
+
+	return false;
+}
+
+bool UInspectionShiftSubsystem::TryPurchaseRequisition(ERequisitionTrack Track)
+{
+	if (CurrentPhase == EShiftPhase::WaitingForStations || CurrentPhase == EShiftPhase::ContractIntro)
+	{
+		return false;
+	}
+
+	if (CurrentPhase == EShiftPhase::FaultResetDelay)
+	{
+		SetTransientRequisitionFeedback(TEXT("FAULT LOCKOUT - WAIT FOR CELL RESET"), false);
+		RefreshAndBroadcastSnapshot();
+		return false;
+	}
+
+	uint8* TargetLevelPtr = nullptr;
+	const TCHAR* TrackName = TEXT("REQUISITION");
+	switch (Track)
+	{
+	case ERequisitionTrack::ClampHydraulics:
+		TargetLevelPtr = &ClampHydraulicsLevel;
+		TrackName = TEXT("[1] HYDRAULICS");
+		break;
+	case ERequisitionTrack::TareHopper:
+		TargetLevelPtr = &TareHopperLevel;
+		TrackName = TEXT("[2] TARE HOPPER");
+		break;
+	case ERequisitionTrack::VeinScannerDamper:
+		TargetLevelPtr = &VeinScannerDamperLevel;
+		TrackName = TEXT("[3] SCAN+DAMPER");
+		break;
+	default:
+		return false;
+	}
+
+	if (*TargetLevelPtr >= 3)
+	{
+		SetTransientRequisitionFeedback(
+			FString::Printf(TEXT("REQUISITION AT MAX LEVEL (%s LV.3)"), TrackName),
+			false);
+		RefreshAndBroadcastSnapshot();
+		return false;
+	}
+
+	const int32 Cost = GetRequisitionNextCost(*TargetLevelPtr);
+	if (ScripBalance < Cost)
+	{
+		SetTransientRequisitionFeedback(
+			FString::Printf(TEXT("INSUFFICIENT SCRIP (NEED %d, HAVE %d)"), Cost, ScripBalance),
+			false);
+		RefreshAndBroadcastSnapshot();
+		return false;
+	}
+
+	ScripBalance -= Cost;
+	++(*TargetLevelPtr);
+	const int32 NewLv = static_cast<int32>(*TargetLevelPtr);
+
+	FString ApprovalMessage;
+	switch (Track)
+	{
+	case ERequisitionTrack::ClampHydraulics:
+		ApprovalMessage = FString::Printf(TEXT("REQUISITION APPROVED: [1] HYDRAULICS LV.%d (+%d%% TORQUE)"), NewLv, NewLv * 25);
+		break;
+	case ERequisitionTrack::TareHopper:
+		ApprovalMessage = FString::Printf(TEXT("REQUISITION APPROVED: [2] TARE HOPPER LV.%d (+%d KG)"), NewLv, NewLv * 5);
+		break;
+	case ERequisitionTrack::VeinScannerDamper:
+		ApprovalMessage = FString::Printf(TEXT("REQUISITION APPROVED: [3] SCAN+DAMPER LV.%d (+%d%% SCAN)"), NewLv, NewLv * 30);
+		break;
+	}
+
+	SetTransientRequisitionFeedback(ApprovalMessage, true);
+	OnTelemetryImpulse.Broadcast(ETelemetryImpulseId::DiverterToggled, 0.85f, QueryReceiverLocationOrZero());
+	RefreshAndBroadcastSnapshot();
+
+	if (CurrentPhase == EShiftPhase::ActiveInspection)
+	{
+		EvaluateContractHealth();
+	}
+
+	return true;
+}
+
+void UInspectionShiftSubsystem::RequestManualContractReset()
+{
+	// Anti-farming guard: mid-shift HOLD [R] resets ONLY the active contract (0 Scrip earned; preserves Shift, Scrip, Upgrades).
+	// At ShiftCompleted or BondCleared, HOLD [R] performs a full Career Reset (Shift 01, 0 Scrip, Lv 0/0/0).
+	if (CurrentPhase == EShiftPhase::ActiveInspection)
+	{
+		LastStampScripAwarded = 0;
+		bLastStampWasDirectorsCut = false;
+		ClearTransientRequisitionFeedback();
 		TriggerContractFault(EContractFaultReason::ManualOperatorReset);
 	}
-	else if (CurrentPhase == EShiftPhase::ShiftCompleted)
+	else if (CurrentPhase == EShiftPhase::ShiftCompleted || CurrentPhase == EShiftPhase::BondCleared)
 	{
+		CurrentShiftNumber = 1;
+		ScripBalance = 0;
+		LastStampScripAwarded = 0;
+		bLastStampWasDirectorsCut = false;
+		ClampHydraulicsLevel = 0;
+		TareHopperLevel = 0;
+		VeinScannerDamperLevel = 0;
+		ClearTransientRequisitionFeedback();
 		StartShiftFromContract(0);
 	}
 }
@@ -560,6 +736,7 @@ void UInspectionShiftSubsystem::TriggerContractFaultAtLocation(
 	}
 
 	bIsContractBriefActive = false;
+	ClearTransientRequisitionFeedback();
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(ContractBriefTimerHandle);
@@ -653,7 +830,7 @@ UShiftProgressionDataAsset* UInspectionShiftSubsystem::BuildFallbackGreyboxProgr
 	FallbackGreyboxProgression->MaxInFlightWatchdogSeconds = 6.0f;
 	FallbackGreyboxProgression->FaultAutoResetDelaySeconds = 1.8f;
 	FallbackGreyboxProgression->ContractBriefDurationSeconds = 3.5f;
-	FallbackGreyboxProgression->TightTorqueBriefThresholdNm = 42.0f;
+	FallbackGreyboxProgression->TightTorqueBriefThresholdNm = 29.0f;
 
 	auto MakeVein = [](const FVector& StartCm, const FVector& EndCm, float RadiusCm, float WarnCm) -> FVolatileVeinDefinition
 	{
@@ -677,13 +854,14 @@ UShiftProgressionDataAsset* UInspectionShiftSubsystem::BuildFallbackGreyboxProgr
 		C01->QuotaToleranceKg = 1.25f;
 		C01->MaxAllowedTareWasteKg = 14.0f;
 		C01->bAllowDiverterToggle = false;
-		C01->ClampMaxSafeTorqueNm = 65.0f;
+		C01->ClampMaxSafeTorqueNm = 26.0f;
+		C01->ClampFatigueGraceSeconds = 6.5f;
 		FallbackGreyboxContracts.Add(C01);
 	}
 
-	// Contract 02 (Act I-B): Front-facing YZ Asymmetric L-Block (~39.92 kg initial mass, CoM_Y = -3.06 cm -> S_clamp = 0.42 on spawn).
+	// Contract 02 (Act I-B): Front-facing YZ Asymmetric L-Block (~39.92 kg initial mass, CoM_Y = -3.06 cm -> S_clamp = 0.45 on spawn).
 	{
-		UMonolithContractDataAsset* C02 = NewObject<UMonolithContractDataAsset>(this, TEXT("DA_Fallback_Contract02_LBlock"));
+		UMonolithContractDataAsset* C02 = NewObject<UMonolithContractDataAsset>(this, TEXT("ACT_IB_Fallback_Contract02_LBlock"));
 		C02->ContractCode = FText::FromString(TEXT("ACT I-B // CTR-02: ECCENTRIC L-CASTING"));
 		C02->ContractDirectiveText = GetDefaultDirectiveForContractIndex(1);
 		C02->BaseShape = EMonolithBaseShape::AsymmetricLBlock;
@@ -693,7 +871,8 @@ UShiftProgressionDataAsset* UInspectionShiftSubsystem::BuildFallbackGreyboxProgr
 		C02->QuotaToleranceKg = 1.35f;
 		C02->MaxAllowedTareWasteKg = 16.0f;
 		C02->bAllowDiverterToggle = true;
-		C02->ClampMaxSafeTorqueNm = 28.5f;
+		C02->ClampMaxSafeTorqueNm = 26.5f;
+		C02->ClampFatigueGraceSeconds = 6.5f;
 		FallbackGreyboxContracts.Add(C02);
 	}
 
@@ -709,7 +888,8 @@ UShiftProgressionDataAsset* UInspectionShiftSubsystem::BuildFallbackGreyboxProgr
 		C03->QuotaToleranceKg = 1.00f;
 		C03->MaxAllowedTareWasteKg = 18.0f;
 		C03->bAllowDiverterToggle = true;
-		C03->ClampMaxSafeTorqueNm = 60.0f;
+		C03->ClampMaxSafeTorqueNm = 28.0f;
+		C03->ClampFatigueGraceSeconds = 6.5f;
 		C03->HiddenVeins.Add(MakeVein(FVector(-4.0f, -7.0f, -14.0f), FVector(4.0f, 7.0f, -6.0f), 2.8f, 18.0f));
 		FallbackGreyboxContracts.Add(C03);
 	}
@@ -726,13 +906,14 @@ UShiftProgressionDataAsset* UInspectionShiftSubsystem::BuildFallbackGreyboxProgr
 		C04->QuotaToleranceKg = 0.95f;
 		C04->MaxAllowedTareWasteKg = 22.0f;
 		C04->bAllowDiverterToggle = true;
-		C04->ClampMaxSafeTorqueNm = 65.0f;
+		C04->ClampMaxSafeTorqueNm = 30.0f;
+		C04->ClampFatigueGraceSeconds = 6.5f;
 		C04->HiddenVeins.Add(MakeVein(FVector(-6.0f, -9.0f, 6.0f), FVector(6.0f, -2.0f, 20.0f), 2.5f, 18.0f));
 		C04->HiddenVeins.Add(MakeVein(FVector(6.0f, 3.0f, -24.0f), FVector(-6.0f, 9.0f, -10.0f), 2.5f, 18.0f));
 		FallbackGreyboxContracts.Add(C04);
 	}
 
-	// Contract 05 (Act III-A): High-Density Bismuth Counter-Torque YZ L-Block (~69.77 kg initial mass, CoM_Y = -2.68 cm -> S_clamp = 0.57 on spawn).
+	// Contract 05 (Act III-A): High-Density Bismuth Counter-Torque YZ L-Block (~69.77 kg initial mass, CoM_Y = -2.68 cm -> S_clamp = 0.59 on spawn).
 	{
 		UMonolithContractDataAsset* C05 = NewObject<UMonolithContractDataAsset>(this, TEXT("DA_Fallback_Contract05_BismuthTorque"));
 		C05->ContractCode = FText::FromString(TEXT("ACT III-A // CTR-05: DENSE BISMUTH COUNTER-TORQUE"));
@@ -744,8 +925,8 @@ UShiftProgressionDataAsset* UInspectionShiftSubsystem::BuildFallbackGreyboxProgr
 		C05->QuotaToleranceKg = 0.90f;
 		C05->MaxAllowedTareWasteKg = 28.0f;
 		C05->bAllowDiverterToggle = true;
-		C05->ClampMaxSafeTorqueNm = 32.0f;
-		C05->ClampFatigueGraceSeconds = 4.5f;
+		C05->ClampMaxSafeTorqueNm = 31.0f;
+		C05->ClampFatigueGraceSeconds = 6.5f;
 		C05->ClampFatigueCooldownSeconds = 3.0f;
 		C05->ClampSpringStiffness = 210.0f;
 		C05->ClampSpringDamping = 28.0f;
@@ -767,8 +948,8 @@ UShiftProgressionDataAsset* UInspectionShiftSubsystem::BuildFallbackGreyboxProgr
 		C06->QuotaToleranceKg = 0.85f;
 		C06->MaxAllowedTareWasteKg = 30.0f;
 		C06->bAllowDiverterToggle = true;
-		C06->ClampMaxSafeTorqueNm = 38.0f;
-		C06->ClampFatigueGraceSeconds = 4.2f;
+		C06->ClampMaxSafeTorqueNm = 34.0f;
+		C06->ClampFatigueGraceSeconds = 6.5f;
 		C06->ClampFatigueCooldownSeconds = 3.0f;
 		C06->ClampSpringStiffness = 220.0f;
 		C06->ClampSpringDamping = 28.0f;
@@ -832,6 +1013,7 @@ bool UInspectionShiftSubsystem::LoadAndBeginContract(int32 ContractIndex)
 	VaporizedTareMassKg = 0.0f;
 	DisposedChunksTareMassKg = 0.0f;
 	AccumulatedTareWasteKg = 0.0f;
+	LatestClampStrainNormalized = 0.0f;
 
 	for (int32 Idx = AudioBridges.Num() - 1; Idx >= 0; --Idx)
 	{
@@ -967,13 +1149,18 @@ void UInspectionShiftSubsystem::RefreshAndBroadcastSnapshot()
 	}
 
 	const float TargetMassKg = IsValid(ActiveContract) ? ActiveContract->TargetTitheMassKg : 10.0f;
-	const float ToleranceKg = IsValid(ActiveContract) ? ActiveContract->QuotaToleranceKg : 0.5f;
-	const float MaxTareKg = IsValid(ActiveContract) ? ActiveContract->MaxAllowedTareWasteKg : 15.0f;
+	const float ToleranceKg = GetEffectiveQuotaToleranceKg(ActiveContract);
+	const float DirectorsCutTolKg = GetDirectorsCutToleranceKg(ToleranceKg);
+	const float MaxTareKg = GetEffectiveMaxTareWasteKg(ActiveContract);
 
 	const bool bWithinWindow =
 		!bReceiverContaminated &&
 		(SettledPanMassKg >= (TargetMassKg - ToleranceKg - QuotaBoundaryFloatEpsilonKg)) &&
 		(SettledPanMassKg <= (TargetMassKg + ToleranceKg + QuotaBoundaryFloatEpsilonKg));
+
+	const bool bWithinDirectorsCut =
+		!bReceiverContaminated &&
+		(FMath::Abs(SettledPanMassKg - TargetMassKg) <= (DirectorsCutTolKg + QuotaBoundaryFloatEpsilonKg));
 
 	const bool bReadyForStamp =
 		(CurrentPhase == EShiftPhase::ActiveInspection) &&
@@ -982,18 +1169,32 @@ void UInspectionShiftSubsystem::RefreshAndBroadcastSnapshot()
 		bWithinWindow;
 
 	CachedSnapshot.ContractIndex = CurrentContractIndex;
+	CachedSnapshot.CurrentShiftNumber = CurrentShiftNumber;
+	CachedSnapshot.TargetBondShifts = TargetBondShifts;
+	CachedSnapshot.ScripBalance = ScripBalance;
+	CachedSnapshot.LastStampScripAwarded = LastStampScripAwarded;
 	CachedSnapshot.TargetTitheMassKg = TargetMassKg;
 	CachedSnapshot.QuotaToleranceKg = ToleranceKg;
+	CachedSnapshot.DirectorsCutToleranceKg = DirectorsCutTolKg;
 	CachedSnapshot.SettledScaleMassKg = SettledPanMassKg;
 	CachedSnapshot.RemainderMassKg = RemainderMassKg;
 	CachedSnapshot.InFlightMassKg = InFlightMassKg;
 	CachedSnapshot.AccumulatedTareWasteKg = AccumulatedTareWasteKg;
 	CachedSnapshot.MaxAllowedTareWasteKg = MaxTareKg;
+	CachedSnapshot.ClampStrainNormalized = LatestClampStrainNormalized;
+	CachedSnapshot.ClampHydraulicsLevel = ClampHydraulicsLevel;
+	CachedSnapshot.TareHopperLevel = TareHopperLevel;
+	CachedSnapshot.VeinScannerDamperLevel = VeinScannerDamperLevel;
 	CachedSnapshot.ContractDirectiveText = ResolveActiveContractDirectiveText();
 	CachedSnapshot.ContractBriefText = ResolveContractOperationalBriefText(ActiveContract);
+	CachedSnapshot.DirectorIntercomLine = ResolveDirectorIntercomLine(bReadyForStamp, bWithinDirectorsCut);
+	CachedSnapshot.TransientRequisitionFeedback = TransientRequisitionFeedback;
 	CachedSnapshot.ActiveDiverterRoute = ActiveRoute;
 	CachedSnapshot.bIsContractBriefActive = bIsContractBriefActive && (CurrentPhase == EShiftPhase::ActiveInspection);
+	CachedSnapshot.bLastRequisitionSucceeded = bLastRequisitionSucceeded;
 	CachedSnapshot.bIsWithinQuotaWindow = bWithinWindow;
+	CachedSnapshot.bIsWithinDirectorsCutWindow = bWithinDirectorsCut;
+	CachedSnapshot.bLastStampWasDirectorsCut = bLastStampWasDirectorsCut;
 	CachedSnapshot.bScaleSettledForStamp = bReadyForStamp;
 
 	OnNativeContractSnapshotUpdated.Broadcast(CachedSnapshot);
@@ -1025,22 +1226,24 @@ void UInspectionShiftSubsystem::EvaluateContractHealth()
 
 	const float SettledScaleMassKg = FMath::Max(0.0f, IQuotaReceiverInterface::Execute_GetSettledMassKg(ReceiverObj));
 	const bool bReceiverSettled = IQuotaReceiverInterface::Execute_IsReceiverSettled(ReceiverObj);
+	const float EffectiveToleranceKg = GetEffectiveQuotaToleranceKg(ActiveContract);
+	const float EffectiveMaxTareKg = GetEffectiveMaxTareWasteKg(ActiveContract);
 
 	if (bReceiverSettled &&
-		SettledScaleMassKg > (ActiveContract->TargetTitheMassKg + ActiveContract->QuotaToleranceKg + QuotaBoundaryFloatEpsilonKg))
+		SettledScaleMassKg > (ActiveContract->TargetTitheMassKg + EffectiveToleranceKg + QuotaBoundaryFloatEpsilonKg))
 	{
 		TriggerContractFault(EContractFaultReason::QuotaOvershoot);
 		return;
 	}
 
-	if (AccumulatedTareWasteKg > (ActiveContract->MaxAllowedTareWasteKg + QuotaBoundaryFloatEpsilonKg))
+	if (AccumulatedTareWasteKg > (EffectiveMaxTareKg + QuotaBoundaryFloatEpsilonKg))
 	{
 		TriggerContractFault(EContractFaultReason::TareAllowanceExceeded);
 		return;
 	}
 
 	if (ActiveInFlightPayloads.Num() == 0 &&
-		(SettledScaleMassKg + RemainderMassKg) < (ActiveContract->TargetTitheMassKg - ActiveContract->QuotaToleranceKg - QuotaBoundaryFloatEpsilonKg))
+		(SettledScaleMassKg + RemainderMassKg) < (ActiveContract->TargetTitheMassKg - EffectiveToleranceKg - QuotaBoundaryFloatEpsilonKg))
 	{
 		TriggerContractFault(EContractFaultReason::MathematicallyUnreachable);
 		return;
@@ -1135,6 +1338,52 @@ void UInspectionShiftSubsystem::HandleContractBriefTimerElapsed()
 	}
 }
 
+void UInspectionShiftSubsystem::HandleRequisitionFeedbackTimerElapsed()
+{
+	if (TransientRequisitionFeedback.IsEmpty())
+	{
+		return;
+	}
+
+	TransientRequisitionFeedback.Empty();
+	bLastRequisitionSucceeded = false;
+	RefreshAndBroadcastSnapshot();
+}
+
+void UInspectionShiftSubsystem::HandlePublisherTelemetryStream(ETelemetryStreamId StreamId, float NormalizedValue)
+{
+	if (StreamId == ETelemetryStreamId::ClampStrain)
+	{
+		LatestClampStrainNormalized = FMath::Clamp(NormalizedValue, 0.0f, 1.0f);
+	}
+}
+
+void UInspectionShiftSubsystem::SetTransientRequisitionFeedback(const FString& FeedbackMessage, bool bSucceeded)
+{
+	TransientRequisitionFeedback = FeedbackMessage;
+	bLastRequisitionSucceeded = bSucceeded;
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(
+			RequisitionFeedbackTimerHandle,
+			this,
+			&UInspectionShiftSubsystem::HandleRequisitionFeedbackTimerElapsed,
+			RequisitionFeedbackDisplaySeconds,
+			false);
+	}
+}
+
+void UInspectionShiftSubsystem::ClearTransientRequisitionFeedback()
+{
+	TransientRequisitionFeedback.Empty();
+	bLastRequisitionSucceeded = false;
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(RequisitionFeedbackTimerHandle);
+	}
+}
+
 void UInspectionShiftSubsystem::SetShiftPhase(EShiftPhase NewPhase)
 {
 	if (CurrentPhase != NewPhase)
@@ -1174,16 +1423,111 @@ FString UInspectionShiftSubsystem::ResolveContractOperationalBriefText(const UMo
 		return TEXT("BRIEF: [SPACE] -> TARE TO PURGE VEIN CHUNKS FIRST, THEN TITHE");
 	}
 
-	const float TightTorqueThresholdNm = IsValid(ActiveProgressionAsset)
-		? FMath::Max(5.0f, ActiveProgressionAsset->TightTorqueBriefThresholdNm)
-		: DefaultTightTorqueBriefThresholdNm;
-
-	if (Contract->ClampMaxSafeTorqueNm <= TightTorqueThresholdNm)
+	if (Contract->BaseShape == EMonolithBaseShape::AsymmetricLBlock ||
+		Contract->ClampMaxSafeTorqueNm <= 25.0f)
 	{
 		return TEXT("BRIEF: WATCH CLAMP TORQUE - BEVEL [RMB] OR TRIM LOAD");
 	}
 
 	return TEXT("BRIEF: CUT WITHIN TARGET MASS WINDOW -> STAMP [E]");
+}
+
+FString UInspectionShiftSubsystem::ResolveDirectorIntercomLine(bool bReadyForStamp, bool bWithinDirectorsCut) const
+{
+	if (!TransientRequisitionFeedback.IsEmpty())
+	{
+		return TransientRequisitionFeedback;
+	}
+
+	switch (CurrentPhase)
+	{
+	case EShiftPhase::FaultResetDelay:
+		switch (LastFaultReason)
+		{
+		case EContractFaultReason::ScaleContaminated:
+			return TEXT("CONTAMINATED TITHE! DUMP VEINS TO TARE!");
+		case EContractFaultReason::VolatileDetonation:
+			return TEXT("ISOTOPE DETONATED! DEBT PENALTY LOGGED!");
+		case EContractFaultReason::QuotaOvershoot:
+			return TEXT("OVERWEIGHT SLOP! READ YOUR TOLERANCE!");
+		case EContractFaultReason::TareAllowanceExceeded:
+			return TEXT("TARE HOPPER CHOKED! STOP WASTING ORE!");
+		case EContractFaultReason::ClampStructuralSnap:
+			return TEXT("YOU SHEARED MY CLAMP! BALANCE YOUR CUTS!");
+		case EContractFaultReason::MathematicallyUnreachable:
+			return TEXT("CORE RUINED! NOT ENOUGH MASS FOR QUOTA!");
+		case EContractFaultReason::ManualOperatorReset:
+			return TEXT("CELL PURGED BY #409. NO SCRIP ISSUED.");
+		default:
+			return TEXT("INSPECTION FAULT! RESETTING CELL 09!");
+		}
+
+	case EShiftPhase::ContractPassTransition:
+		return bLastStampWasDirectorsCut
+			? TEXT("DIRECTOR'S CUT! EXEMPLARY (+2 SCRIP)")
+			: TEXT("ACCEPTABLE YIELD, #409 (+1 SCRIP)");
+
+	case EShiftPhase::ShiftCompleted:
+		if (CurrentShiftNumber == 1)
+		{
+			return TEXT("SHIFT 01 LOGGED. TOLERANCES TIGHTEN NEXT.");
+		}
+		if (CurrentShiftNumber == 2)
+		{
+			return TEXT("ONE SHIFT REMAINS ON YOUR BOND, #409.");
+		}
+		return FString::Printf(TEXT("OVERTIME S%02d LOGGED. KEEP CARVING, #409."), CurrentShiftNumber);
+
+	case EShiftPhase::BondCleared:
+		return TEXT("BOND CLEARED! #409 RELEASE AUTHORIZED.");
+
+	case EShiftPhase::ActiveInspection:
+	default:
+		if (LatestClampStrainNormalized >= 0.78f)
+		{
+			return TEXT("STOP ONE-SIDED CUTS! JAW WILL SNAP!");
+		}
+		if (bReadyForStamp && bWithinDirectorsCut)
+		{
+			return TEXT("PRECISION LOCK! STAMP [E] FOR +2 SCRIP!");
+		}
+		if (bReadyForStamp)
+		{
+			return TEXT("WITHIN TOLERANCE. STAMP [E] OR REFINE.");
+		}
+
+		switch (CurrentContractIndex)
+		{
+		case 0:
+			if (CurrentShiftNumber <= 1)
+			{
+				return TEXT("#409: WORK OFF YOUR 3-SHIFT BOND. CARVE.");
+			}
+			if (CurrentShiftNumber == 2)
+			{
+				return TEXT("SHIFT 02/03: TIGHTER QUOTAS. NO SLOP, #409.");
+			}
+			if (CurrentShiftNumber == 3)
+			{
+				return TEXT("FINAL SHIFT 03/03: EARN YOUR RELEASE, #409.");
+			}
+			return FString::Printf(TEXT("OVERTIME S%02d: VOLUNTARY HAZARD PAY ACTIVE."), CurrentShiftNumber);
+		case 1:
+			return TEXT("ECCENTRIC L-BLOCK: TRIM OVERHANG FIRST!");
+		case 2:
+			return TEXT("LIVE ISOTOPE CORE: [SPACE] DUMPS VEIN SCRAP.");
+		case 3:
+			return TEXT("CROSSED VEIN LATTICE: LISTEN TO SCANNER.");
+		case 4:
+			return TEXT("DENSE BISMUTH: ALTERNATE SIDES OR SNAP!");
+		case 5:
+			return (CurrentShiftNumber == TargetBondShifts)
+				? TEXT("FINAL INGOT, #409: THREE VEINS TO FREEDOM!")
+				: TEXT("DIRECTORATE INGOT: 3 VEINS. ZERO MARGIN.");
+		default:
+			return TEXT("#409: MAINTAIN QUOTA DISCIPLINE.");
+		}
+	}
 }
 
 FString UInspectionShiftSubsystem::GetDefaultDirectiveForContractIndex(int32 ContractIndex)

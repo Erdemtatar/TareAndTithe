@@ -66,6 +66,11 @@ void UVeinScannerComponent::ClearActiveVeins()
 	EmitVeinProximityTelemetry(0.0f, true);
 }
 
+void UVeinScannerComponent::SetWarningRangeMultiplier(float InMultiplier)
+{
+	WarningRangeMultiplier = FMath::Clamp(InMultiplier, 0.5f, 4.0f);
+}
+
 bool UVeinScannerComponent::DoesLocalHalfSpaceContainVein(
 	const FVector& LocalPlaneOrigin,
 	const FVector& SeveredLocalUnitNormal,
@@ -120,7 +125,8 @@ FSlicePreviewTelemetry UVeinScannerComponent::EvaluateVeinsAgainstLocalPlane(
 	const FVector& LocalPlaneOrigin,
 	const FVector& LocalPlaneNormal,
 	bool bPlaneIntersectsMesh,
-	const TArray<FVolatileVeinDefinition>& Veins)
+	const TArray<FVolatileVeinDefinition>& Veins,
+	float InWarningRangeMultiplier)
 {
 	FSlicePreviewTelemetry Result;
 	Result.bIntersectsMonolith = false;
@@ -146,6 +152,7 @@ FSlicePreviewTelemetry UVeinScannerComponent::EvaluateVeinsAgainstLocalPlane(
 		return Result;
 	}
 
+	const double SafeRangeMultiplier = FMath::Clamp(static_cast<double>(InWarningRangeMultiplier), 0.5, 4.0);
 	const double PlaneD = FVector::DotProduct(UnitNormal, LocalPlaneOrigin);
 	double MinClearanceCm = static_cast<double>(MAX_FLT);
 	float MaxProximityNormalized = 0.0f;
@@ -171,7 +178,7 @@ FSlicePreviewTelemetry UVeinScannerComponent::EvaluateVeinsAgainstLocalPlane(
 
 		MinClearanceCm = FMath::Min(MinClearanceCm, ClearanceCm);
 
-		const double WarningRangeCm = FMath::Max(0.001, static_cast<double>(Vein.WarningRangeCm));
+		const double WarningRangeCm = FMath::Max(0.001, static_cast<double>(Vein.WarningRangeCm) * SafeRangeMultiplier);
 		const double ClampedLinearProximity = FMath::Clamp(1.0 - (ClearanceCm / WarningRangeCm), 0.0, 1.0);
 		const float CurvedProximity = static_cast<float>(FMath::Pow(ClampedLinearProximity, VeinProximityFalloffExponent));
 		MaxProximityNormalized = FMath::Max(MaxProximityNormalized, FMath::Clamp(CurvedProximity, 0.0f, 1.0f));
@@ -211,7 +218,8 @@ FSlicePreviewTelemetry UVeinScannerComponent::EvaluateWorldPlane(
 		LocalOrigin,
 		LocalNormal,
 		true,
-		ActiveVeins);
+		ActiveVeins,
+		WarningRangeMultiplier);
 
 	EmitVeinProximityTelemetry(Telemetry.VeinProximityNormalized);
 	return Telemetry;

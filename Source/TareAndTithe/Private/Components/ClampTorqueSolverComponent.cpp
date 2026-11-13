@@ -53,6 +53,9 @@ void UClampTorqueSolverComponent::InitializeFromContract(
 		ClampSpringDamping = FMath::Max(1.0f, Contract->ClampSpringDamping);
 	}
 
+	BaseClampMaxSafeTorqueNm = FMath::Max(1.0f, ClampMaxSafeTorqueNm);
+	InitialContractMassKg = FMath::Max(1.0f, InitialRemainderMassKg);
+
 	if (!bHasExplicitNeutralPivot)
 	{
 		if (IsValid(TiltingMountComponent))
@@ -69,6 +72,106 @@ void UClampTorqueSolverComponent::InitializeFromContract(
 
 	ResetClampState();
 	UpdateRemainderLoad(InitialRemainderMassKg, InitialRemainderLocalCoMCm);
+}
+
+void UClampTorqueSolverComponent::ApplySliceLoadAndShear(
+	float PrevRemainderMassKg,
+	const FVector& PrevMountLocalCoMCm,
+	float NewRemainderMassKg,
+	const FVector& NewMountLocalCoMCm,
+	float PreCutHorizontalHalfSpanCm,
+	const FVector& PlaneNormalWorld)
+{
+	if (bClampSnapped)
+	{
+		return;
+	}
+
+	const FVector PrevNeutralWorldCoMCm = NeutralPivotWorld.TransformPosition(PrevMountLocalCoMCm);
+	const FVector PrevLeverMeters = (PrevNeutralWorldCoMCm - NeutralPivotWorld.GetLocation()) * CentimetersToMeters;
+	const double PrevMassKg = FMath::Max(0.0, static_cast<double>(PrevRemainderMassKg));
+	const FVector2d TorqueStaticPrev(
+		+PrevLeverMeters.Y * PrevMassKg * GravityAccelerationMps2,
+		-PrevLeverMeters.X * PrevMassKg * GravityAccelerationMps2);
+	const FVector2d TorqueEffPrev = TorqueStaticPrev + AccumulatedAsymmetricShearNm;
+
+	const float SeveredMassKg = FMath::Max(0.0f, PrevRemainderMassKg - NewRemainderMassKg);
+	if (SeveredMassKg >= 0.15f)
+	{
+		const FVector UnitWorldNormal = PlaneNormalWorld.GetSafeNormal();
+		const FVector MountNormal = NeutralPivotWorld.InverseTransformVectorNoScale(UnitWorldNormal).GetSafeNormal();
+		const double HorizontalNormalMag = FVector2d(MountNormal.X, MountNormal.Y).Length();
+		const double PlaneTiltFactor = FMath::SmoothStep(0.22, 0.60, HorizontalNormalMag);
+
+		if (PlaneTiltFactor <= 1.0e-4)
+		{
+			// Symmetric horizontal slice across the block relieves 15% of accumulated jaw shear.
+			AccumulatedAsymmetricShearNm *= 0.85;
+		}
+		else
+		{
+			const double SafeSeveredKg = static_cast<double>(SeveredMassKg);
+			const double SafeNewKg = FMath::Max(0.0, static_cast<double>(NewRemainderMassKg));
+			const FVector CutMountLocalCoMCm =
+				((PrevMassKg * PrevMountLocalCoMCm) - (SafeNewKg * NewMountLocalCoMCm)) / SafeSeveredKg;
+
+			const FVector WorldCutCoMCm = NeutralPivotWorld.TransformPosition(CutMountLocalCoMCm);
+			const FVector EccWorldCm = WorldCutCoMCm - PrevNeutralWorldCoMCm;
+			const FVector2d EccXYCm(EccWorldCm.X, EccWorldCm.Y);
+			const double EccLenCm = EccXYCm.Length();
+
+			const double RefHalfSpanCm = FMath::Max(8.0, static_cast<double>(PreCutHorizontalHalfSpanCm));
+			const double NormEcc = EccLenCm / RefHalfSpanCm;
+			const double EccFactor = FMath::Clamp((NormEcc - 0.20) / 0.55, 0.0, 1.15);
+
+			const double MassRefKg = FMath::Max(0.8, 0.08 * static_cast<double>(InitialContractMassKg));
+			const double MassFactor = FMath::Clamp(SafeSeveredKg / MassRefKg, 0.35, 1.15);
+
+			if (EccFactor > 1.0e-4 && EccLenCm > 1.0e-4)
+			{
+				const FVector2d PryDir = FVector2d(-EccXYCm.Y, +EccXYCm.X) / EccLenCm;
+				const double PrevEffMagNm = TorqueEffPrev.Length();
+				const FVector2d PrevEffDir = (PrevEffMagNm > 1.0e-4)
+					? (TorqueEffPrev / PrevEffMagNm)
+					: FVector2d::ZeroVector;
+				const double AlignmentDot = PryDir.Dot(PrevEffDir);
+				const double BaseSafeNm = FMath::Max(1.0, static_cast<double>(BaseClampMaxSafeTorqueNm));
+
+				// Guard 2: L-Block / Overhang Relief Sign Guard — slicing into the heavy overhanging side
+				// relieves clamp bending without sign-flipping or adding punitive shear.
+				if (PrevEffMagNm >= 1.5 && AlignmentDot < -0.15)
+				{
+					SameSideCutStreak = 0;
+					const double ReliefMagNm = 1.35 * 0.34 * BaseSafeNm * PlaneTiltFactor * EccFactor * MassFactor;
+					const double CurShearLen = AccumulatedAsymmetricShearNm.Length();
+					if (CurShearLen > 1.0e-4)
+					{
+						AccumulatedAsymmetricShearNm =
+							(AccumulatedAsymmetricShearNm / CurShearLen) * FMath::Max(0.0, CurShearLen - ReliefMagNm);
+					}
+				}
+				else
+				{
+					if (PrevEffMagNm >= 1.5 && AlignmentDot >= 0.20)
+					{
+						++SameSideCutStreak;
+					}
+					else
+					{
+						SameSideCutStreak = 1;
+					}
+
+					const double StreakMult = 1.0 + (0.28 * static_cast<double>(FMath::Max(0, SameSideCutStreak - 1)));
+					const double DeltaShearMagNm = FMath::Min(
+						0.44 * BaseSafeNm,
+						0.34 * BaseSafeNm * PlaneTiltFactor * EccFactor * MassFactor * StreakMult);
+					AccumulatedAsymmetricShearNm += PryDir * DeltaShearMagNm;
+				}
+			}
+		}
+	}
+
+	UpdateRemainderLoad(NewRemainderMassKg, NewMountLocalCoMCm);
 }
 
 void UClampTorqueSolverComponent::UpdateRemainderLoad(
@@ -95,17 +198,38 @@ void UClampTorqueSolverComponent::UpdateRemainderLoad(
 	SetComponentTickEnabled(true);
 }
 
+void UClampTorqueSolverComponent::SetTorqueCapacityMultiplier(float InMultiplier)
+{
+	const float ClampedMult = FMath::Clamp(InMultiplier, 0.5f, 4.0f);
+	if (FMath::IsNearlyEqual(TorqueCapacityMultiplier, ClampedMult, 1.0e-4f))
+	{
+		return;
+	}
+
+	TorqueCapacityMultiplier = ClampedMult;
+	if (!bClampSnapped && RemainderMassKg > KINDA_SMALL_NUMBER)
+	{
+		RecomputeNeutralFrameTorqueAndInertia();
+		EmitStrainTelemetry(GetStrainNormalized(), true);
+		SetComponentTickEnabled(true);
+	}
+}
+
 void UClampTorqueSolverComponent::ResetClampState()
 {
 	bClampSnapped = false;
 	RemainderMassKg = 0.0f;
 	RemainderLocalCoMCm = FVector::ZeroVector;
+	StaticGravityTorqueNm = FVector2d::ZeroVector;
+	AccumulatedAsymmetricShearNm = FVector2d::ZeroVector;
 	TorqueNeutralNm = FVector2d::ZeroVector;
 	ThetaRad = FVector2d::ZeroVector;
 	OmegaRadPerSec = FVector2d::ZeroVector;
+	LastSnapTorqueDirection = FVector2D(1.0f, 0.0f);
 	EffectiveInertiaKgM2 = FMath::Max(0.25f, MinClampMountInertiaKgM2);
 	StrainRatio = 0.0f;
 	FatigueNormalized = 0.0f;
+	SameSideCutStreak = 0;
 
 	ApplyTiltToMountComponent();
 	EmitStrainTelemetry(0.0f, true);
@@ -255,12 +379,15 @@ void UClampTorqueSolverComponent::RecomputeNeutralFrameTorqueAndInertia()
 	//   tau_Roll  (X) = +LeverArmMeters.Y * m * g  (+Y foot overhang pulls +Y jaw downward in Roll, zero Pitch)
 	//   tau_Pitch (Y) = -LeverArmMeters.X * m * g  (+X depth overhang pulls +X jaw downward in Pitch)
 	const double MassKg = static_cast<double>(RemainderMassKg);
-	TorqueNeutralNm.X = +LeverArmMeters.Y * MassKg * GravityAccelerationMps2;
-	TorqueNeutralNm.Y = -LeverArmMeters.X * MassKg * GravityAccelerationMps2;
+	StaticGravityTorqueNm.X = +LeverArmMeters.Y * MassKg * GravityAccelerationMps2;
+	StaticGravityTorqueNm.Y = -LeverArmMeters.X * MassKg * GravityAccelerationMps2;
+	TorqueNeutralNm = StaticGravityTorqueNm + AccumulatedAsymmetricShearNm;
 
 	const double HorizontalTorqueMagNm = TorqueNeutralNm.Length();
-	const double SafeMaxTorqueNm = FMath::Max(1.0, static_cast<double>(ClampMaxSafeTorqueNm));
-	StrainRatio = static_cast<float>(FMath::Clamp(HorizontalTorqueMagNm / SafeMaxTorqueNm, 0.0, MaxClampedStrainRatio));
+	const double EffectiveSafeTorqueNm = FMath::Max(
+		1.0,
+		static_cast<double>(BaseClampMaxSafeTorqueNm) * static_cast<double>(TorqueCapacityMultiplier));
+	StrainRatio = static_cast<float>(FMath::Clamp(HorizontalTorqueMagNm / EffectiveSafeTorqueNm, 0.0, MaxClampedStrainRatio));
 
 	const float LeverArm3DMetersSq = static_cast<float>(LeverArmMeters.SizeSquared());
 	EffectiveInertiaKgM2 = FMath::Max(MinClampMountInertiaKgM2, RemainderMassKg * LeverArm3DMetersSq);
@@ -284,6 +411,26 @@ void UClampTorqueSolverComponent::TriggerStructuralSnap()
 	{
 		return;
 	}
+
+	const double SnapTorqueLen = TorqueNeutralNm.Length();
+	if (SnapTorqueLen > 1.0e-4)
+	{
+		LastSnapTorqueDirection = FVector2D(
+			static_cast<float>(TorqueNeutralNm.X / SnapTorqueLen),
+			static_cast<float>(TorqueNeutralNm.Y / SnapTorqueLen));
+	}
+	else
+	{
+		LastSnapTorqueDirection = FVector2D(1.0f, 0.0f);
+	}
+
+	// Visibly cock broken jaw mount to mechanical stop in the shear direction before detaching remainder.
+	const double MaxRollRad = FMath::DegreesToRadians(static_cast<double>(ThetaMaxDegrees));
+	const double MaxPitchRad = FMath::DegreesToRadians(static_cast<double>(FMath::Min(ThetaMaxDegrees, MaxPitchTiltDegrees)));
+	ThetaRad = FVector2d(
+		static_cast<double>(LastSnapTorqueDirection.X) * MaxRollRad * 0.90,
+		static_cast<double>(LastSnapTorqueDirection.Y) * MaxPitchRad * 0.90);
+	ApplyTiltToMountComponent();
 
 	bClampSnapped = true;
 	FatigueNormalized = 1.0f;

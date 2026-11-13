@@ -13,13 +13,13 @@ DA_PRESENTATION_PATH = "/Game/Presentation/DA_Presentation"
 AMBIENT_CUBEMAP_ASSET_NAME = "TC_CellAmbientCubemap"
 AMBIENT_CUBEMAP_DEST_PATH = f"{LIGHTING_DIR}/{AMBIENT_CUBEMAP_ASSET_NAME}"
 
-CONTRACT_DIRECTIVES: List[Tuple[str, str]] = [
-    ("DA_Contract_01", "CUT 12.0 KG TO TITHE | STAMP [E]"),
-    ("DA_Contract_02", "CUT GREEN YIELD | [SPACE] DUMPS TARE"),
-    ("DA_Contract_03", "HIDDEN VEIN: AUDIO SCAN & BEVEL [RMB]"),
-    ("DA_Contract_04", "SLAG COLUMN: DODGE VEIN | WATCH TARE"),
-    ("DA_Contract_05", "TORQUE LIMIT: KEEP CUTS BALANCED"),
-    ("DA_Contract_06", "DIRECTOR'S INGOT: DUAL VEINS + TORQUE"),
+CONTRACT_DIRECTIVES: List[Tuple[str, str, float]] = [
+    ("DA_Contract_01", "CUT 12.0 KG TO TITHE | STAMP [E]", 26.0),
+    ("DA_Contract_02", "CUT GREEN YIELD | [SPACE] DUMPS TARE", 26.5),
+    ("DA_Contract_03", "HIDDEN VEIN: AUDIO SCAN & BEVEL [RMB]", 28.0),
+    ("DA_Contract_04", "SLAG COLUMN: DODGE VEIN | WATCH TARE", 30.0),
+    ("DA_Contract_05", "TORQUE LIMIT: KEEP CUTS BALANCED", 31.0),
+    ("DA_Contract_06", "DIRECTOR'S INGOT: DUAL VEINS + TORQUE", 34.0),
 ]
 
 
@@ -1308,17 +1308,17 @@ def bind_materials_and_lighting_to_presentation(
     rim_right.set_editor_property("cast_shadows", False)
     rig_cfg.set_editor_property("rim_spot_right", rim_right)
 
-    # Direct +X frontal foundry shaft glow (dX = 112 cm onto X = 444 grate, 67 deg outer cone reaching Y = +-155 columns; R = 325 < 360 -> 0.000 side-wall spill)
+    # Phase 11B: Lowered & cooled deep furnace ember so foreground hero steel dominates ROI hierarchy (R = 325 < 360 -> 0.000 side-wall spill)
     mid_wash = rig_cfg.get_editor_property("midground_wash_spot")
-    mid_wash.set_editor_property("location", unreal.Vector(332.0, 0.0, 72.0))
-    mid_wash.set_editor_property("target_location", unreal.Vector(445.0, 0.0, 82.0))
-    mid_wash.set_editor_property("intensity", 10800.0)
+    mid_wash.set_editor_property("location", unreal.Vector(332.0, 0.0, 44.0))
+    mid_wash.set_editor_property("target_location", unreal.Vector(445.0, 0.0, 94.0))
+    mid_wash.set_editor_property("intensity", 5700.0)
     mid_wash.set_editor_property("attenuation_radius", 325.0)
     mid_wash.set_editor_property("inner_cone_angle", 38.0)
     mid_wash.set_editor_property("outer_cone_angle", 67.0)
-    mid_wash.set_editor_property("source_radius", 28.0)
+    mid_wash.set_editor_property("source_radius", 32.0)
     mid_wash.set_editor_property("source_length", 120.0)
-    mid_wash.set_editor_property("light_color", unreal.LinearColor(1.00, 0.38, 0.09, 1.0))
+    mid_wash.set_editor_property("light_color", unreal.LinearColor(1.00, 0.32, 0.065, 1.0))
     mid_wash.set_editor_property("cast_shadows", False)
     rig_cfg.set_editor_property("midground_wash_spot", mid_wash)
 
@@ -1420,7 +1420,7 @@ def update_contracts_and_monoliths(
     m_slag: unreal.Material,
     m_molten: unreal.Material,
 ) -> None:
-    for contract_name, directive_str in CONTRACT_DIRECTIVES:
+    for contract_name, directive_str, max_torque_nm in CONTRACT_DIRECTIVES:
         contract_path = f"{CONTRACTS_DIR}/{contract_name}"
         if not unreal.EditorAssetLibrary.does_asset_exist(contract_path):
             raise RuntimeError(f"Missing contract DataAsset at {contract_path}")
@@ -1432,16 +1432,19 @@ def update_contracts_and_monoliths(
         contract_asset.set_editor_property("outer_shell_material", m_slag)
         contract_asset.set_editor_property("molten_cut_cap_material", m_molten)
         contract_asset.set_editor_property("contract_directive_text", directive_str)
+        contract_asset.set_editor_property("clamp_max_safe_torque_nm", float(max_torque_nm))
+        contract_asset.set_editor_property("clamp_fatigue_grace_seconds", 6.5)
 
         if not unreal.EditorAssetLibrary.save_loaded_asset(contract_asset, only_if_is_dirty=False):
             raise RuntimeError(f"Failed saving contract DataAsset {contract_path}")
 
         base_shape = contract_asset.get_editor_property("base_shape")
         custom_mesh = contract_asset.get_editor_property("custom_monolith_mesh")
+        saved_torque = float(contract_asset.get_editor_property("clamp_max_safe_torque_nm"))
         log_info(
             f"Updated & saved {contract_path}: shape={base_shape.name}, "
             f"custom_mesh={None if custom_mesh is None else custom_mesh.get_name()}, "
-            f"directive={directive_str!r}"
+            f"max_torque_nm={saved_torque:.1f}, directive={directive_str!r}"
         )
 
     for custom_mesh_name in ("SM_Monolith_Contract04", "SM_Monolith_Contract06"):

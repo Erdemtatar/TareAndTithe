@@ -26,7 +26,8 @@ enum class EShiftPhase : uint8
 	ActiveInspection        UMETA(DisplayName = "Active Inspection"),
 	FaultResetDelay         UMETA(DisplayName = "Fault Reset Delay"),
 	ContractPassTransition  UMETA(DisplayName = "Contract Pass Transition"),
-	ShiftCompleted          UMETA(DisplayName = "Shift Completed")
+	ShiftCompleted          UMETA(DisplayName = "Shift Completed"),
+	BondCleared             UMETA(DisplayName = "3-Shift Indenture Bond Cleared")
 };
 
 DECLARE_DELEGATE_RetVal_ThreeParams(
@@ -93,9 +94,26 @@ public:
 	const UMonolithContractDataAsset* GetActiveContract() const { return ActiveContract; }
 	int32 GetCurrentContractIndex() const { return CurrentContractIndex; }
 	int32 GetTotalContractCount() const;
+
+	UFUNCTION(BlueprintPure, Category = "Shift")
 	EShiftPhase GetCurrentPhase() const { return CurrentPhase; }
+
+	UFUNCTION(BlueprintPure, Category = "Shift")
 	EContractFaultReason GetLastFaultReason() const { return LastFaultReason; }
+
+	UFUNCTION(BlueprintPure, Category = "Shift")
 	FContractRuntimeSnapshot GetCurrentSnapshot() const { return CachedSnapshot; }
+
+	UFUNCTION(BlueprintPure, Category = "Shift")
+	int32 GetCurrentShiftNumber() const { return CurrentShiftNumber; }
+
+	UFUNCTION(BlueprintPure, Category = "Shift")
+	int32 GetScripBalance() const { return ScripBalance; }
+
+	float GetEffectiveQuotaToleranceKg(const UMonolithContractDataAsset* Contract) const;
+	float GetDirectorsCutToleranceKg(float EffectiveToleranceKg) const;
+	float GetEffectiveMaxTareWasteKg(const UMonolithContractDataAsset* Contract) const;
+	static int32 GetRequisitionNextCost(uint8 CurrentLevel);
 
 	// Zero-Cast Station & Telemetry Self-Registration
 	void RegisterSliceableRig(const FShiftSliceableRigBinding& InBinding);
@@ -144,6 +162,12 @@ public:
 	bool TryStampQuotaVerdict();
 
 	UFUNCTION(BlueprintCallable, Category = "Shift")
+	bool TryConfirmOrStampAction();
+
+	UFUNCTION(BlueprintCallable, Category = "Shift")
+	bool TryPurchaseRequisition(ERequisitionTrack Track);
+
+	UFUNCTION(BlueprintCallable, Category = "Shift")
 	void RequestManualContractReset();
 
 	UFUNCTION(BlueprintCallable, Category = "Shift")
@@ -186,11 +210,16 @@ private:
 	void HandleFaultResetTimerElapsed();
 	void HandleContractPassTimerElapsed();
 	void HandleContractBriefTimerElapsed();
+	void HandleRequisitionFeedbackTimerElapsed();
+	void HandlePublisherTelemetryStream(ETelemetryStreamId StreamId, float NormalizedValue);
+	void SetTransientRequisitionFeedback(const FString& FeedbackMessage, bool bSucceeded);
+	void ClearTransientRequisitionFeedback();
 	void SetShiftPhase(EShiftPhase NewPhase);
 
 	float QueryLiveRemainderMassKg() const;
 	FString ResolveActiveContractDirectiveText() const;
 	FString ResolveContractOperationalBriefText(const UMonolithContractDataAsset* Contract) const;
+	FString ResolveDirectorIntercomLine(bool bReadyForStamp, bool bWithinDirectorsCut) const;
 	static FString GetDefaultDirectiveForContractIndex(int32 ContractIndex);
 	FVector QueryRigLocationOrZero() const;
 	FVector QueryReceiverLocationOrZero() const;
@@ -224,17 +253,29 @@ private:
 	FContractRuntimeSnapshot CachedSnapshot;
 	FTimerHandle TransitionTimerHandle;
 	FTimerHandle ContractBriefTimerHandle;
+	FTimerHandle RequisitionFeedbackTimerHandle;
+	FString TransientRequisitionFeedback;
 
 	int32 CurrentContractIndex = 0;
+	int32 CurrentShiftNumber = 1;
+	int32 TargetBondShifts = 3;
+	int32 ScripBalance = 0;
+	int32 LastStampScripAwarded = 0;
+	uint8 ClampHydraulicsLevel = 0;
+	uint8 TareHopperLevel = 0;
+	uint8 VeinScannerDamperLevel = 0;
 	float InitialContractMassKg = 0.0f;
 	float RemainderMassKg = 0.0f;
 	float InFlightMassKg = 0.0f;
 	float VaporizedTareMassKg = 0.0f;
 	float DisposedChunksTareMassKg = 0.0f;
 	float AccumulatedTareWasteKg = 0.0f;
+	float LatestClampStrainNormalized = 0.0f;
 
 	EShiftPhase CurrentPhase = EShiftPhase::WaitingForStations;
 	EContractFaultReason LastFaultReason = EContractFaultReason::None;
 	bool bIsContractBriefActive = false;
+	bool bLastStampWasDirectorsCut = false;
+	bool bLastRequisitionSucceeded = false;
 	bool bWorldHasBegunPlay = false;
 };

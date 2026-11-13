@@ -78,6 +78,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Shutter", meta = (ClampMin = "0.08", ClampMax = "2.0"))
 	float ShutterTransitionDurationSeconds = 0.35f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Shutter", meta = (ClampMin = "0.05", ClampMax = "0.5"))
+	float FaultShutterSlamDurationSeconds = 0.14f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Shutter")
 	FVector ClosedShutterRelativeLocation = FVector(-10.0, 0.0, 0.0);
 
@@ -86,6 +89,9 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Lighting", meta = (ClampMin = "50.0", ClampMax = "8000.0"))
 	float StatusLightIntensity = 360.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Lighting", meta = (ClampMin = "2.0", ClampMax = "20.0"))
+	float FaultStrobeFrequencyHz = 9.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Lighting", meta = (ClampMin = "60.0", ClampMax = "600.0"))
 	float StatusLightAttenuationRadiusCm = 210.0f;
@@ -169,6 +175,7 @@ private:
 		const UShiftProgressionDataAsset* ShiftConfig,
 		int32 ContractIndex);
 	void RefreshContractDirectiveWingReadout();
+	void RefreshDirectorIntercomWingReadout();
 	void SetShutterTargetOpenAlpha(float InTargetOpenAlpha, bool bInstant = false);
 	void ApplyShutterPositionFromAlpha();
 	void UpdateBoothTickEnabled();
@@ -187,6 +194,7 @@ private:
 	UPROPERTY()
 	TObjectPtr<UMaterialInterface> UnlitSignboardTextMaterial;
 
+	FContractRuntimeSnapshot CachedSnapshot;
 	FString CachedDirectiveText;
 	FString CachedBriefText;
 	EShiftPhase CachedShiftPhase = EShiftPhase::ContractIntro;
@@ -196,7 +204,9 @@ private:
 	float TargetShutterOpenAlpha = 0.0f;
 	float BriefPulseElapsedSeconds = 0.0f;
 	float BriefFadeElapsedSeconds = 0.0f;
+	float FaultStrobeElapsedSeconds = 0.0f;
 	FColor LastBriefDisplayColor = FColor(255, 210, 45, 255);
 	bool bIsBriefPulseActive = false;
 	bool bIsBriefFadingOut = false;
+	bool bUseFastFaultShutterSlam = false;
 };

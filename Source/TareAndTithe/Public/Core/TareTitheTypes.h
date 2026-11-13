@@ -58,9 +58,19 @@ enum class EContractFaultReason : uint8
 UENUM(BlueprintType)
 enum class EShiftVerdictType : uint8
 {
-	ContractPassed      UMETA(DisplayName = "Contract Passed"),
+	ContractPassed      UMETA(DisplayName = "Contract Passed (+1 Scrip)"),
+	DirectorsCutPassed  UMETA(DisplayName = "Director's Cut Precision Passed (+2 Scrip)"),
 	ContractFaultReset  UMETA(DisplayName = "Contract Fault & Reset"),
-	ShiftCompleted      UMETA(DisplayName = "Full Shift Completed")
+	ShiftCompleted      UMETA(DisplayName = "Shift Completed (Summary & Requisition)"),
+	BondCleared         UMETA(DisplayName = "3-Shift Indenture Bond Cleared")
+};
+
+UENUM(BlueprintType)
+enum class ERequisitionTrack : uint8
+{
+	ClampHydraulics     UMETA(DisplayName = "[1] Clamp Hydraulics (+25% Torque Cap)"),
+	TareHopper          UMETA(DisplayName = "[2] Tare Hopper (+5.0 kg Capacity)"),
+	VeinScannerDamper   UMETA(DisplayName = "[3] Vein Scanner & Pan Damper (+30% Scan / +25% Settle)")
 };
 
 UENUM(BlueprintType)
@@ -198,10 +208,25 @@ struct FContractRuntimeSnapshot
 	int32 ContractIndex = 0;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Shift")
+	int32 CurrentShiftNumber = 1;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Shift")
+	int32 TargetBondShifts = 3;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Shift")
+	int32 ScripBalance = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Shift")
+	int32 LastStampScripAwarded = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Shift")
 	float TargetTitheMassKg = 10.0f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Shift")
 	float QuotaToleranceKg = 0.5f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Shift")
+	float DirectorsCutToleranceKg = 0.25f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Shift")
 	float SettledScaleMassKg = 0.0f;
@@ -219,10 +244,28 @@ struct FContractRuntimeSnapshot
 	float MaxAllowedTareWasteKg = 15.0f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Shift")
+	float ClampStrainNormalized = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Shift")
+	uint8 ClampHydraulicsLevel = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Shift")
+	uint8 TareHopperLevel = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Shift")
+	uint8 VeinScannerDamperLevel = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Shift")
 	FString ContractDirectiveText;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Shift")
 	FString ContractBriefText;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Shift")
+	FString DirectorIntercomLine;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Shift")
+	FString TransientRequisitionFeedback;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Shift")
 	EDiverterRoute ActiveDiverterRoute = EDiverterRoute::TitheScale;
@@ -231,7 +274,16 @@ struct FContractRuntimeSnapshot
 	bool bIsContractBriefActive = false;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Shift")
+	bool bLastRequisitionSucceeded = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Shift")
 	bool bIsWithinQuotaWindow = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Shift")
+	bool bIsWithinDirectorsCutWindow = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Shift")
+	bool bLastStampWasDirectorsCut = false;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Shift")
 	bool bScaleSettledForStamp = false;

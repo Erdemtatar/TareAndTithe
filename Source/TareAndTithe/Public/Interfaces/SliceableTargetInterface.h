@@ -18,18 +18,18 @@ class TAREANDTITHE_API ISliceableTargetInterface
 	GENERATED_BODY()
 
 public:
-	UFUNCTION(BlueprintNativeEvent, Category = "Slice")
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Slice")
 	FSlicePreviewTelemetry PreviewSlicePlane(
 		const FVector& PlaneOriginWorld,
 		const FVector& PlaneNormalWorld,
 		const FLaserSliceAperture& SheetAperture);
 
-	UFUNCTION(BlueprintNativeEvent, Category = "Slice")
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Slice")
 	FSliceResultSummary CommitSlicePlane(
 		const FVector& PlaneOriginWorld,
 		const FVector& PlaneNormalWorld,
 		const FLaserSliceAperture& SheetAperture);
 
-	UFUNCTION(BlueprintNativeEvent, Category = "Slice")
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Slice")
 	FBox GetTargetWorldBounds() const;
 };

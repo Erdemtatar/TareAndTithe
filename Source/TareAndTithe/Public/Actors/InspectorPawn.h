@@ -175,16 +175,19 @@ protected:
 	float LaserReticleVeinWarningThreshold = 0.05f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry", meta = (ClampMin = "0.1", ClampMax = "0.95"))
-	float LaserReticleClampTorqueWarningThreshold = 0.50f;
+	float LaserReticleClampTorqueWarningThreshold = 0.42f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry", meta = (ClampMin = "0.5", ClampMax = "1.0"))
-	float LaserReticleClampTorqueCriticalThreshold = 0.85f;
+	float LaserReticleClampTorqueCriticalThreshold = 0.78f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry")
 	FColor ReticleCyanColor = FColor(0, 232, 255, 255);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry")
 	FColor ReticleEmeraldColor = FColor(0, 255, 95, 255);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry")
+	FColor ReticleGoldColor = FColor(255, 220, 40, 255);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Laser|Telemetry")
 	FColor ReticleCrimsonColor = FColor(255, 45, 45, 255);
@@ -271,6 +274,15 @@ protected:
 	TObjectPtr<UInputAction> AssignedResetContractAction;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Input")
+	TObjectPtr<UInputAction> AssignedRequisitionHydraulicsAction;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Input")
+	TObjectPtr<UInputAction> AssignedRequisitionTareAction;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Input")
+	TObjectPtr<UInputAction> AssignedRequisitionScannerAction;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Input")
 	TObjectPtr<UInputAction> AssignedScalabilityLowAction;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Input")
@@ -331,6 +343,9 @@ private:
 	void Input_StampVerdict(const FInputActionValue& Value);
 	void Input_ResetHoldStarted(const FInputActionValue& Value);
 	void Input_ResetHoldReleased(const FInputActionValue& Value);
+	void Input_RequisitionHydraulics(const FInputActionValue& Value);
+	void Input_RequisitionTare(const FInputActionValue& Value);
+	void Input_RequisitionScanner(const FInputActionValue& Value);
 	void Input_ScalabilityLow(const FInputActionValue& Value);
 	void Input_ScalabilityMed(const FInputActionValue& Value);
 	void Input_ScalabilityHigh(const FInputActionValue& Value);
@@ -386,6 +401,15 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> ActiveResetContractAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> ActiveRequisitionHydraulicsAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> ActiveRequisitionTareAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> ActiveRequisitionScannerAction;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> ActiveScalabilityLowAction;

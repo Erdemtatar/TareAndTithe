@@ -448,6 +448,18 @@ void AInspectorPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 		EnhancedInput->BindAction(ActiveResetContractAction, ETriggerEvent::Completed, this, &AInspectorPawn::Input_ResetHoldReleased);
 		EnhancedInput->BindAction(ActiveResetContractAction, ETriggerEvent::Canceled, this, &AInspectorPawn::Input_ResetHoldReleased);
 	}
+	if (IsValid(ActiveRequisitionHydraulicsAction))
+	{
+		EnhancedInput->BindAction(ActiveRequisitionHydraulicsAction, ETriggerEvent::Started, this, &AInspectorPawn::Input_RequisitionHydraulics);
+	}
+	if (IsValid(ActiveRequisitionTareAction))
+	{
+		EnhancedInput->BindAction(ActiveRequisitionTareAction, ETriggerEvent::Started, this, &AInspectorPawn::Input_RequisitionTare);
+	}
+	if (IsValid(ActiveRequisitionScannerAction))
+	{
+		EnhancedInput->BindAction(ActiveRequisitionScannerAction, ETriggerEvent::Started, this, &AInspectorPawn::Input_RequisitionScanner);
+	}
 	if (IsValid(ActiveScalabilityLowAction))
 	{
 		EnhancedInput->BindAction(ActiveScalabilityLowAction, ETriggerEvent::Started, this, &AInspectorPawn::Input_ScalabilityLow);
@@ -643,6 +655,9 @@ void AInspectorPawn::EnsureInputActionsAndMappingInitialized()
 	ResolveOrCreateAction(ActiveToggleDiverterAction, AssignedToggleDiverterAction, TEXT("IA_Transient_ToggleDiverter"), EInputActionValueType::Boolean);
 	ResolveOrCreateAction(ActiveStampVerdictAction, AssignedStampVerdictAction, TEXT("IA_Transient_StampVerdict"), EInputActionValueType::Boolean);
 	ResolveOrCreateAction(ActiveResetContractAction, AssignedResetContractAction, TEXT("IA_Transient_ResetContract"), EInputActionValueType::Boolean);
+	ResolveOrCreateAction(ActiveRequisitionHydraulicsAction, AssignedRequisitionHydraulicsAction, TEXT("IA_Transient_RequisitionHydraulics"), EInputActionValueType::Boolean);
+	ResolveOrCreateAction(ActiveRequisitionTareAction, AssignedRequisitionTareAction, TEXT("IA_Transient_RequisitionTare"), EInputActionValueType::Boolean);
+	ResolveOrCreateAction(ActiveRequisitionScannerAction, AssignedRequisitionScannerAction, TEXT("IA_Transient_RequisitionScanner"), EInputActionValueType::Boolean);
 	ResolveOrCreateAction(ActiveScalabilityLowAction, AssignedScalabilityLowAction, TEXT("IA_Transient_ScalabilityLow"), EInputActionValueType::Boolean);
 	ResolveOrCreateAction(ActiveScalabilityMedAction, AssignedScalabilityMedAction, TEXT("IA_Transient_ScalabilityMed"), EInputActionValueType::Boolean);
 	ResolveOrCreateAction(ActiveScalabilityHighAction, AssignedScalabilityHighAction, TEXT("IA_Transient_ScalabilityHigh"), EInputActionValueType::Boolean);
@@ -666,10 +681,14 @@ void AInspectorPawn::EnsureInputActionsAndMappingInitialized()
 			TransientIMC->MapKey(ActiveToggleDiverterAction, EKeys::SpaceBar);
 			TransientIMC->MapKey(ActiveStampVerdictAction, EKeys::E);
 			TransientIMC->MapKey(ActiveResetContractAction, EKeys::R);
-			TransientIMC->MapKey(ActiveScalabilityLowAction, EKeys::One);
-			TransientIMC->MapKey(ActiveScalabilityMedAction, EKeys::Two);
-			TransientIMC->MapKey(ActiveScalabilityHighAction, EKeys::Three);
-			TransientIMC->MapKey(ActiveScalabilityEpicAction, EKeys::Four);
+			// Hardware Requisitions [1] HYD, [2] TARE, [3] SCAN (Guard 1: F6..F9 used for Scalability to avoid F5 PIE Shader Complexity collision)
+			TransientIMC->MapKey(ActiveRequisitionHydraulicsAction, EKeys::One);
+			TransientIMC->MapKey(ActiveRequisitionTareAction, EKeys::Two);
+			TransientIMC->MapKey(ActiveRequisitionScannerAction, EKeys::Three);
+			TransientIMC->MapKey(ActiveScalabilityLowAction, EKeys::F6);
+			TransientIMC->MapKey(ActiveScalabilityMedAction, EKeys::F7);
+			TransientIMC->MapKey(ActiveScalabilityHighAction, EKeys::F8);
+			TransientIMC->MapKey(ActiveScalabilityEpicAction, EKeys::F9);
 			ActiveMappingContext = TransientIMC;
 		}
 	}
@@ -1101,12 +1120,18 @@ void AInspectorPawn::UpdateLaserReticleReadoutText()
 			LaserReticleReadout->SetTextRenderColor(ReticleCrimsonColor);
 			LaserReticleReadout->SetText(FText::FromString(TEXT("OVER QUOTA!")));
 		}
+		else if (CachedHudSnapshot.bIsWithinDirectorsCutWindow)
+		{
+			LaserReticleReadout->SetTextRenderColor(ReticleGoldColor);
+			LaserReticleReadout->SetText(
+				FText::FromString(FString::Printf(TEXT("DIRECTOR'S CUT [E] +2 SCRIP (%.2f KG)"), SettledKg)));
+		}
 		else if (CachedHudSnapshot.bIsWithinQuotaWindow ||
 			SettledKg >= (TargetKg - ToleranceKg - QuotaFloatEpsilonKg))
 		{
 			LaserReticleReadout->SetTextRenderColor(ReticleEmeraldColor);
 			LaserReticleReadout->SetText(
-				FText::FromString(FString::Printf(TEXT("STAMP READY [E] (%.2f KG)"), SettledKg)));
+				FText::FromString(FString::Printf(TEXT("STAMP READY [E] +1 SCRIP (%.2f KG)"), SettledKg)));
 		}
 		else
 		{
@@ -1196,9 +1221,19 @@ void AInspectorPawn::UpdateLaserReticleReadoutText()
 				}
 				else if (ProjectedScaleKg >= (MinWinKg - QuotaFloatEpsilonKg))
 				{
-					LaserReticleYieldReadout->SetTextRenderColor(ReticleEmeraldColor);
-					LaserReticleYieldReadout->SetText(
-						FText::FromString(FString::Printf(TEXT("CUT EST: +%.2f KG [IN WINDOW!]"), EstSeveredKg)));
+					const float DirCutTolKg = FMath::Max(0.15f, CachedHudSnapshot.DirectorsCutToleranceKg);
+					if (FMath::Abs(ProjectedScaleKg - TargetKg) <= (DirCutTolKg + QuotaFloatEpsilonKg))
+					{
+						LaserReticleYieldReadout->SetTextRenderColor(ReticleGoldColor);
+						LaserReticleYieldReadout->SetText(
+							FText::FromString(FString::Printf(TEXT("CUT EST: +%.2f KG [DIRECTOR'S CUT!]"), EstSeveredKg)));
+					}
+					else
+					{
+						LaserReticleYieldReadout->SetTextRenderColor(ReticleEmeraldColor);
+						LaserReticleYieldReadout->SetText(
+							FText::FromString(FString::Printf(TEXT("CUT EST: +%.2f KG [IN WINDOW!]"), EstSeveredKg)));
+					}
 				}
 				else
 				{
@@ -1238,26 +1273,41 @@ void AInspectorPawn::UpdateLaserReticleReadoutText()
 			LaserReticleHazardReadout->SetTextRenderColor(ReticleVeinDropWarningColor);
 			LaserReticleHazardReadout->SetText(FText::FromString(TEXT("!! VEIN IN DROP -> [SPACE] TARE !!")));
 		}
-		else if (CachedClampStrainNormalized >= LaserReticleClampTorqueWarningThreshold)
-		{
-			const FColor TorqueAlertColor = (CachedClampStrainNormalized >= LaserReticleClampTorqueCriticalThreshold)
-				? ReticleCrimsonColor
-				: ReticleAmberColor;
-			const int32 TorquePercent = FMath::Clamp(FMath::RoundToInt(CachedClampStrainNormalized * 100.0f), 0, 999);
-			LaserReticleHazardReadout->SetTextRenderColor(TorqueAlertColor);
-			LaserReticleHazardReadout->SetText(
-				FText::FromString(FString::Printf(TEXT("!! CLAMP TORQUE %d%% !!"), TorquePercent)));
-		}
 		else
 		{
-			LaserReticleHazardReadout->SetText(FText::GetEmpty());
+			const float EffectiveStrain = FMath::Max(CachedClampStrainNormalized, CachedHudSnapshot.ClampStrainNormalized);
+			if (EffectiveStrain >= LaserReticleClampTorqueCriticalThreshold)
+			{
+				const int32 TorquePercent = FMath::Clamp(FMath::RoundToInt(EffectiveStrain * 100.0f), 0, 999);
+				LaserReticleHazardReadout->SetTextRenderColor(ReticleCrimsonColor);
+				LaserReticleHazardReadout->SetText(
+					FText::FromString(FString::Printf(TEXT("!! JAW SHEAR CRITICAL (%d%%) - BALANCE CUT !!"), TorquePercent)));
+			}
+			else if (EffectiveStrain >= LaserReticleClampTorqueWarningThreshold)
+			{
+				const int32 TorquePercent = FMath::Clamp(FMath::RoundToInt(EffectiveStrain * 100.0f), 0, 999);
+				LaserReticleHazardReadout->SetTextRenderColor(ReticleAmberColor);
+				LaserReticleHazardReadout->SetText(
+					FText::FromString(FString::Printf(TEXT("JAW TORQUE: %d%% - BALANCE CUT"), TorquePercent)));
+			}
+			else
+			{
+				LaserReticleHazardReadout->SetText(FText::GetEmpty());
+			}
 		}
 	}
 }
 
 void AInspectorPawn::HandleContractSnapshotUpdated(const FContractRuntimeSnapshot& Snapshot)
 {
+	const uint8 PrevScannerLevel = CachedHudSnapshot.VeinScannerDamperLevel;
 	CachedHudSnapshot = Snapshot;
+	if (Snapshot.VeinScannerDamperLevel != PrevScannerLevel &&
+		IsValid(LaserPlaneAimComponent) &&
+		LaserPlaneAimComponent->IsAimingEnabled())
+	{
+		LaserPlaneAimComponent->ForceRefreshPreview();
+	}
 	UpdateLaserSheetMaterialVisuals();
 	UpdateLaserReticleReadoutText();
 }
@@ -1559,7 +1609,7 @@ void AInspectorPawn::Input_StampVerdict(const FInputActionValue& /*Value*/)
 	{
 		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
 		{
-			ShiftSubsystem->TryStampQuotaVerdict();
+			ShiftSubsystem->TryConfirmOrStampAction();
 		}
 	}
 }
@@ -1583,6 +1633,39 @@ void AInspectorPawn::Input_ResetHoldReleased(const FInputActionValue& /*Value*/)
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(ManualResetHoldTimerHandle);
+	}
+}
+
+void AInspectorPawn::Input_RequisitionHydraulics(const FInputActionValue& /*Value*/)
+{
+	if (UWorld* World = GetWorld())
+	{
+		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
+		{
+			ShiftSubsystem->TryPurchaseRequisition(ERequisitionTrack::ClampHydraulics);
+		}
+	}
+}
+
+void AInspectorPawn::Input_RequisitionTare(const FInputActionValue& /*Value*/)
+{
+	if (UWorld* World = GetWorld())
+	{
+		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
+		{
+			ShiftSubsystem->TryPurchaseRequisition(ERequisitionTrack::TareHopper);
+		}
+	}
+}
+
+void AInspectorPawn::Input_RequisitionScanner(const FInputActionValue& /*Value*/)
+{
+	if (UWorld* World = GetWorld())
+	{
+		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
+		{
+			ShiftSubsystem->TryPurchaseRequisition(ERequisitionTrack::VeinScannerDamper);
+		}
 	}
 }
 

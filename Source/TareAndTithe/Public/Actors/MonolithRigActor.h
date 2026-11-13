@@ -62,6 +62,12 @@ public:
 
 	void ApplyPresentationData(const UTareTithePresentationDataAsset* InPresentationData);
 
+	UFUNCTION(BlueprintPure, Category = "Rig")
+	UDynamicMeshComponent* GetRemainderMeshComponent() const { return RemainderMeshComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Rig")
+	UClampTorqueSolverComponent* GetClampTorqueSolverComponent() const { return ClampTorqueSolverComponent; }
+
 	FOnTelemetryStreamSignature OnTelemetryStream;
 	FOnTelemetryImpulseSignature OnTelemetryImpulse;
 
@@ -160,6 +166,7 @@ private:
 
 	void HandleChildTelemetryStream(ETelemetryStreamId StreamId, float NormalizedValue);
 	void HandleChildTelemetryImpulse(ETelemetryImpulseId ImpulseId, float NormalizedMagnitude, const FVector& WorldLocation);
+	void HandleContractSnapshotUpdated(const FContractRuntimeSnapshot& Snapshot);
 	void HandleChunkSpawnedFromSlice(ASeveredChunkActor* SpawnedChunk);
 	void HandleSliverVaporized(float VaporizedMassKg, const FVector& WorldLocation);
 	void HandleClampStructuralSnap();

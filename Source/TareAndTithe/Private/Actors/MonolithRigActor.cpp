@@ -13,12 +13,15 @@
 #include "Data/MonolithContractDataAsset.h"
 #include "Data/ShiftProgressionDataAsset.h"
 #include "Data/TareTithePresentationDataAsset.h"
+#include "UDynamicMesh.h"
+#include "Engine/CollisionProfile.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "GeometryScript/CollisionFunctions.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "Misc/PackageName.h"
+#include "PhysicsEngine/BodySetup.h"
 #include "Subsystems/InspectionShiftSubsystem.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -70,9 +73,13 @@ AMonolithRigActor::AMonolithRigActor()
 	RemainderMeshComponent = CreateDefaultSubobject<UDynamicMeshComponent>(TEXT("RemainderMeshComponent"));
 	RemainderMeshComponent->SetupAttachment(TiltingMountComponent);
 	RemainderMeshComponent->PrimaryComponentTick.bCanEverTick = false;
+	RemainderMeshComponent->PrimaryComponentTick.bStartWithTickEnabled = false;
+	RemainderMeshComponent->BodyInstance.bUseCCD = true;
+	RemainderMeshComponent->SetUseCCD(true);
 	RemainderMeshComponent->SetSimulatePhysics(false);
 	RemainderMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	RemainderMeshComponent->SetGenerateOverlapEvents(false);
+	RemainderMeshComponent->SetComplexAsSimpleCollisionEnabled(false, false);
 	RemainderMeshComponent->SetRelativeLocation(FVector(0.0, 0.0, -40.0));
 
 	MonolithSliceComponent = CreateDefaultSubobject<UMonolithSliceComponent>(TEXT("MonolithSliceComponent"));
@@ -139,10 +146,12 @@ void AMonolithRigActor::BeginPlay()
 		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
 		{
 			ShiftSubsystem->OnPresentationAssetChanged.AddUObject(this, &AMonolithRigActor::ApplyPresentationData);
+			ShiftSubsystem->OnNativeContractSnapshotUpdated.AddUObject(this, &AMonolithRigActor::HandleContractSnapshotUpdated);
 			if (const UTareTithePresentationDataAsset* ExistingPresentation = ShiftSubsystem->GetActivePresentationAsset())
 			{
 				ApplyPresentationData(ExistingPresentation);
 			}
+			HandleContractSnapshotUpdated(ShiftSubsystem->GetCurrentSnapshot());
 
 			ShiftSubsystem->RegisterTelemetryPublisher(this, this);
 
@@ -165,6 +174,7 @@ void AMonolithRigActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
 		{
 			ShiftSubsystem->OnPresentationAssetChanged.RemoveAll(this);
+			ShiftSubsystem->OnNativeContractSnapshotUpdated.RemoveAll(this);
 			ShiftSubsystem->UnregisterSliceableRig(this);
 			ShiftSubsystem->UnregisterTelemetryPublisher(this);
 		}
@@ -247,6 +257,13 @@ FSliceResultSummary AMonolithRigActor::CommitSlicePlane_Implementation(
 		return Summary;
 	}
 
+	const float PreCutRemainderMassKg = MonolithSliceComponent->GetRemainderMassKg();
+	const FVector PreCutMountLocalCoMCm = TransformRemainderCoMToMountLocal(MonolithSliceComponent->GetRemainderLocalCoMCm());
+	const FBox PreCutLocalBounds = MonolithSliceComponent->GetRemainderLocalBounds();
+	const float PreCutHorizontalHalfSpanCm = PreCutLocalBounds.IsValid
+		? static_cast<float>(0.5 * FMath::Max(PreCutLocalBounds.GetSize().X, PreCutLocalBounds.GetSize().Y))
+		: 14.0f;
+
 	TArray<ASeveredChunkActor*> SpawnedChunks;
 	Summary = MonolithSliceComponent->ExecuteSlice(
 		PlaneOriginWorld,
@@ -273,7 +290,21 @@ FSliceResultSummary AMonolithRigActor::CommitSlicePlane_Implementation(
 	if (Summary.Outcome == ECommitSliceOutcome::Success && IsValid(ClampTorqueSolverComponent))
 	{
 		const FVector MountLocalCoMCm = TransformRemainderCoMToMountLocal(Summary.NewRemainderLocalCoMCm);
-		ClampTorqueSolverComponent->UpdateRemainderLoad(Summary.NewRemainderMassKg, MountLocalCoMCm);
+		ClampTorqueSolverComponent->ApplySliceLoadAndShear(
+			PreCutRemainderMassKg,
+			PreCutMountLocalCoMCm,
+			Summary.NewRemainderMassKg,
+			MountLocalCoMCm,
+			PreCutHorizontalHalfSpanCm,
+			PlaneNormalWorld);
+
+		// Guard 3: If cumulative jaw shear snapped the clamp during ApplySliceLoadAndShear,
+		// HandleClampStructuralSnap has already quenched thermal light, detached the remainder into Chaos freefall,
+		// and triggered FaultResetDelay on UInspectionShiftSubsystem. Return immediately without re-igniting MoltenThermalLight!
+		if (ClampTorqueSolverComponent->IsClampSnapped())
+		{
+			return Summary;
+		}
 	}
 
 	if (Summary.Outcome == ECommitSliceOutcome::Success && IsValid(MoltenThermalLightComponent))
@@ -341,14 +372,29 @@ bool AMonolithRigActor::LoadContractOnRig(
 		ResolveEffectiveCutCapMaterial(nullptr));
 
 	// Restore kinematic hierarchy in case previous contract ended via ClampStructuralSnap freefall.
+	RemainderMeshComponent->SetGenerateOverlapEvents(false);
+	if (RemainderMeshComponent->IsSimulatingPhysics())
+	{
+		RemainderMeshComponent->SetPhysicsLinearVelocity(FVector::ZeroVector, false);
+		RemainderMeshComponent->SetPhysicsAngularVelocityInRadians(FVector::ZeroVector, false);
+		RemainderMeshComponent->PutAllRigidBodiesToSleep();
+	}
 	RemainderMeshComponent->SetSimulatePhysics(false);
 	RemainderMeshComponent->SetEnableGravity(false);
-	RemainderMeshComponent->SetGenerateOverlapEvents(false);
 	RemainderMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	UGeometryScriptLibrary_CollisionFunctions::ResetDynamicMeshCollision(RemainderMeshComponent, false, nullptr);
 	RemainderMeshComponent->AttachToComponent(
 		TiltingMountComponent,
 		FAttachmentTransformRules::SnapToTargetNotIncludingScale);
 	RemainderMeshComponent->SetRelativeScale3D(FVector::OneVector);
+
+	if (UWorld* World = GetWorld())
+	{
+		if (const UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
+		{
+			HandleContractSnapshotUpdated(ShiftSubsystem->GetCurrentSnapshot());
+		}
+	}
 
 	ClampTorqueSolverComponent->SetNeutralPivotTransform(ClampPivotRoot->GetComponentTransform());
 	ClampTorqueSolverComponent->ResetClampState();
@@ -714,6 +760,20 @@ void AMonolithRigActor::HandleChildTelemetryImpulse(
 	OnTelemetryImpulse.Broadcast(ImpulseId, NormalizedMagnitude, WorldLocation);
 }
 
+void AMonolithRigActor::HandleContractSnapshotUpdated(const FContractRuntimeSnapshot& Snapshot)
+{
+	if (IsValid(ClampTorqueSolverComponent))
+	{
+		const float HydMultiplier = 1.0f + (0.25f * static_cast<float>(Snapshot.ClampHydraulicsLevel));
+		ClampTorqueSolverComponent->SetTorqueCapacityMultiplier(HydMultiplier);
+	}
+	if (IsValid(VeinScannerComponent))
+	{
+		const float ScanMultiplier = 1.0f + (0.30f * static_cast<float>(Snapshot.VeinScannerDamperLevel));
+		VeinScannerComponent->SetWarningRangeMultiplier(ScanMultiplier);
+	}
+}
+
 void AMonolithRigActor::HandleChunkSpawnedFromSlice(ASeveredChunkActor* SpawnedChunk)
 {
 	if (!IsValid(SpawnedChunk))
@@ -761,35 +821,61 @@ void AMonolithRigActor::HandleClampStructuralSnap()
 		MoltenThermalLightComponent->SetSteadyEmberIntensity(0.0f);
 	}
 
-	// Detach and drop snapped remainder under bounded convex Chaos freefall without overlap generation during the fault reset window.
+	// Guard 3: Detach and drop snapped remainder under guaranteed non-empty simple Chaos collision + gravity + shear tumble kick.
 	if (IsValid(RemainderMeshComponent))
 	{
+		SetActorEnableCollision(true);
 		RemainderMeshComponent->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
 
-		FGeometryScriptCollisionFromMeshOptions SnapCollisionOptions;
-		SnapCollisionOptions.bEmitTransaction = false;
-		SnapCollisionOptions.Method = EGeometryScriptCollisionGenerationMethod::ConvexHulls;
-		SnapCollisionOptions.bSimplifyHulls = true;
-		SnapCollisionOptions.MaxConvexHullsPerMesh = 2;
-		SnapCollisionOptions.ConvexHullTargetFaceCount = 16;
+		if (UDynamicMesh* DynMesh = RemainderMeshComponent->GetDynamicMesh())
+		{
+			FGeometryScriptCollisionFromMeshOptions SnapCollisionOptions;
+			SnapCollisionOptions.bEmitTransaction = false;
+			SnapCollisionOptions.Method = EGeometryScriptCollisionGenerationMethod::ConvexHulls;
+			SnapCollisionOptions.bSimplifyHulls = true;
+			SnapCollisionOptions.MaxConvexHullsPerMesh = 4;
+			SnapCollisionOptions.ConvexHullTargetFaceCount = 20;
+			SnapCollisionOptions.MinThickness = 0.5f;
 
-		UGeometryScriptLibrary_CollisionFunctions::SetDynamicMeshCollisionFromMesh(
-			RemainderMeshComponent->GetDynamicMesh(),
-			RemainderMeshComponent,
-			SnapCollisionOptions,
-			nullptr);
+			UGeometryScriptLibrary_CollisionFunctions::SetDynamicMeshCollisionFromMesh(
+				DynMesh,
+				RemainderMeshComponent,
+				SnapCollisionOptions,
+				nullptr);
 
-		RemainderMeshComponent->SetComplexAsSimpleCollisionEnabled(false, true);
-		RemainderMeshComponent->SetGenerateOverlapEvents(false);
-		RemainderMeshComponent->SetCollisionProfileName(TEXT("PhysicsActor"));
+			const UBodySetup* BodySetup = RemainderMeshComponent->GetBodySetup();
+			if (!IsValid(BodySetup) || BodySetup->AggGeom.GetElementCount() == 0)
+			{
+				SnapCollisionOptions.Method = EGeometryScriptCollisionGenerationMethod::AlignedBoxes;
+				UGeometryScriptLibrary_CollisionFunctions::SetDynamicMeshCollisionFromMesh(
+					DynMesh,
+					RemainderMeshComponent,
+					SnapCollisionOptions,
+					nullptr);
+			}
+		}
+
+		RemainderMeshComponent->BodyInstance.bUseCCD = true;
+		RemainderMeshComponent->SetUseCCD(true);
+		RemainderMeshComponent->SetCollisionProfileName(UCollisionProfile::PhysicsActor_ProfileName);
 		RemainderMeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		RemainderMeshComponent->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
+		RemainderMeshComponent->SetGenerateOverlapEvents(false);
+		RemainderMeshComponent->SetComplexAsSimpleCollisionEnabled(false, true);
 		RemainderMeshComponent->SetEnableGravity(true);
-		RemainderMeshComponent->RecreatePhysicsState();
 
 		const float SafeMassKg = FMath::Max(1.0f, QueryCurrentRemainderMassKg());
 		RemainderMeshComponent->SetMassOverrideInKg(NAME_None, SafeMassKg, true);
 		RemainderMeshComponent->SetSimulatePhysics(true);
 		RemainderMeshComponent->WakeAllRigidBodies();
+
+		const FVector2D SnapDir = IsValid(ClampTorqueSolverComponent)
+			? ClampTorqueSolverComponent->GetLastSnapTorqueDirection()
+			: FVector2D(1.0f, 0.0f);
+		RemainderMeshComponent->SetPhysicsLinearVelocity(FVector(0.0, 0.0, -45.0), false);
+		RemainderMeshComponent->SetPhysicsAngularVelocityInDegrees(
+			FVector(static_cast<double>(SnapDir.X) * 65.0, static_cast<double>(SnapDir.Y) * 50.0, 0.0),
+			false);
 	}
 
 	if (UWorld* World = GetWorld())

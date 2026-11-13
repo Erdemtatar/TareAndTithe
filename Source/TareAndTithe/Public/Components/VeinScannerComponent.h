@@ -28,6 +28,9 @@ public:
 	void SyncPostSliceActiveVeins(const FBox& RemainderLocalBounds, float BoundsSafetyToleranceCm = 2.0f);
 	void ClearActiveVeins();
 
+	void SetWarningRangeMultiplier(float InMultiplier);
+	float GetWarningRangeMultiplier() const { return WarningRangeMultiplier; }
+
 	const TArray<FVolatileVeinDefinition>& GetActiveVeins() const { return ActiveVeins; }
 	TArray<FVolatileVeinDefinition>& GetMutableActiveVeins() { return ActiveVeins; }
 	int32 GetActiveVeinCount() const { return ActiveVeins.Num(); }
@@ -49,7 +52,8 @@ public:
 		const FVector& LocalPlaneOrigin,
 		const FVector& LocalPlaneNormal,
 		bool bPlaneIntersectsMesh,
-		const TArray<FVolatileVeinDefinition>& Veins);
+		const TArray<FVolatileVeinDefinition>& Veins,
+		float InWarningRangeMultiplier = 1.0f);
 
 	FSlicePreviewTelemetry EvaluateWorldPlane(
 		const FVector& PlaneOriginWorld,
@@ -77,5 +81,6 @@ private:
 	UPROPERTY(Transient)
 	TArray<FVolatileVeinDefinition> ActiveVeins;
 
+	float WarningRangeMultiplier = 1.0f;
 	float LastEmittedProximity = -1.0f;
 };
