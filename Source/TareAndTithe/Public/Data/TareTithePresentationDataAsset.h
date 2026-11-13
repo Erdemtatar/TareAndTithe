@@ -45,22 +45,22 @@ struct TAREANDTITHE_API FCellDirectionalSpotConfig
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting")
-	FVector Location = FVector(175.0, -25.0, 335.0);
+	FVector Location = FVector(182.0, -16.0, 336.0);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting")
-	FVector TargetLocation = FVector(260.0, 0.0, 120.0);
+	FVector TargetLocation = FVector(260.0, 4.0, 118.0);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting", meta = (ClampMin = "0.0", ClampMax = "50000.0"))
-	float Intensity = 12200.0f;
+	float Intensity = 14800.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting", meta = (ClampMin = "100.0", ClampMax = "2500.0"))
-	float AttenuationRadius = 1080.0f;
+	float AttenuationRadius = 480.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting", meta = (ClampMin = "1.0", ClampMax = "80.0"))
-	float InnerConeAngle = 26.0f;
+	float InnerConeAngle = 19.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting", meta = (ClampMin = "5.0", ClampMax = "89.0"))
-	float OuterConeAngle = 58.0f;
+	float OuterConeAngle = 35.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting")
 	FLinearColor LightColor = FLinearColor(0.95f, 0.96f, 1.00f, 1.0f);
@@ -80,28 +80,28 @@ struct TAREANDTITHE_API FCellLightingRigConfig
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting")
 	FCellDirectionalSpotConfig KeySpot;
 
-	/** Unshadowed front-side fill point light for underside bevel readability. */
+	/** Unshadowed front-side fill point light tightly bounded off the outer side walls. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting")
-	FVector FillPointLocation = FVector(95.0, 40.0, 215.0);
+	FVector FillPointLocation = FVector(145.0, 12.0, 178.0);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting", meta = (ClampMin = "0.0", ClampMax = "20000.0"))
-	float FillPointIntensity = 3600.0f;
+	float FillPointIntensity = 2400.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting", meta = (ClampMin = "100.0", ClampMax = "2500.0"))
-	float FillPointRadius = 880.0f;
+	float FillPointRadius = 310.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting")
-	FLinearColor FillPointColor = FLinearColor(0.84f, 0.90f, 1.00f, 1.0f);
+	FLinearColor FillPointColor = FLinearColor(0.82f, 0.89f, 1.00f, 1.0f);
 
-	/** Cool ~7600K left grazing rim spotlight raking across station metal chamfers (bCastShadows = false). */
+	/** Cool ~7400K left grazing rim spotlight raking across hero spine chamfers (bCastShadows = false). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting")
 	FCellDirectionalSpotConfig RimSpotLeft;
 
-	/** Cool ~7800K right grazing rim spotlight raking across station metal chamfers (bCastShadows = false). */
+	/** Cool ~7400K right grazing rim spotlight raking across hero spine chamfers (bCastShadows = false). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting")
 	FCellDirectionalSpotConfig RimSpotRight;
 
-	/** Unshadowed ~6800K midground architectural wash lifting the rear wall & under-booth stanchions above #000000. */
+	/** Unshadowed ~2150K upward-raking warm foundry pit glow illuminating the rear grate shaft & flanking columns. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting")
 	FCellDirectionalSpotConfig MidgroundWashSpot;
 };
@@ -116,32 +116,32 @@ struct TAREANDTITHE_API FCellAtmosphereConfig
 	TObjectPtr<UTextureCube> AmbientSkyCubemap = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Atmosphere", meta = (ClampMin = "0.0", ClampMax = "3.0"))
-	float SkyLightIntensity = 0.44f;
+	float SkyLightIntensity = 0.28f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Atmosphere")
-	FLinearColor SkyTintColor = FLinearColor(0.68f, 0.80f, 0.98f, 1.0f);
+	FLinearColor SkyTintColor = FLinearColor(0.64f, 0.78f, 0.96f, 1.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Atmosphere")
-	FLinearColor LowerHemisphereColor = FLinearColor(0.028f, 0.036f, 0.050f, 1.0f);
+	FLinearColor LowerHemisphereColor = FLinearColor(0.012f, 0.014f, 0.018f, 1.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Atmosphere")
 	bool bEnableDepthFog = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Atmosphere", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float FogDensity = 0.16f;
+	float FogDensity = 0.015f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Atmosphere", meta = (ClampMin = "0.01", ClampMax = "2.0"))
-	float FogHeightFalloff = 0.32f;
+	float FogHeightFalloff = 0.28f;
 
-	/** Starts behind the X=260 monolith/console plane (~294 cm from camera) so HUD & hero station have zero fog veil. */
+	/** Starts behind the hero station and tare chute (~390 cm from pulled-back camera) so foreground has zero fog veil. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Atmosphere", meta = (ClampMin = "0.0", ClampMax = "1500.0"))
-	float FogStartDistanceCm = 305.0f;
+	float FogStartDistanceCm = 390.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Atmosphere", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float FogMaxOpacity = 0.55f;
+	float FogMaxOpacity = 0.32f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Atmosphere")
-	FLinearColor FogInscatteringColor = FLinearColor(0.036f, 0.050f, 0.072f, 1.0f);
+	FLinearColor FogInscatteringColor = FLinearColor(0.008f, 0.007f, 0.006f, 1.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Atmosphere", meta = (ClampMin = "-200.0", ClampMax = "400.0"))
 	float FogActorZCm = 90.0f;
@@ -231,7 +231,7 @@ struct TAREANDTITHE_API FCameraPostProcessPolishConfig
 	float ColorSaturation = 0.96f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|PostProcess", meta = (ClampMin = "0.0", ClampMax = "0.6"))
-	float VignetteIntensity = 0.28f;
+	float VignetteIntensity = 0.36f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|PostProcess", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float TonemapperSharpen = 0.35f;

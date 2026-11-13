@@ -85,7 +85,10 @@ protected:
 	FVector OpenShutterRelativeLocation = FVector(-10.0, 0.0, 44.0);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Lighting", meta = (ClampMin = "50.0", ClampMax = "8000.0"))
-	float StatusLightIntensity = 1100.0f;
+	float StatusLightIntensity = 360.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Lighting", meta = (ClampMin = "60.0", ClampMax = "600.0"))
+	float StatusLightAttenuationRadiusCm = 210.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Readout")
 	FVector LeftWingPivotRelativeLocation = FVector(-15.5, -66.0, 44.0);
@@ -145,7 +148,7 @@ protected:
 	FColor BoothFaultBannerColor = FColor(255, 55, 35, 255);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Lighting")
-	FLinearColor ActiveInspectionLampColor = FLinearColor(1.0f, 0.68f, 0.16f, 1.0f);
+	FLinearColor ActiveInspectionLampColor = FLinearColor(0.54f, 0.78f, 1.00f, 1.0f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "DirectorBooth|Lighting")
 	FLinearColor FaultSlamLampColor = FLinearColor(1.0f, 0.10f, 0.06f, 1.0f);

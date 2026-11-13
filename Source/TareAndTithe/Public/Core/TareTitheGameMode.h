@@ -48,7 +48,7 @@ protected:
 	FVector DefaultDirectorBoothLocation = FVector(430.0, 0.0, 258.0);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell")
-	FLinearColor GreyboxPitEnclosureColor = FLinearColor(0.085f, 0.092f, 0.105f, 1.0f);
+	FLinearColor GreyboxPitEnclosureColor = FLinearColor(0.024f, 0.026f, 0.032f, 1.0f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell", meta = (ClampMax = "-150.0"))
 	float RearCellWallXCm = -200.0f;
@@ -56,17 +56,38 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell", meta = (ClampMin = "415.0", ClampMax = "520.0"))
 	float MinMidgroundReliefXCm = 415.0f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell|FoundryShaft", meta = (ClampMin = "430.0", ClampMax = "460.0"))
+	float FoundryGrateFrontXCm = 444.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell|FoundryShaft", meta = (ClampMin = "6.0", ClampMax = "24.0"))
+	float FoundryGrateThicknessXCm = 14.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell|FoundryShaft", meta = (ClampMin = "80.0", ClampMax = "200.0"))
+	float FoundryGrateHalfSpanYCm = 140.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell|FoundryShaft")
+	float FoundryGrateBottomZCm = -65.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell|FoundryShaft")
+	float FoundryGrateTopZCm = 215.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell|FoundryShaft", meta = (ClampMin = "120.0", ClampMax = "220.0"))
+	float FoundryColumnOffsetYCm = 155.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell|FoundryShaft")
+	FVector FoundryColumnModuleSizeCm = FVector(30.0, 44.0, 100.0);
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell|Lighting", meta = (ClampMin = "100.0", ClampMax = "25000.0"))
-	float KeySpotLightIntensity = 12200.0f;
+	float KeySpotLightIntensity = 14800.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell|Lighting", meta = (ClampMin = "50.0", ClampMax = "15000.0"))
-	float FillPointLightIntensity = 3600.0f;
+	float FillPointLightIntensity = 2400.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell|Lighting")
-	FVector RimPointLightLocation = FVector(338.0, -190.0, 248.0);
+	FVector RimPointLightLocation = FVector(318.0, -148.0, 242.0);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell|Lighting", meta = (ClampMin = "50.0", ClampMax = "15000.0"))
-	float RimPointLightIntensity = 9400.0f;
+	float RimPointLightIntensity = 11200.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Scalability", meta = (ClampMin = "0", ClampMax = "3"))
 	int32 BaselineScalabilityLevel = 2;

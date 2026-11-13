@@ -746,15 +746,19 @@ void AInspectorPawn::ConfigureLaserFrameGeometry()
 		IsValid(AutoResolvedLaserSheetMasterMaterial);
 	if (bHasCustomTranslucentSheet)
 	{
+		// Guard 3: Positive scale (det > 0) + exact 0 deg / 180 deg rigid rotations guarantee opposite outward front-face normals (+Z / -Z)
+		// so single-sided M_LaserSheet_Master (two_sided = False) renders cleanly both above and below camera eye-level without double-draw opacity stacking.
 		const FVector FullSheetScale(SafeDepthCm / 100.0, SafeWidthCm / 100.0, 1.0);
 		if (IsValid(LaserSheetVisual))
 		{
 			LaserSheetVisual->SetRelativeLocation(FVector(0.0, 0.0, 0.02));
+			LaserSheetVisual->SetRelativeRotation(FRotator::ZeroRotator);
 			LaserSheetVisual->SetRelativeScale3D(FullSheetScale);
 		}
 		if (IsValid(LaserSheetUndersideVisual))
 		{
 			LaserSheetUndersideVisual->SetRelativeLocation(FVector(0.0, 0.0, -0.02));
+			LaserSheetUndersideVisual->SetRelativeRotation(FRotator(180.0f, 0.0f, 0.0f));
 			LaserSheetUndersideVisual->SetRelativeScale3D(FullSheetScale);
 		}
 	}
@@ -767,11 +771,13 @@ void AInspectorPawn::ConfigureLaserFrameGeometry()
 		if (IsValid(LaserSheetVisual))
 		{
 			LaserSheetVisual->SetRelativeLocation(FVector(GuideStripX, 0.0, 0.02));
+			LaserSheetVisual->SetRelativeRotation(FRotator::ZeroRotator);
 			LaserSheetVisual->SetRelativeScale3D(GuideRibbonScale);
 		}
 		if (IsValid(LaserSheetUndersideVisual))
 		{
 			LaserSheetUndersideVisual->SetRelativeLocation(FVector(GuideStripX, 0.0, -0.02));
+			LaserSheetUndersideVisual->SetRelativeRotation(FRotator(180.0f, 0.0f, 0.0f));
 			LaserSheetUndersideVisual->SetRelativeScale3D(GuideRibbonScale);
 		}
 	}

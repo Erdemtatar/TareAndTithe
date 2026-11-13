@@ -44,113 +44,127 @@ STATION_PBR_SPECS: List[StationPBRInstanceSpec] = [
         instance_name="MI_Station_ClampJaw",
         prop_name="SM_ClampJaw",
         slot_property="clamp_jaw_mesh_slot",
-        albedo_tint=(1.04, 1.07, 1.12),
-        conductor_min_f0=(0.18, 0.20, 0.23),
-        roughness_contrast_exp=1.70,
-        roughness_min=0.18,
-        roughness_max=0.52,
-        metallic_scale=1.25,
-        metallic_floor=0.84,
+        albedo_tint=(1.10, 1.16, 1.26),
+        conductor_min_f0=(0.20, 0.23, 0.27),
+        roughness_contrast_exp=1.72,
+        roughness_min=0.16,
+        roughness_max=0.46,
+        metallic_scale=1.28,
+        metallic_floor=0.86,
         ao_strength=0.85,
-        normal_strength=1.40,
+        normal_strength=1.45,
     ),
     StationPBRInstanceSpec(
         instance_name="MI_Station_ClampSpringHousing",
         prop_name="SM_ClampSpringHousing",
         slot_property="clamp_spring_housing_mesh_slot",
-        albedo_tint=(1.02, 1.05, 1.10),
-        conductor_min_f0=(0.16, 0.18, 0.21),
-        roughness_contrast_exp=1.65,
-        roughness_min=0.22,
-        roughness_max=0.56,
-        metallic_scale=1.20,
-        metallic_floor=0.78,
+        albedo_tint=(0.94, 1.00, 1.10),
+        conductor_min_f0=(0.16, 0.18, 0.22),
+        roughness_contrast_exp=1.68,
+        roughness_min=0.20,
+        roughness_max=0.52,
+        metallic_scale=1.24,
+        metallic_floor=0.82,
         ao_strength=0.85,
-        normal_strength=1.35,
+        normal_strength=1.40,
     ),
     StationPBRInstanceSpec(
         instance_name="MI_Station_ScaleBase",
         prop_name="SM_ScaleBase",
         slot_property="scale_base_mesh_slot",
-        albedo_tint=(1.02, 1.04, 1.08),
-        conductor_min_f0=(0.15, 0.17, 0.19),
-        roughness_contrast_exp=1.60,
-        roughness_min=0.25,
-        roughness_max=0.60,
-        metallic_scale=1.18,
-        metallic_floor=0.72,
+        albedo_tint=(1.06, 1.10, 1.18),
+        conductor_min_f0=(0.17, 0.19, 0.22),
+        roughness_contrast_exp=1.65,
+        roughness_min=0.22,
+        roughness_max=0.54,
+        metallic_scale=1.22,
+        metallic_floor=0.78,
         ao_strength=0.85,
-        normal_strength=1.35,
+        normal_strength=1.40,
     ),
     StationPBRInstanceSpec(
         instance_name="MI_Station_ScalePan",
         prop_name="SM_ScalePan",
         slot_property="scale_pan_mesh_slot",
-        albedo_tint=(1.06, 1.04, 1.00),
-        conductor_min_f0=(0.20, 0.19, 0.17),
-        roughness_contrast_exp=1.70,
-        roughness_min=0.19,
-        roughness_max=0.50,
-        metallic_scale=1.25,
-        metallic_floor=0.85,
+        albedo_tint=(1.10, 1.08, 1.04),
+        conductor_min_f0=(0.22, 0.21, 0.19),
+        roughness_contrast_exp=1.72,
+        roughness_min=0.17,
+        roughness_max=0.46,
+        metallic_scale=1.28,
+        metallic_floor=0.86,
         ao_strength=0.82,
-        normal_strength=1.35,
+        normal_strength=1.40,
     ),
     StationPBRInstanceSpec(
         instance_name="MI_Station_TareChute",
         prop_name="SM_TareChute",
         slot_property="tare_chute_mesh_slot",
-        albedo_tint=(1.02, 1.03, 1.06),
-        conductor_min_f0=(0.16, 0.17, 0.19),
-        roughness_contrast_exp=1.62,
-        roughness_min=0.24,
-        roughness_max=0.58,
-        metallic_scale=1.20,
-        metallic_floor=0.76,
+        albedo_tint=(1.06, 1.09, 1.16),
+        conductor_min_f0=(0.18, 0.20, 0.23),
+        roughness_contrast_exp=1.66,
+        roughness_min=0.21,
+        roughness_max=0.52,
+        metallic_scale=1.24,
+        metallic_floor=0.80,
         ao_strength=0.85,
-        normal_strength=1.35,
+        normal_strength=1.40,
     ),
     StationPBRInstanceSpec(
         instance_name="MI_Station_DirectorBoothFrame",
         prop_name="SM_DirectorBoothFrame",
         slot_property="director_booth_frame_mesh_slot",
-        albedo_tint=(1.04, 1.07, 1.12),
-        conductor_min_f0=(0.16, 0.18, 0.21),
-        roughness_contrast_exp=1.65,
-        roughness_min=0.23,
-        roughness_max=0.56,
-        metallic_scale=1.20,
-        metallic_floor=0.78,
-        ao_strength=0.85,
-        normal_strength=1.35,
+        albedo_tint=(0.40, 0.46, 0.56),
+        conductor_min_f0=(0.12, 0.14, 0.18),
+        roughness_contrast_exp=1.70,
+        roughness_min=0.20,
+        roughness_max=0.44,
+        metallic_scale=1.28,
+        metallic_floor=0.86,
+        ao_strength=0.88,
+        normal_strength=1.40,
     ),
     StationPBRInstanceSpec(
         instance_name="MI_Station_DirectorShutter",
         prop_name="SM_DirectorShutter",
         slot_property="director_shutter_mesh_slot",
-        albedo_tint=(1.05, 1.08, 1.12),
-        conductor_min_f0=(0.18, 0.20, 0.23),
-        roughness_contrast_exp=1.70,
-        roughness_min=0.20,
-        roughness_max=0.50,
-        metallic_scale=1.24,
-        metallic_floor=0.84,
-        ao_strength=0.85,
-        normal_strength=1.35,
+        albedo_tint=(0.76, 0.86, 1.02),
+        conductor_min_f0=(0.14, 0.16, 0.20),
+        roughness_contrast_exp=1.72,
+        roughness_min=0.18,
+        roughness_max=0.42,
+        metallic_scale=1.30,
+        metallic_floor=0.88,
+        ao_strength=0.86,
+        normal_strength=1.40,
     ),
     StationPBRInstanceSpec(
         instance_name="MI_Station_CellFloorGrate",
         prop_name="SM_CellFloorGrate",
         slot_property="cell_floor_grate_mesh_slot",
-        albedo_tint=(1.04, 1.07, 1.12),
-        conductor_min_f0=(0.16, 0.18, 0.21),
-        roughness_contrast_exp=1.68,
-        roughness_min=0.22,
-        roughness_max=0.56,
-        metallic_scale=1.22,
-        metallic_floor=0.80,
+        albedo_tint=(0.92, 0.96, 1.04),
+        conductor_min_f0=(0.17, 0.19, 0.22),
+        roughness_contrast_exp=1.70,
+        roughness_min=0.20,
+        roughness_max=0.50,
+        metallic_scale=1.26,
+        metallic_floor=0.84,
         ao_strength=0.85,
-        normal_strength=1.40,
+        normal_strength=1.45,
+    ),
+    StationPBRInstanceSpec(
+        instance_name="MI_Station_DiverterFlapper",
+        prop_name="SM_DiverterFlapper",
+        slot_property="diverter_flapper_mesh_slot",
+        albedo_tint=(1.08, 1.14, 1.24),
+        conductor_min_f0=(0.20, 0.23, 0.27),
+        roughness_contrast_exp=1.72,
+        roughness_min=0.17,
+        roughness_max=0.44,
+        metallic_scale=1.28,
+        metallic_floor=0.86,
+        ao_strength=0.82,
+        normal_strength=1.45,
     ),
 ]
 
@@ -392,20 +406,129 @@ def finalize_and_save_material(
 
 
 def build_laser_sheet_master() -> unreal.Material:
+    """
+    Phase 11A High-Energy Translucent Laser Optic Sheet (Guard 3 single-sided two_sided=False):
+    - Low interior fill opacity (0.08 - 0.13 during active slice contact) with 68-cycle optical scanline striations
+      so the ore monolith and molten cut cap remain unmistakably legible right through the plane.
+    - Razor-sharp 0.018 UV perimeter frame (0.88 opacity, 2.60x HDR emissive boost) cleanly exceeding
+      BloomThreshold=1.65 along the optical slice border while keeping HUD text immune.
+    """
     mat = get_or_create_material("M_LaserSheet_Master")
     mat.set_editor_property("blend_mode", unreal.BlendMode.BLEND_TRANSLUCENT)
     mat.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_UNLIT)
-    mat.set_editor_property("two_sided", True)
+    mat.set_editor_property("two_sided", False)
 
-    emissive_param = create_expr(mat, unreal.MaterialExpressionVectorParameter, -420, -120)
+    tex_uv = create_expr(mat, unreal.MaterialExpressionTextureCoordinate, -1480, 40)
+    tex_uv.set_editor_property("coordinate_index", 0)
+    tex_uv.set_editor_property("u_tiling", 1.0)
+    tex_uv.set_editor_property("v_tiling", 1.0)
+
+    u_mask = create_expr(mat, unreal.MaterialExpressionComponentMask, -1240, -60)
+    u_mask.set_editor_property("r", True)
+    u_mask.set_editor_property("g", False)
+    u_mask.set_editor_property("b", False)
+    u_mask.set_editor_property("a", False)
+    connect_expr(tex_uv, "", u_mask, "")
+
+    v_mask = create_expr(mat, unreal.MaterialExpressionComponentMask, -1240, 140)
+    v_mask.set_editor_property("r", False)
+    v_mask.set_editor_property("g", True)
+    v_mask.set_editor_property("b", False)
+    v_mask.set_editor_property("a", False)
+    connect_expr(tex_uv, "", v_mask, "")
+
+    # UV perimeter border mask: max(|U - 0.5|, |V - 0.5|) mapped across [0.482, 0.500] (0.018 UV edge width)
+    u_centered = create_expr(mat, unreal.MaterialExpressionSubtract, -1040, -80)
+    u_centered.set_editor_property("const_b", 0.5)
+    connect_expr(u_mask, "", u_centered, "A")
+    u_abs = create_expr(mat, unreal.MaterialExpressionAbs, -880, -80)
+    connect_expr(u_centered, "", u_abs, "")
+
+    v_centered = create_expr(mat, unreal.MaterialExpressionSubtract, -1040, 60)
+    v_centered.set_editor_property("const_b", 0.5)
+    connect_expr(v_mask, "", v_centered, "A")
+    v_abs = create_expr(mat, unreal.MaterialExpressionAbs, -880, 60)
+    connect_expr(v_centered, "", v_abs, "")
+
+    box_dist = create_expr(mat, unreal.MaterialExpressionMax, -720, -10)
+    connect_expr(u_abs, "", box_dist, "A")
+    connect_expr(v_abs, "", box_dist, "B")
+
+    edge_shifted = create_expr(mat, unreal.MaterialExpressionSubtract, -560, -10)
+    edge_shifted.set_editor_property("const_b", 0.482)
+    connect_expr(box_dist, "", edge_shifted, "A")
+
+    edge_scaled = create_expr(mat, unreal.MaterialExpressionMultiply, -400, -10)
+    edge_scaled.set_editor_property("const_b", 55.5556)
+    connect_expr(edge_shifted, "", edge_scaled, "A")
+
+    edge_clamped = create_expr(mat, unreal.MaterialExpressionClamp, -240, -10)
+    edge_clamped.set_editor_property("min_default", 0.0)
+    edge_clamped.set_editor_property("max_default", 1.0)
+    connect_expr(edge_scaled, "", edge_clamped, "")
+
+    border_mask = create_expr(mat, unreal.MaterialExpressionPower, -80, -10)
+    border_mask.set_editor_property("const_exponent", 1.6)
+    connect_expr(edge_clamped, "", border_mask, "Base")
+
+    # High-frequency optical scanline striations across V (68 cycles across 68 cm aperture = 1 cm optical pitch)
+    v_freq = create_expr(mat, unreal.MaterialExpressionMultiply, -1040, 240)
+    v_freq.set_editor_property("const_b", 68.0)
+    connect_expr(v_mask, "", v_freq, "A")
+
+    scan_sin = create_expr(mat, unreal.MaterialExpressionSine, -860, 240)
+    scan_sin.set_editor_property("period", 1.0)
+    connect_expr(v_freq, "", scan_sin, "")
+
+    scan_amp = create_expr(mat, unreal.MaterialExpressionMultiply, -680, 240)
+    scan_amp.set_editor_property("const_b", 0.15)
+    connect_expr(scan_sin, "", scan_amp, "A")
+
+    scanline_mod = create_expr(mat, unreal.MaterialExpressionAdd, -500, 240)
+    scanline_mod.set_editor_property("const_b", 1.0)
+    connect_expr(scan_amp, "", scanline_mod, "A")
+
+    # Emissive output: subtle 0.82x interior scanlines + 2.60x HDR perimeter beam
+    emissive_param = create_expr(mat, unreal.MaterialExpressionVectorParameter, -460, -280)
     emissive_param.set_editor_property("parameter_name", "EmissiveColor")
     emissive_param.set_editor_property("default_value", unreal.LinearColor(0.08, 0.88, 1.0, 1.0))
-    connect_prop(emissive_param, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
 
-    opacity_param = create_expr(mat, unreal.MaterialExpressionScalarParameter, -420, 140)
+    interior_emissive_gain = create_expr(mat, unreal.MaterialExpressionMultiply, -300, -160)
+    interior_emissive_gain.set_editor_property("const_b", 0.82)
+    connect_expr(scanline_mod, "", interior_emissive_gain, "A")
+
+    border_emissive_gain = make_const_scalar(mat, 2.60, -300, -80)
+
+    emissive_gain = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, -80, -160)
+    connect_expr(interior_emissive_gain, "", emissive_gain, "A")
+    connect_expr(border_emissive_gain, "", emissive_gain, "B")
+    connect_expr(border_mask, "", emissive_gain, "Alpha")
+
+    final_emissive = create_expr(mat, unreal.MaterialExpressionMultiply, 140, -220)
+    connect_expr(emissive_param, "", final_emissive, "A")
+    connect_expr(emissive_gain, "", final_emissive, "B")
+    connect_prop(final_emissive, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+
+    # Opacity output: 0.24 * Opacity * scanline_mod interior (~0.085-0.132 in contact, ~0.043 idle) + 0.88 crisp border
+    opacity_param = create_expr(mat, unreal.MaterialExpressionScalarParameter, -500, 380)
     opacity_param.set_editor_property("parameter_name", "Opacity")
-    opacity_param.set_editor_property("default_value", 0.28)
-    connect_prop(opacity_param, "", unreal.MaterialProperty.MP_OPACITY)
+    opacity_param.set_editor_property("default_value", 0.42)
+
+    interior_op_raw = create_expr(mat, unreal.MaterialExpressionMultiply, -300, 360)
+    interior_op_raw.set_editor_property("const_b", 0.24)
+    connect_expr(opacity_param, "", interior_op_raw, "A")
+
+    interior_op = create_expr(mat, unreal.MaterialExpressionMultiply, -120, 320)
+    connect_expr(interior_op_raw, "", interior_op, "A")
+    connect_expr(scanline_mod, "", interior_op, "B")
+
+    border_op_const = make_const_scalar(mat, 0.88, -120, 440)
+
+    final_opacity = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, 140, 320)
+    connect_expr(interior_op, "", final_opacity, "A")
+    connect_expr(border_op_const, "", final_opacity, "B")
+    connect_expr(border_mask, "", final_opacity, "Alpha")
+    connect_prop(final_opacity, "", unreal.MaterialProperty.MP_OPACITY)
 
     finalize_and_save_material(mat, is_opaque_nanite_compatible=False)
     return mat
@@ -529,8 +652,8 @@ def build_slag_outer_master() -> unreal.Material:
     rock_clamp.set_editor_property("max_default", 1.0)
     connect_expr(rock_blend, "", rock_clamp, "")
 
-    basalt_dark = make_const_color3(mat, 0.042, 0.046, 0.056, -560, -480)
-    basalt_strata = make_const_color3(mat, 0.072, 0.078, 0.092, -560, -380)
+    basalt_dark = make_const_color3(mat, 0.036, 0.040, 0.048, -560, -480)
+    basalt_strata = make_const_color3(mat, 0.070, 0.076, 0.090, -560, -380)
     basalt_albedo = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, -180, -380)
     connect_expr(basalt_dark, "", basalt_albedo, "A")
     connect_expr(basalt_strata, "", basalt_albedo, "B")
@@ -561,7 +684,7 @@ def build_slag_outer_master() -> unreal.Material:
     vein_mask.set_editor_property("max_default", 1.0)
     connect_expr(combined_vein, "", vein_mask, "")
 
-    crimson_oxide = make_const_color3(mat, 0.48, 0.052, 0.018, 380, -160)
+    crimson_oxide = make_const_color3(mat, 0.56, 0.055, 0.018, 380, -160)
     final_base_color = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, 760, -180)
     connect_expr(basalt_albedo, "", final_base_color, "A")
     connect_expr(crimson_oxide, "", final_base_color, "B")
@@ -572,7 +695,7 @@ def build_slag_outer_master() -> unreal.Material:
     seam_core.set_editor_property("const_exponent", 11.5)
     connect_expr(primary_ridge, "", seam_core, "Base")
 
-    seam_glow_color = make_const_color3(mat, 0.24, 0.020, 0.005, 380, 560)
+    seam_glow_color = make_const_color3(mat, 0.34, 0.026, 0.006, 380, 560)
     seam_emissive = create_expr(mat, unreal.MaterialExpressionMultiply, 700, 480)
     connect_expr(seam_glow_color, "", seam_emissive, "A")
     connect_expr(seam_core, "", seam_emissive, "B")
@@ -683,8 +806,9 @@ def build_cell_wall_master() -> unreal.Material:
     seam_sine.set_editor_property("period", 1.0)
     connect_expr(seam_u_mask, "", seam_sine, "")
 
-    color_a = make_const_color3(mat, 0.072, 0.080, 0.094, -560, -220)
-    color_b = make_const_color3(mat, 0.128, 0.138, 0.158, -560, -80)
+    # Darkened soot-charcoal wall albedo so Y = +-360 side borders fall naturally into deep chiaroscuro shadow
+    color_a = make_const_color3(mat, 0.020, 0.022, 0.026, -560, -220)
+    color_b = make_const_color3(mat, 0.038, 0.042, 0.050, -560, -80)
 
     base_lerp = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, -240, -140)
     connect_expr(color_a, "", base_lerp, "A")
@@ -693,12 +817,12 @@ def build_cell_wall_master() -> unreal.Material:
     connect_prop(base_lerp, "", unreal.MaterialProperty.MP_BASE_COLOR)
 
     rough_lerp = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, -240, 60)
-    rough_lerp.set_editor_property("const_a", 0.58)
-    rough_lerp.set_editor_property("const_b", 0.84)
+    rough_lerp.set_editor_property("const_a", 0.68)
+    rough_lerp.set_editor_property("const_b", 0.90)
     connect_expr(noise_alpha, "", rough_lerp, "Alpha")
     connect_prop(rough_lerp, "", unreal.MaterialProperty.MP_ROUGHNESS)
 
-    metal_const = make_const_scalar(mat, 0.18, -240, 200)
+    metal_const = make_const_scalar(mat, 0.12, -240, 200)
     connect_prop(metal_const, "", unreal.MaterialProperty.MP_METALLIC)
 
     # Architectural micro-normal relief so midground wash & molten bounce catch concrete bevel grain
@@ -930,9 +1054,10 @@ def build_station_pbr_master_and_instances() -> Tuple[unreal.Material, Dict[str,
     connect_expr(tex_norm, "B", norm_out, "B")
     connect_prop(norm_out, "", unreal.MaterialProperty.MP_NORMAL)
 
-    finalize_and_save_material(mat, is_opaque_nanite_compatible=True)
+    # Enable MATUSAGE_INSTANCED_STATIC_MESHES so FoundryGrateShaftISM & FoundryFlankColumnISM compile cooked ISM shaders
+    finalize_and_save_material(mat, is_opaque_nanite_compatible=True, enable_instanced_static_mesh=True)
 
-    # 5. Build and validate all 8 MI_Station_* MaterialInstanceConstants
+    # 5. Build and validate all 9 MI_Station_* MaterialInstanceConstants
     built_instances: Dict[str, unreal.MaterialInstanceConstant] = {}
     for spec in STATION_PBR_SPECS:
         diff_tex, orm_tex, norm_tex = load_and_verify_rodin_prop_textures(spec.prop_name)
@@ -1086,96 +1211,84 @@ def bind_materials_and_lighting_to_presentation(
     da_pres.set_editor_property("cell_floor_material", m_floor)
     da_pres.set_editor_property("dark_gunmetal_material", m_gunmetal)
 
-    # Bind 8 calibrated MI_Station_* instances to their DA_Presentation mesh slots
+    # Bind all 9 calibrated MI_Station_* instances (including MI_Station_DiverterFlapper) to their DA_Presentation mesh slots
     for slot_prop, mic in station_instances.items():
         slot_struct = da_pres.get_editor_property(slot_prop)
         slot_struct.set_editor_property("material_overrides", [mic])
         da_pres.set_editor_property(slot_prop, slot_struct)
 
-    # Keep SM_DiverterFlapper bound to physical-F0 M_DarkGunmetal_Master
-    flapper_slot = da_pres.get_editor_property("diverter_flapper_mesh_slot")
-    flapper_slot.set_editor_property("material_overrides", [m_gunmetal])
-    da_pres.set_editor_property("diverter_flapper_mesh_slot", flapper_slot)
-
-    flapper_mesh_path = f"{MESHES_DIR}/SM_DiverterFlapper"
-    if unreal.EditorAssetLibrary.does_asset_exist(flapper_mesh_path):
-        flapper_sm = unreal.EditorAssetLibrary.load_asset(flapper_mesh_path)
-        if isinstance(flapper_sm, unreal.StaticMesh):
-            flapper_sm.set_material(0, m_gunmetal)
-            unreal.EditorAssetLibrary.save_loaded_asset(flapper_sm, only_if_is_dirty=False)
-            log_info(f"Bound calibrated M_DarkGunmetal_Master to {flapper_mesh_path} Slot 0")
-
-    # Configure Phase 10 LightingRigConfig (1 VSM shadow-casting spot + 4 unshadowed fill/rim/wash lights)
+    # Configure Phase 11A LightingRigConfig (1 VSM shadow-casting spot + 4 unshadowed fill/rim/foundry-pit lights; zero side-wall wash)
     rig_cfg = unreal.CellLightingRigConfig()
 
     key_spot = rig_cfg.get_editor_property("key_spot")
-    key_spot.set_editor_property("location", unreal.Vector(175.0, -25.0, 335.0))
-    key_spot.set_editor_property("target_location", unreal.Vector(260.0, 0.0, 120.0))
-    key_spot.set_editor_property("intensity", 12200.0)
-    key_spot.set_editor_property("attenuation_radius", 1080.0)
-    key_spot.set_editor_property("inner_cone_angle", 26.0)
-    key_spot.set_editor_property("outer_cone_angle", 58.0)
-    key_spot.set_editor_property("light_color", unreal.LinearColor(0.95, 0.96, 1.00, 1.0))
+    key_spot.set_editor_property("location", unreal.Vector(182.0, -16.0, 336.0))
+    key_spot.set_editor_property("target_location", unreal.Vector(260.0, 4.0, 118.0))
+    key_spot.set_editor_property("intensity", 14800.0)
+    key_spot.set_editor_property("attenuation_radius", 480.0)
+    key_spot.set_editor_property("inner_cone_angle", 19.0)
+    key_spot.set_editor_property("outer_cone_angle", 35.0)
+    key_spot.set_editor_property("light_color", unreal.LinearColor(0.96, 0.97, 1.00, 1.0))
     key_spot.set_editor_property("cast_shadows", True)
     rig_cfg.set_editor_property("key_spot", key_spot)
 
-    rig_cfg.set_editor_property("fill_point_location", unreal.Vector(95.0, 40.0, 215.0))
-    rig_cfg.set_editor_property("fill_point_intensity", 3600.0)
-    rig_cfg.set_editor_property("fill_point_radius", 880.0)
-    rig_cfg.set_editor_property("fill_point_color", unreal.LinearColor(0.84, 0.90, 1.00, 1.0))
+    rig_cfg.set_editor_property("fill_point_location", unreal.Vector(145.0, 12.0, 178.0))
+    rig_cfg.set_editor_property("fill_point_intensity", 2400.0)
+    rig_cfg.set_editor_property("fill_point_radius", 310.0)
+    rig_cfg.set_editor_property("fill_point_color", unreal.LinearColor(0.82, 0.89, 1.00, 1.0))
 
     rim_left = rig_cfg.get_editor_property("rim_spot_left")
-    rim_left.set_editor_property("location", unreal.Vector(338.0, -190.0, 248.0))
-    rim_left.set_editor_property("target_location", unreal.Vector(255.0, -14.0, 112.0))
-    rim_left.set_editor_property("intensity", 9400.0)
-    rim_left.set_editor_property("attenuation_radius", 780.0)
-    rim_left.set_editor_property("inner_cone_angle", 20.0)
-    rim_left.set_editor_property("outer_cone_angle", 52.0)
-    rim_left.set_editor_property("light_color", unreal.LinearColor(0.68, 0.85, 1.00, 1.0))
+    rim_left.set_editor_property("location", unreal.Vector(318.0, -148.0, 242.0))
+    rim_left.set_editor_property("target_location", unreal.Vector(260.0, -8.0, 148.0))
+    rim_left.set_editor_property("intensity", 11200.0)
+    rim_left.set_editor_property("attenuation_radius", 385.0)
+    rim_left.set_editor_property("inner_cone_angle", 18.0)
+    rim_left.set_editor_property("outer_cone_angle", 36.0)
+    rim_left.set_editor_property("light_color", unreal.LinearColor(0.66, 0.84, 1.00, 1.0))
     rim_left.set_editor_property("cast_shadows", False)
     rig_cfg.set_editor_property("rim_spot_left", rim_left)
 
     rim_right = rig_cfg.get_editor_property("rim_spot_right")
-    rim_right.set_editor_property("location", unreal.Vector(338.0, 195.0, 228.0))
-    rim_right.set_editor_property("target_location", unreal.Vector(255.0, 14.0, 102.0))
-    rim_right.set_editor_property("intensity", 9000.0)
-    rim_right.set_editor_property("attenuation_radius", 780.0)
-    rim_right.set_editor_property("inner_cone_angle", 20.0)
-    rim_right.set_editor_property("outer_cone_angle", 52.0)
-    rim_right.set_editor_property("light_color", unreal.LinearColor(0.65, 0.83, 1.00, 1.0))
+    rim_right.set_editor_property("location", unreal.Vector(318.0, 152.0, 236.0))
+    rim_right.set_editor_property("target_location", unreal.Vector(260.0, 14.0, 140.0))
+    rim_right.set_editor_property("intensity", 10800.0)
+    rim_right.set_editor_property("attenuation_radius", 385.0)
+    rim_right.set_editor_property("inner_cone_angle", 18.0)
+    rim_right.set_editor_property("outer_cone_angle", 36.0)
+    rim_right.set_editor_property("light_color", unreal.LinearColor(0.64, 0.82, 1.00, 1.0))
     rim_right.set_editor_property("cast_shadows", False)
     rig_cfg.set_editor_property("rim_spot_right", rim_right)
 
+    # Guard 1: Warm ~2150K upward-raking foundry pit glow across Y in [-155, +155]; R=345 < 360 guarantees 0.000 side-wall irradiance
     mid_wash = rig_cfg.get_editor_property("midground_wash_spot")
-    mid_wash.set_editor_property("location", unreal.Vector(190.0, 0.0, 352.0))
-    mid_wash.set_editor_property("target_location", unreal.Vector(495.0, 0.0, 96.0))
-    mid_wash.set_editor_property("intensity", 5800.0)
-    mid_wash.set_editor_property("attenuation_radius", 720.0)
+    mid_wash.set_editor_property("location", unreal.Vector(405.0, 0.0, -55.0))
+    mid_wash.set_editor_property("target_location", unreal.Vector(448.0, 0.0, 110.0))
+    mid_wash.set_editor_property("intensity", 9600.0)
+    mid_wash.set_editor_property("attenuation_radius", 345.0)
     mid_wash.set_editor_property("inner_cone_angle", 28.0)
-    mid_wash.set_editor_property("outer_cone_angle", 64.0)
-    mid_wash.set_editor_property("light_color", unreal.LinearColor(0.70, 0.84, 1.00, 1.0))
+    mid_wash.set_editor_property("outer_cone_angle", 56.0)
+    mid_wash.set_editor_property("light_color", unreal.LinearColor(1.00, 0.34, 0.07, 1.0))
     mid_wash.set_editor_property("cast_shadows", False)
     rig_cfg.set_editor_property("midground_wash_spot", mid_wash)
 
     da_pres.set_editor_property("lighting_rig_config", rig_cfg)
 
-    # Configure Phase 10 AtmosphereConfig (Guard 1 cook-safe cubemap + depth fog behind X=260 + midground relief)
+    # Configure Phase 11A AtmosphereConfig (kill milky side-wall fog: FogDensity=0.015, FogStartDistanceCm=390, warm-dark foundry soot)
     atmos_cfg = unreal.CellAtmosphereConfig()
     atmos_cfg.set_editor_property("ambient_sky_cubemap", ambient_cubemap)
-    atmos_cfg.set_editor_property("sky_light_intensity", 0.44)
-    atmos_cfg.set_editor_property("sky_tint_color", unreal.LinearColor(0.68, 0.80, 0.98, 1.0))
-    atmos_cfg.set_editor_property("lower_hemisphere_color", unreal.LinearColor(0.028, 0.036, 0.050, 1.0))
+    atmos_cfg.set_editor_property("sky_light_intensity", 0.28)
+    atmos_cfg.set_editor_property("sky_tint_color", unreal.LinearColor(0.64, 0.78, 0.96, 1.0))
+    atmos_cfg.set_editor_property("lower_hemisphere_color", unreal.LinearColor(0.012, 0.014, 0.018, 1.0))
     atmos_cfg.set_editor_property("enable_depth_fog", True)
-    atmos_cfg.set_editor_property("fog_density", 0.16)
-    atmos_cfg.set_editor_property("fog_height_falloff", 0.32)
-    atmos_cfg.set_editor_property("fog_start_distance_cm", 305.0)
-    atmos_cfg.set_editor_property("fog_max_opacity", 0.55)
-    atmos_cfg.set_editor_property("fog_inscattering_color", unreal.LinearColor(0.036, 0.050, 0.072, 1.0))
+    atmos_cfg.set_editor_property("fog_density", 0.015)
+    atmos_cfg.set_editor_property("fog_height_falloff", 0.28)
+    atmos_cfg.set_editor_property("fog_start_distance_cm", 390.0)
+    atmos_cfg.set_editor_property("fog_max_opacity", 0.32)
+    atmos_cfg.set_editor_property("fog_inscattering_color", unreal.LinearColor(0.008, 0.007, 0.006, 1.0))
     atmos_cfg.set_editor_property("fog_actor_z_cm", 90.0)
     atmos_cfg.set_editor_property("spawn_midground_architecture_relief", True)
     da_pres.set_editor_property("atmosphere_config", atmos_cfg)
 
-    # Configure Phase 10 MoltenBounceConfig (~2200K zero-shadow thermal bounce on cut cap & scale pan well)
+    # Configure Phase 10/11A MoltenBounceConfig (~2200K zero-shadow thermal bounce on cut cap & scale pan well)
     molten_cfg = unreal.MoltenBounceLightConfig()
     molten_cfg.set_editor_property("bounce_color", unreal.LinearColor(1.00, 0.36, 0.07, 1.0))
     molten_cfg.set_editor_property("cut_flash_peak_intensity", 5600.0)
@@ -1190,7 +1303,7 @@ def bind_materials_and_lighting_to_presentation(
     molten_cfg.set_editor_property("steady_interp_speed", 6.0)
     da_pres.set_editor_property("molten_bounce_config", molten_cfg)
 
-    # Configure Phase 10 CameraPostProcessPolishConfig (BloomThreshold=1.65 HUD firewall + LocalExposure=1.0 + ACES)
+    # Configure Phase 11A CameraPostProcessPolishConfig (BloomThreshold=1.65 HUD firewall + VignetteIntensity=0.36)
     pp_cfg = unreal.CameraPostProcessPolishConfig()
     pp_cfg.set_editor_property("locked_ev100_min_max", 1.0)
     pp_cfg.set_editor_property("exposure_compensation_bias", 0.48)
@@ -1203,7 +1316,7 @@ def bind_materials_and_lighting_to_presentation(
     pp_cfg.set_editor_property("film_shoulder", 0.28)
     pp_cfg.set_editor_property("color_contrast", 1.05)
     pp_cfg.set_editor_property("color_saturation", 0.96)
-    pp_cfg.set_editor_property("vignette_intensity", 0.28)
+    pp_cfg.set_editor_property("vignette_intensity", 0.36)
     pp_cfg.set_editor_property("tonemapper_sharpen", 0.35)
     da_pres.set_editor_property("camera_post_process_config", pp_cfg)
 
@@ -1246,7 +1359,7 @@ def bind_materials_and_lighting_to_presentation(
         raise RuntimeError(f"Failed saving {DA_PRESENTATION_PATH}")
 
     log_info(
-        f"Bound all Phase 10 master materials, 8 MI_Station_* PBR instances, cook-safe SkyLight cubemap, "
+        f"Bound all Phase 11A master materials, 9 MI_Station_* PBR instances, cook-safe SkyLight cubemap, "
         f"lighting/atmosphere/post-process configs, and saved {DA_PRESENTATION_PATH}"
     )
 

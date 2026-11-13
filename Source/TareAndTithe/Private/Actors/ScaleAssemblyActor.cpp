@@ -250,7 +250,7 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 		ReadoutBackingPlate->SetMaterial(0, BaseGreyboxShapeMaterial);
 	}
 	ReadoutBackingPlate->SetRelativeLocation(FVector::ZeroVector);
-	ReadoutBackingPlate->SetRelativeScale3D(FVector(0.016, 3.16, 0.37));
+	ReadoutBackingPlate->SetRelativeScale3D(FVector(0.016, static_cast<double>(ReadoutBackingPlateWidthCm) / 100.0, 0.37));
 
 	// Backing plate front face is at local X = -0.8 cm; placing all text at local X = -2.0 cm positions glyphs exactly 1.2 cm in front.
 	auto ConfigureReadoutText = [this](
@@ -303,18 +303,18 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 
 	TareReadoutText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("TareReadoutText"));
 	TareReadoutText->SetupAttachment(ScaleConsoleRoot);
-	ConfigureReadoutText(TareReadoutText, FVector(-2.0, -58.0, -10.6), 5.6f, ReadoutGoldColor, TEXT("TARE: 0.0 / 14.0 KG"));
+	ConfigureReadoutText(TareReadoutText, FVector(-2.0, -52.0, -10.6), 5.4f, ReadoutGoldColor, TEXT("TARE: 0.0 / 14.0 KG"));
 
 	RouteReadoutText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("RouteReadoutText"));
 	RouteReadoutText->SetupAttachment(ScaleConsoleRoot);
-	ConfigureReadoutText(RouteReadoutText, FVector(-2.0, 58.0, -10.6), 5.6f, ReadoutHeaderCyanColor, TEXT("ROUTE: TITHE [SPACE]"));
+	ConfigureReadoutText(RouteReadoutText, FVector(-2.0, 52.0, -10.6), 5.4f, ReadoutHeaderCyanColor, TEXT("ROUTE: TITHE [SPACE]"));
 
 	ControlStencilText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("ControlStencilText"));
 	ControlStencilText->SetupAttachment(ScaleConsoleRoot);
 	ConfigureReadoutText(
 		ControlStencilText,
 		FVector(-2.0, 0.0, -15.6),
-		4.1f,
+		ControlStencilDefaultWorldSize,
 		ReadoutControlStencilColor,
 		TEXT("SCROLL: ROTATE | RMB: BEVEL | [SPACE]: TITHE/TARE | [E]: STAMP | HOLD [R]: RESET"));
 }
@@ -592,13 +592,18 @@ void AScaleAssemblyActor::ApplyPresentationData(const UTareTithePresentationData
 
 	InPresentationData->ScaleBaseMeshSlot.ApplyToVisualComponent(ScaleBaseVisual);
 	InPresentationData->ScalePanMeshSlot.ApplyToVisualComponent(PanPlatformVisual);
-	InPresentationData->DiverterFlapperMeshSlot.ApplyToVisualComponent(DiverterFlapperVisual);
+	const bool bAppliedFlapperSlot = InPresentationData->DiverterFlapperMeshSlot.ApplyToVisualComponent(DiverterFlapperVisual);
 	InPresentationData->TareChuteMeshSlot.ApplyToVisualComponent(TareChuteVisual);
 
+	// Guard 2: Preserve MI_Station_DiverterFlapper baked bevel normals & grazing steel specular whenever DiverterFlapperMeshSlot assigns a valid mesh/material.
 	const bool bHasExplicitFlapperOverride =
 		(InPresentationData->DiverterFlapperMeshSlot.MaterialOverrides.Num() > 0) &&
 		IsValid(InPresentationData->DiverterFlapperMeshSlot.MaterialOverrides[0]);
-	if (!bHasExplicitFlapperOverride)
+	const bool bFlapperHasValidMaterial =
+		bAppliedFlapperSlot &&
+		IsValid(DiverterFlapperVisual) &&
+		IsValid(DiverterFlapperVisual->GetMaterial(0));
+	if (!bHasExplicitFlapperOverride && !bFlapperHasValidMaterial)
 	{
 		ApplyDarkGunmetalMaterial(DiverterFlapperVisual);
 	}
@@ -840,6 +845,12 @@ void AScaleAssemblyActor::EnforcePanTriggerGeometryAndCollision()
 		LeftHopperGuideVisual->SetRelativeLocation(LeftHopperGuideOffsetCm);
 		LeftHopperGuideVisual->SetRelativeScale3D((2.0 * LeftHopperGuideBoxExtentCm) / 100.0);
 	}
+	if (IsValid(ReadoutBackingPlate))
+	{
+		ReadoutBackingPlate->SetRelativeLocation(FVector::ZeroVector);
+		ReadoutBackingPlate->SetRelativeScale3D(FVector(0.016, static_cast<double>(ReadoutBackingPlateWidthCm) / 100.0, 0.37));
+	}
+	FitReadoutLineWidth(ControlStencilText, ControlStencilDefaultWorldSize, ControlStencilMinWorldSize, ControlStencilMaxSafeWidthCm);
 
 	EnforceAuthoritativeCollider(
 		LeftHopperGuideCollider,
@@ -903,6 +914,7 @@ void AScaleAssemblyActor::RefreshContractHeaderReadout()
 
 	ContractCodeText->SetText(FText::FromString(HeaderLine));
 	ContractCodeText->SetTextRenderColor(ReadoutHeaderCyanColor);
+	FitReadoutLineWidth(ContractCodeText, 4.6f, 3.4f, StatusBannerMaxSafeWidthCm);
 	if (IsValid(HeaderStencilText))
 	{
 		HeaderStencilText->SetTextRenderColor(ReadoutHeaderCyanColor);
@@ -910,6 +922,7 @@ void AScaleAssemblyActor::RefreshContractHeaderReadout()
 	if (IsValid(ControlStencilText))
 	{
 		ControlStencilText->SetTextRenderColor(ReadoutControlStencilColor);
+		FitReadoutLineWidth(ControlStencilText, ControlStencilDefaultWorldSize, ControlStencilMinWorldSize, ControlStencilMaxSafeWidthCm);
 	}
 }
 
@@ -1007,25 +1020,42 @@ void AScaleAssemblyActor::SetStatusBannerTextFitted(const FString& BannerString,
 
 	StatusBannerText->SetTextRenderColor(BannerColor);
 	StatusBannerText->SetText(FText::FromString(BannerString));
+	FitReadoutLineWidth(
+		StatusBannerText,
+		StatusBannerDefaultWorldSize,
+		StatusBannerMinWorldSize,
+		StatusBannerMaxSafeWidthCm);
+}
 
-	const float SafeDefaultSize = FMath::Max(0.1f, StatusBannerDefaultWorldSize);
-	const float SafeCurrentSize = FMath::Max(0.1f, StatusBannerText->WorldSize);
-	const FVector LocalSize = StatusBannerText->GetTextLocalSize();
+void AScaleAssemblyActor::FitReadoutLineWidth(
+	UTextRenderComponent* TextComp,
+	float DefaultWorldSize,
+	float MinWorldSize,
+	float MaxSafeWidthCm)
+{
+	if (!IsValid(TextComp))
+	{
+		return;
+	}
+
+	const float SafeDefaultSize = FMath::Max(0.1f, DefaultWorldSize);
+	const float SafeCurrentSize = FMath::Max(0.1f, TextComp->WorldSize);
+	const FVector LocalSize = TextComp->GetTextLocalSize();
 	const float CurrentWidthYCm = static_cast<float>(FMath::Max(0.0, LocalSize.Y));
 	const float WidthAtDefaultCm = CurrentWidthYCm * (SafeDefaultSize / SafeCurrentSize);
 
 	float TargetWorldSize = SafeDefaultSize;
-	if (WidthAtDefaultCm > StatusBannerMaxSafeWidthCm && WidthAtDefaultCm > KINDA_SMALL_NUMBER)
+	if (WidthAtDefaultCm > MaxSafeWidthCm && WidthAtDefaultCm > KINDA_SMALL_NUMBER)
 	{
 		TargetWorldSize = FMath::Clamp(
-			SafeDefaultSize * (StatusBannerMaxSafeWidthCm / WidthAtDefaultCm),
-			StatusBannerMinWorldSize,
+			SafeDefaultSize * (MaxSafeWidthCm / WidthAtDefaultCm),
+			MinWorldSize,
 			SafeDefaultSize);
 	}
 
 	if (!FMath::IsNearlyEqual(SafeCurrentSize, TargetWorldSize, 0.01f))
 	{
-		StatusBannerText->SetWorldSize(TargetWorldSize);
+		TextComp->SetWorldSize(TargetWorldSize);
 	}
 }
 

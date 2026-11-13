@@ -220,14 +220,26 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Colors")
 	FColor ReadoutControlStencilColor = FColor(240, 230, 180, 255);
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Readout", meta = (ClampMin = "160.0", ClampMax = "320.0"))
+	float ReadoutBackingPlateWidthCm = 220.0f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Readout", meta = (ClampMin = "3.5", ClampMax = "10.0"))
 	float StatusBannerDefaultWorldSize = 6.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Readout", meta = (ClampMin = "2.5", ClampMax = "8.0"))
-	float StatusBannerMinWorldSize = 4.1f;
+	float StatusBannerMinWorldSize = 3.6f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Readout", meta = (ClampMin = "120.0", ClampMax = "310.0"))
-	float StatusBannerMaxSafeWidthCm = 276.0f;
+	float StatusBannerMaxSafeWidthCm = 202.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Readout", meta = (ClampMin = "2.5", ClampMax = "6.0"))
+	float ControlStencilDefaultWorldSize = 4.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Readout", meta = (ClampMin = "2.0", ClampMax = "5.0"))
+	float ControlStencilMinWorldSize = 2.9f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Readout", meta = (ClampMin = "120.0", ClampMax = "310.0"))
+	float ControlStencilMaxSafeWidthCm = 202.0f;
 
 private:
 	UFUNCTION()
@@ -250,6 +262,7 @@ private:
 	void RefreshContractHeaderReadout();
 	void RefreshStatusBannerReadout();
 	void SetStatusBannerTextFitted(const FString& BannerString, const FColor& BannerColor);
+	static void FitReadoutLineWidth(UTextRenderComponent* TextComp, float DefaultWorldSize, float MinWorldSize, float MaxSafeWidthCm);
 	void RefreshRouteReadout();
 	static FString FormatFaultReasonBanner(EContractFaultReason FaultReason);
 	void InitializeGreyboxVisualMaterials();

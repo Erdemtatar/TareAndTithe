@@ -202,13 +202,13 @@ protected:
 	FColor ReticleLoadCellColor = FColor(210, 242, 255, 255);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Camera")
-	FVector BaselineCameraRelativeLocation = FVector(-34.0, 0.0, 8.0);
+	FVector BaselineCameraRelativeLocation = FVector(-66.0, 0.0, 2.0);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Camera", meta = (ClampMin = "-25.0", ClampMax = "5.0"))
-	float BaselineCameraPitchDegrees = -4.0f;
+	float BaselineCameraPitchDegrees = -3.65f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Camera", meta = (ClampMin = "60.0", ClampMax = "115.0"))
-	float DefaultCameraFieldOfView = 90.0f;
+	float DefaultCameraFieldOfView = 85.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Camera|Exposure")
 	float LockedAutoExposureMinBrightness = 1.0f;
@@ -226,13 +226,13 @@ protected:
 	float LockedBloomThreshold = 1.65f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Camera", meta = (ClampMin = "0.0", ClampMax = "25.0"))
-	float MaxCameraParallaxYawDegrees = 6.0f;
+	float MaxCameraParallaxYawDegrees = 4.5f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Camera", meta = (ClampMin = "0.0", ClampMax = "25.0"))
-	float MaxCameraParallaxPitchDegrees = 5.0f;
+	float MaxCameraParallaxPitchDegrees = 0.80f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Camera", meta = (ClampMin = "-15.0", ClampMax = "5.0"))
-	float MaxUpwardCameraPitchCeilingDegrees = -2.2f;
+	float MaxUpwardCameraPitchCeilingDegrees = -2.85f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Camera", meta = (ClampMin = "20.0", ClampMax = "250.0"))
 	float ParallaxReferenceHorizontalSpanCm = 58.0f;

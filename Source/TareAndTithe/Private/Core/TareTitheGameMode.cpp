@@ -363,155 +363,164 @@ void ATareTitheGameMode::SpawnGreyboxPitEnclosureAndLighting(UWorld* World)
 		? PresentationData->AtmosphereConfig
 		: FCellAtmosphereConfig();
 
-	// Midground architectural relief in 2 zero-shadow, zero-collision instanced batches (strictly X >= 415.0 cm).
-	if (AtmosCfg.bSpawnMidgroundArchitectureRelief && IsValid(GreyboxCellCubeMesh))
+	// Recessed central Industrial Foundry Grate Shaft & heavy vertical mechanical columns in 2 zero-shadow, zero-collision Rodin PBR ISM batches (X in [430, 465] cm).
+	if (AtmosCfg.bSpawnMidgroundArchitectureRelief && IsValid(PresentationData))
 	{
-		if (AActor* ReliefHostActor = World->SpawnActor<AActor>(
-			AActor::StaticClass(),
-			FTransform::Identity,
-			SpawnParams))
+		const FMeshPresentationSlot& GrateSlot = PresentationData->CellFloorGrateMeshSlot;
+		const FMeshPresentationSlot* ColumnSlot = IsValid(PresentationData->ClampSpringHousingMeshSlot.Mesh)
+			? &PresentationData->ClampSpringHousingMeshSlot
+			: (IsValid(PresentationData->DirectorBoothFrameMeshSlot.Mesh) ? &PresentationData->DirectorBoothFrameMeshSlot : nullptr);
+
+		if (IsValid(GrateSlot.Mesh) || (ColumnSlot != nullptr && IsValid(ColumnSlot->Mesh)))
 		{
-			ReliefHostActor->PrimaryActorTick.bCanEverTick = false;
-
-			USceneComponent* ReliefRoot = NewObject<USceneComponent>(ReliefHostActor, TEXT("MidgroundReliefRoot"));
-			if (IsValid(ReliefRoot))
+			if (AActor* FoundryShaftHostActor = World->SpawnActor<AActor>(
+				AActor::StaticClass(),
+				FTransform::Identity,
+				SpawnParams))
 			{
-				ReliefRoot->PrimaryComponentTick.bCanEverTick = false;
-				ReliefRoot->SetMobility(EComponentMobility::Movable);
-				ReliefHostActor->SetRootComponent(ReliefRoot);
-				ReliefRoot->RegisterComponent();
-			}
+				FoundryShaftHostActor->PrimaryActorTick.bCanEverTick = false;
 
-			auto CreateReliefISM = [&](const TCHAR* CompName, UMaterialInterface* AssignedMaterial) -> UInstancedStaticMeshComponent*
-			{
-				UInstancedStaticMeshComponent* ISM = NewObject<UInstancedStaticMeshComponent>(ReliefHostActor, CompName);
-				if (!IsValid(ISM))
+				USceneComponent* ShaftRoot = NewObject<USceneComponent>(FoundryShaftHostActor, TEXT("FoundryShaftRoot"));
+				if (IsValid(ShaftRoot))
 				{
-					return nullptr;
-				}
-				ISM->PrimaryComponentTick.bCanEverTick = false;
-				ISM->SetMobility(EComponentMobility::Movable);
-				ISM->SetupAttachment(ReliefHostActor->GetRootComponent());
-				ISM->SetStaticMesh(GreyboxCellCubeMesh);
-				ISM->SetSimulatePhysics(false);
-				ISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				ISM->SetGenerateOverlapEvents(false);
-				ISM->SetCanEverAffectNavigation(false);
-				ISM->SetCastShadow(false);
-				ISM->bReceivesDecals = false;
-				if (IsValid(AssignedMaterial))
-				{
-					ISM->SetMaterial(0, AssignedMaterial);
-				}
-				ISM->RegisterComponent();
-				return ISM;
-			};
-
-			UMaterialInterface* WallReliefMat = (IsValid(PresentationData) && IsValid(PresentationData->CellWallMaterial))
-				? PresentationData->CellWallMaterial.Get()
-				: PitMID;
-
-			UMaterialInterface* GunmetalReliefMat = (IsValid(PresentationData) && IsValid(PresentationData->DarkGunmetalMaterial))
-				? PresentationData->DarkGunmetalMaterial.Get()
-				: nullptr;
-			if (!IsValid(GunmetalReliefMat) && FPackageName::DoesPackageExist(TEXT("/Game/Presentation/Materials/M_DarkGunmetal_Master")))
-			{
-				GunmetalReliefMat = LoadObject<UMaterialInterface>(
-					nullptr,
-					TEXT("/Game/Presentation/Materials/M_DarkGunmetal_Master.M_DarkGunmetal_Master"));
-			}
-			if (!IsValid(GunmetalReliefMat))
-			{
-				GunmetalReliefMat = WallReliefMat;
-			}
-
-			const double SafeMinReliefX = FMath::Max(415.0, static_cast<double>(MinMidgroundReliefXCm));
-			auto AddSafeReliefInstance = [SafeMinReliefX](
-				UInstancedStaticMeshComponent* ISM,
-				const FVector& WorldCenter,
-				const FVector& Scale3D)
-			{
-				if (!IsValid(ISM))
-				{
-					return;
-				}
-				const double HalfExtentX = 50.0 * FMath::Abs(Scale3D.X);
-				const double ClampedCenterX = FMath::Max(WorldCenter.X, SafeMinReliefX + HalfExtentX);
-				const FVector SafeCenter(ClampedCenterX, WorldCenter.Y, WorldCenter.Z);
-				ISM->AddInstance(FTransform(FRotator::ZeroRotator, SafeCenter, Scale3D), true);
-			};
-
-			if (UInstancedStaticMeshComponent* WallReliefISM = CreateReliefISM(TEXT("WallBulkheadReliefISM"), WallReliefMat))
-			{
-				const double RearPilasterX = FrontWallX - 19.0; // X=511 -> [502..520]
-				const double RearDadoX = FrontWallX - 17.0;     // X=513 -> [506..520]
-				const double FarSidePilasterX = FrontWallX - 62.0; // X=468 -> [456..480]
-
-				for (const double PilasterOffsetY : { -295.0, -165.0, 165.0, 295.0 })
-				{
-					AddSafeReliefInstance(
-						WallReliefISM,
-						FVector(RearPilasterX, DropY + PilasterOffsetY, 185.0),
-						FVector(0.18, 0.28, 5.40));
+					ShaftRoot->PrimaryComponentTick.bCanEverTick = false;
+					ShaftRoot->SetMobility(EComponentMobility::Movable);
+					FoundryShaftHostActor->SetRootComponent(ShaftRoot);
+					ShaftRoot->RegisterComponent();
 				}
 
-				// Horizontal bulkhead dado beams in the lower/mid wall zone below ADirectorBoothActor (Z < 215).
-				AddSafeReliefInstance(WallReliefISM, FVector(RearDadoX, DropY, 142.0), FVector(0.14, 7.00, 0.22));
-				AddSafeReliefInstance(WallReliefISM, FVector(RearDadoX, DropY, 38.0), FVector(0.14, 7.00, 0.24));
+				auto CreateRodinShaftISM = [&](
+					const TCHAR* CompName,
+					const FMeshPresentationSlot& SourceSlot,
+					UMaterialInterface* FallbackMaterial) -> UInstancedStaticMeshComponent*
+				{
+					if (!IsValid(SourceSlot.Mesh))
+					{
+						return nullptr;
+					}
+					UInstancedStaticMeshComponent* ISM = NewObject<UInstancedStaticMeshComponent>(FoundryShaftHostActor, CompName);
+					if (!IsValid(ISM))
+					{
+						return nullptr;
+					}
+					ISM->PrimaryComponentTick.bCanEverTick = false;
+					ISM->SetMobility(EComponentMobility::Movable);
+					ISM->SetupAttachment(FoundryShaftHostActor->GetRootComponent());
+					ISM->SetStaticMesh(SourceSlot.Mesh);
+					ISM->SetSimulatePhysics(false);
+					ISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					ISM->SetGenerateOverlapEvents(false);
+					ISM->SetCanEverAffectNavigation(false);
+					ISM->SetCastShadow(false);
+					ISM->bReceivesDecals = false;
 
-				// Far side-wall structural pilasters framing peripheral FOV at X >= 456 cm.
-				AddSafeReliefInstance(
-					WallReliefISM,
-					FVector(FarSidePilasterX, DropY - (SideWallOffsetY - 19.0), 185.0),
-					FVector(0.24, 0.18, 5.40));
-				AddSafeReliefInstance(
-					WallReliefISM,
-					FVector(FarSidePilasterX, DropY + (SideWallOffsetY - 19.0), 185.0),
-					FVector(0.24, 0.18, 5.40));
-			}
+					bool bAppliedSlotOverride = false;
+					for (int32 SlotIdx = 0; SlotIdx < SourceSlot.MaterialOverrides.Num(); ++SlotIdx)
+					{
+						if (IsValid(SourceSlot.MaterialOverrides[SlotIdx]))
+						{
+							ISM->SetMaterial(SlotIdx, SourceSlot.MaterialOverrides[SlotIdx]);
+							bAppliedSlotOverride = true;
+						}
+					}
+					if (!bAppliedSlotOverride && IsValid(FallbackMaterial) && !IsValid(ISM->GetMaterial(0)))
+					{
+						ISM->SetMaterial(0, FallbackMaterial);
+					}
+					ISM->RegisterComponent();
+					return ISM;
+				};
 
-			if (UInstancedStaticMeshComponent* GunmetalReliefISM = CreateReliefISM(TEXT("GunmetalStanchionReliefISM"), GunmetalReliefMat))
-			{
-				const double BoothStanchionX = FMath::Max(DefaultDirectorBoothLocation.X + 4.0, SafeMinReliefX + 10.0); // X=434 -> [425..443]
-				const double BoothBottomZ = DefaultDirectorBoothLocation.Z - 44.0; // Z=214, strictly below BoothFrame & Wing Signboards
-				const double FloorTopZ = -85.0;
-				const double StanchionCenterZ = 0.5 * (BoothBottomZ + FloorTopZ);
-				const double StanchionScaleZ = FMath::Max(0.50, (BoothBottomZ - FloorTopZ) / 100.0);
+				const double SafeMinShaftX = FMath::Max3(430.0, 415.0, static_cast<double>(MinMidgroundReliefXCm));
+				constexpr double SafeMaxShaftX = 465.0;
 
-				// Twin vertical gunmetal support stanchions anchoring the floating Director Booth to the pit floor.
-				AddSafeReliefInstance(
-					GunmetalReliefISM,
-					FVector(BoothStanchionX, DropY - 82.0, StanchionCenterZ),
-					FVector(0.16, 0.14, StanchionScaleZ));
-				AddSafeReliefInstance(
-					GunmetalReliefISM,
-					FVector(BoothStanchionX, DropY + 82.0, StanchionCenterZ),
-					FVector(0.16, 0.14, StanchionScaleZ));
+				// 1. Vertical 2x2 Rodin grate wall behind cutting/diverter spine: Pitch = +90 deg maps Local +Z (sculpted grate face) -> World -X toward camera.
+				if (UInstancedStaticMeshComponent* GrateShaftISM = CreateRodinShaftISM(
+					TEXT("FoundryGrateShaftISM"),
+					GrateSlot,
+					PresentationData->CellFloorMaterial.Get()))
+				{
+					const FBox GrateLocalBox = GrateSlot.Mesh->GetBoundingBox();
+					const FVector GrateLocalSize = GrateLocalBox.GetSize();
+					const FVector GrateLocalCenter = GrateLocalBox.GetCenter();
 
-				// Sill header beam & lower cross-brace between under-booth stanchions.
-				AddSafeReliefInstance(
-					GunmetalReliefISM,
-					FVector(BoothStanchionX, DropY, BoothBottomZ - 6.0),
-					FVector(0.18, 1.80, 0.12));
-				AddSafeReliefInstance(
-					GunmetalReliefISM,
-					FVector(BoothStanchionX, DropY, 92.0),
-					FVector(0.14, 1.78, 0.09));
-				AddSafeReliefInstance(
-					GunmetalReliefISM,
-					FVector(BoothStanchionX, DropY, -6.0),
-					FVector(0.18, 1.80, 0.14));
+					const double TotalSpanY = 2.0 * FMath::Max(80.0, static_cast<double>(FoundryGrateHalfSpanYCm));
+					const double BottomZ = static_cast<double>(FoundryGrateBottomZCm);
+					const double TopZ = FMath::Max(BottomZ + 80.0, static_cast<double>(FoundryGrateTopZCm));
+					const double TotalSpanZ = TopZ - BottomZ;
 
-				// Far rear-flank vertical steel ribs outside wing signboard Y-span (|Y| = 238 > 190).
-				const double RearRibX = FrontWallX - 38.0; // X=492 -> [483..501]
-				AddSafeReliefInstance(
-					GunmetalReliefISM,
-					FVector(RearRibX, DropY - 238.0, 185.0),
-					FVector(0.18, 0.14, 5.40));
-				AddSafeReliefInstance(
-					GunmetalReliefISM,
-					FVector(RearRibX, DropY + 238.0, 185.0),
-					FVector(0.18, 0.14, 5.40));
+					const double TileSpanY = 0.5 * TotalSpanY;
+					const double TileSpanZ = 0.5 * TotalSpanZ;
+					const double TileThicknessX = FMath::Clamp(static_cast<double>(FoundryGrateThicknessXCm), 6.0, 20.0);
+					const double ClampedFrontX = FMath::Clamp(
+						static_cast<double>(FoundryGrateFrontXCm),
+						SafeMinShaftX,
+						SafeMaxShaftX - TileThicknessX);
+					const double GrateWorldCenterX = ClampedFrontX + (0.5 * TileThicknessX);
+
+					const FQuat GrateQuat = FRotator(90.0f, 0.0f, 0.0f).Quaternion();
+					const FVector GrateInstanceScale(
+						TileSpanZ / FMath::Max(1.0, GrateLocalSize.X),
+						TileSpanY / FMath::Max(1.0, GrateLocalSize.Y),
+						TileThicknessX / FMath::Max(1.0, GrateLocalSize.Z));
+
+					for (int32 RowZ = 0; RowZ < 2; ++RowZ)
+					{
+						const double TileCenterZ = BottomZ + ((static_cast<double>(RowZ) + 0.5) * TileSpanZ);
+						for (int32 ColY = 0; ColY < 2; ++ColY)
+						{
+							const double TileCenterY = DropY + ((-0.5 + static_cast<double>(ColY)) * TileSpanY);
+							const FVector DesiredWorldCenter(GrateWorldCenterX, TileCenterY, TileCenterZ);
+							const FVector PivotCompensatedTranslation =
+								DesiredWorldCenter - GrateQuat.RotateVector(GrateInstanceScale * GrateLocalCenter);
+							GrateShaftISM->AddInstance(FTransform(GrateQuat, PivotCompensatedTranslation, GrateInstanceScale), true);
+						}
+					}
+				}
+
+				// 2. Heavy vertical Rodin mechanical columns flanking the recessed grate shaft at Y = +-155 cm and supporting ADirectorBoothActor.
+				if (ColumnSlot != nullptr)
+				{
+					if (UInstancedStaticMeshComponent* FlankColumnISM = CreateRodinShaftISM(
+						TEXT("FoundryFlankColumnISM"),
+						*ColumnSlot,
+						PresentationData->DarkGunmetalMaterial.Get()))
+					{
+						const FBox ColLocalBox = ColumnSlot->Mesh->GetBoundingBox();
+						const FVector ColLocalSize = ColLocalBox.GetSize();
+						const FVector ColLocalCenter = ColLocalBox.GetCenter();
+
+						const double ModuleDepthX = FMath::Clamp(FoundryColumnModuleSizeCm.X, 16.0, 32.0);
+						const double ModuleWidthY = FMath::Clamp(FoundryColumnModuleSizeCm.Y, 24.0, 64.0);
+						const double ColumnTopZ = static_cast<double>(FoundryGrateTopZCm);
+						constexpr double ColumnFloorZ = -85.0;
+						constexpr int32 ModulesPerColumn = 3;
+						const double ModuleHeightZ = (ColumnTopZ - ColumnFloorZ) / static_cast<double>(ModulesPerColumn);
+
+						const double ColumnFrontX = FMath::Clamp(SafeMinShaftX + 2.0, SafeMinShaftX, SafeMaxShaftX - ModuleDepthX);
+						const double ColumnWorldCenterX = ColumnFrontX + (0.5 * ModuleDepthX);
+
+						const FQuat ColumnQuat = FQuat::Identity;
+						const FVector ColumnInstanceScale(
+							ModuleDepthX / FMath::Max(1.0, ColLocalSize.X),
+							ModuleWidthY / FMath::Max(1.0, ColLocalSize.Y),
+							ModuleHeightZ / FMath::Max(1.0, ColLocalSize.Z));
+
+						const double ColumnAbsY = FMath::Max(120.0, static_cast<double>(FoundryColumnOffsetYCm));
+						for (const double SideSign : { -1.0, 1.0 })
+						{
+							const double ColumnCenterY = DropY + (SideSign * ColumnAbsY);
+							for (int32 TierIdx = 0; TierIdx < ModulesPerColumn; ++TierIdx)
+							{
+								const double TierCenterZ = ColumnFloorZ + ((static_cast<double>(TierIdx) + 0.5) * ModuleHeightZ);
+								const FVector DesiredWorldCenter(ColumnWorldCenterX, ColumnCenterY, TierCenterZ);
+								const FVector PivotCompensatedTranslation =
+									DesiredWorldCenter - ColumnQuat.RotateVector(ColumnInstanceScale * ColLocalCenter);
+								FlankColumnISM->AddInstance(FTransform(ColumnQuat, PivotCompensatedTranslation, ColumnInstanceScale), true);
+							}
+						}
+					}
+				}
 			}
 		}
 	}

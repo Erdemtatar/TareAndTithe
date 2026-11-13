@@ -206,7 +206,7 @@ ADirectorBoothActor::ADirectorBoothActor()
 	StatusPointLight->PrimaryComponentTick.bCanEverTick = false;
 	StatusPointLight->SetRelativeLocation(FVector(-38.0, 0.0, 18.0));
 	StatusPointLight->SetIntensity(StatusLightIntensity);
-	StatusPointLight->SetAttenuationRadius(480.0f);
+	StatusPointLight->SetAttenuationRadius(StatusLightAttenuationRadiusCm);
 	StatusPointLight->SetCastShadows(false);
 	StatusPointLight->SetLightColor(ActiveInspectionLampColor);
 }
@@ -218,6 +218,7 @@ void ADirectorBoothActor::BeginPlay()
 	if (IsValid(StatusPointLight))
 	{
 		StatusPointLight->SetIntensity(StatusLightIntensity);
+		StatusPointLight->SetAttenuationRadius(StatusLightAttenuationRadiusCm);
 	}
 
 	if (IsValid(UnlitSignboardTextMaterial))
