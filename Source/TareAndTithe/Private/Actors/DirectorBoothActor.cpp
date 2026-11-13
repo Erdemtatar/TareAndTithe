@@ -279,7 +279,7 @@ void ADirectorBoothActor::BeginPlay()
 			{
 				ApplyPresentationData(ExistingPresentation);
 			}
-			ShiftSubsystem->OnContractSnapshotUpdated.AddUniqueDynamic(this, &ADirectorBoothActor::HandleContractSnapshotUpdated);
+			ShiftSubsystem->OnNativeContractSnapshotUpdated.AddUObject(this, &ADirectorBoothActor::HandleContractSnapshotUpdated);
 			ShiftSubsystem->OnShiftVerdict.AddUniqueDynamic(this, &ADirectorBoothActor::HandleShiftVerdict);
 			ShiftSubsystem->OnShiftPhaseChanged.AddUObject(this, &ADirectorBoothActor::HandleShiftPhaseChanged);
 			ShiftSubsystem->OnActiveContractLoaded.AddUObject(this, &ADirectorBoothActor::HandleActiveContractLoaded);
@@ -302,7 +302,7 @@ void ADirectorBoothActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
 		{
 			ShiftSubsystem->OnPresentationAssetChanged.RemoveAll(this);
-			ShiftSubsystem->OnContractSnapshotUpdated.RemoveDynamic(this, &ADirectorBoothActor::HandleContractSnapshotUpdated);
+			ShiftSubsystem->OnNativeContractSnapshotUpdated.RemoveAll(this);
 			ShiftSubsystem->OnShiftVerdict.RemoveDynamic(this, &ADirectorBoothActor::HandleShiftVerdict);
 			ShiftSubsystem->OnShiftPhaseChanged.RemoveAll(this);
 			ShiftSubsystem->OnActiveContractLoaded.RemoveAll(this);

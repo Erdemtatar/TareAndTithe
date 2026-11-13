@@ -180,11 +180,21 @@ AInspectorPawn::AInspectorPawn()
 		ReticleCyanColor,
 		TEXT("TITHE | NEED +12.00 KG"));
 
+	LaserReticleYieldReadout = CreateDefaultSubobject<UTextRenderComponent>(TEXT("LaserReticleYieldReadout"));
+	ConfigureReticleTextLine(
+		LaserReticleYieldReadout,
+		LaserReticleReadout,
+		FVector(0.0, 0.0, -static_cast<double>(LaserReticleLineSpacingCm)),
+		FRotator::ZeroRotator,
+		LaserReticleYieldWorldSize,
+		ReticleCyanColor,
+		TEXT("CUT EST: ---"));
+
 	LaserReticleLoadReadout = CreateDefaultSubobject<UTextRenderComponent>(TEXT("LaserReticleLoadReadout"));
 	ConfigureReticleTextLine(
 		LaserReticleLoadReadout,
 		LaserReticleReadout,
-		FVector(0.0, 0.0, -static_cast<double>(LaserReticleLineSpacingCm)),
+		FVector(0.0, 0.0, -2.0 * static_cast<double>(LaserReticleLineSpacingCm)),
 		FRotator::ZeroRotator,
 		LaserReticleLoadWorldSize,
 		ReticleLoadCellColor,
@@ -194,7 +204,7 @@ AInspectorPawn::AInspectorPawn()
 	ConfigureReticleTextLine(
 		LaserReticleHazardReadout,
 		LaserReticleReadout,
-		FVector(0.0, 0.0, -2.0 * static_cast<double>(LaserReticleLineSpacingCm)),
+		FVector(0.0, 0.0, -3.0 * static_cast<double>(LaserReticleLineSpacingCm)),
 		FRotator::ZeroRotator,
 		LaserReticleHazardWorldSize,
 		ReticleCrimsonColor,
@@ -289,8 +299,9 @@ void AInspectorPawn::BeginPlay()
 
 	if (IsValid(UnlitReticleTextMaterial))
 	{
-		UTextRenderComponent* const ReticleLines[3] = {
+		UTextRenderComponent* const ReticleLines[4] = {
 			LaserReticleReadout,
+			LaserReticleYieldReadout,
 			LaserReticleLoadReadout,
 			LaserReticleHazardReadout
 		};
@@ -332,7 +343,7 @@ void AInspectorPawn::BeginPlay()
 		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
 		{
 			ShiftSubsystem->RegisterTelemetryPublisher(this, this);
-			ShiftSubsystem->OnContractSnapshotUpdated.AddUniqueDynamic(this, &AInspectorPawn::HandleContractSnapshotUpdated);
+			ShiftSubsystem->OnNativeContractSnapshotUpdated.AddUObject(this, &AInspectorPawn::HandleContractSnapshotUpdated);
 			ShiftSubsystem->OnShiftPhaseChanged.AddUObject(this, &AInspectorPawn::HandleShiftPhaseChanged);
 			ShiftSubsystem->OnActiveContractLoaded.AddUObject(this, &AInspectorPawn::HandleActiveContractLoaded);
 			ShiftSubsystem->OnPresentationAssetChanged.AddUObject(this, &AInspectorPawn::ApplyPresentationData);
@@ -459,7 +470,7 @@ void AInspectorPawn::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
 		{
-			ShiftSubsystem->OnContractSnapshotUpdated.RemoveDynamic(this, &AInspectorPawn::HandleContractSnapshotUpdated);
+			ShiftSubsystem->OnNativeContractSnapshotUpdated.RemoveAll(this);
 			ShiftSubsystem->OnShiftPhaseChanged.RemoveAll(this);
 			ShiftSubsystem->OnActiveContractLoaded.RemoveAll(this);
 			ShiftSubsystem->OnPresentationAssetChanged.RemoveAll(this);
@@ -792,16 +803,21 @@ void AInspectorPawn::UpdateLaserSheetMaterialVisuals()
 
 	const FLinearColor SafeIdleColor(0.04f, 0.52f, 0.78f, 1.0f);
 	const FLinearColor IntersectCyanColor(0.08f, 0.88f, 1.00f, 1.0f);
+	const FLinearColor WindowMatchEmeraldColor(0.04f, 0.96f, 0.36f, 1.0f);
 	const FLinearColor WarningAmberColor(1.00f, 0.56f, 0.04f, 1.0f);
 	const FLinearColor DangerCrimsonColor(1.00f, 0.05f, 0.03f, 1.0f);
 	const FLinearColor CapacitorHotWhiteColor(1.00f, 0.94f, 0.78f, 1.0f);
 
-	FLinearColor BaseHue = bCachedIntersectsMonolith ? IntersectCyanColor : SafeIdleColor;
+	const bool bMatchesQuotaWindow = DoesCurrentSliceEstimateLandInQuotaWindow();
+	FLinearColor BaseHue = bCachedIntersectsMonolith
+		? (bMatchesQuotaWindow ? WindowMatchEmeraldColor : IntersectCyanColor)
+		: SafeIdleColor;
 	if (CachedVeinProximityNormalized > 0.0f)
 	{
+		const FLinearColor CleanContactHue = bMatchesQuotaWindow ? WindowMatchEmeraldColor : IntersectCyanColor;
 		if (CachedVeinProximityNormalized < 0.5f)
 		{
-			BaseHue = FMath::Lerp(IntersectCyanColor, WarningAmberColor, CachedVeinProximityNormalized * 2.0f);
+			BaseHue = FMath::Lerp(CleanContactHue, WarningAmberColor, CachedVeinProximityNormalized * 2.0f);
 		}
 		else
 		{
@@ -832,8 +848,32 @@ void AInspectorPawn::UpdateLaserSheetMaterialVisuals()
 		TargetMID->SetScalarParameterValue(TEXT("LaserCharge"), CachedLaserChargeNormalized);
 	};
 
-	ApplyParameters(LaserSheetMID, bCachedIntersectsMonolith ? 0.42f : 0.18f);
+	ApplyParameters(LaserSheetMID, bCachedIntersectsMonolith ? (bMatchesQuotaWindow ? 0.48f : 0.42f) : 0.18f);
 	ApplyParameters(LaserFrameMID, 1.0f);
+}
+
+bool AInspectorPawn::DoesCurrentSliceEstimateLandInQuotaWindow() const
+{
+	if (!bCachedIntersectsMonolith ||
+		!CachedPreviewTelemetry.bHasValidMassEstimate ||
+		CachedPreviewTelemetry.bWillDetonate ||
+		CachedHudSnapshot.ActiveDiverterRoute != EDiverterRoute::TitheScale)
+	{
+		return false;
+	}
+
+	constexpr float QuotaFloatEpsilonKg = 1.0e-3f;
+	const float ProjectedScaleKg =
+		FMath::Max(0.0f, CachedHudSnapshot.SettledScaleMassKg) +
+		FMath::Max(0.0f, CachedHudSnapshot.InFlightMassKg) +
+		FMath::Max(0.0f, CachedPreviewTelemetry.EstimatedSeveredMassKg);
+	const float TargetKg = FMath::Max(0.0f, CachedHudSnapshot.TargetTitheMassKg);
+	const float ToleranceKg = FMath::Max(0.0f, CachedHudSnapshot.QuotaToleranceKg);
+	const float MinWinKg = FMath::Max(0.0f, TargetKg - ToleranceKg);
+	const float MaxWinKg = TargetKg + ToleranceKg;
+
+	return (ProjectedScaleKg >= (MinWinKg - QuotaFloatEpsilonKg)) &&
+	       (ProjectedScaleKg <= (MaxWinKg + QuotaFloatEpsilonKg));
 }
 
 void AInspectorPawn::UpdateCameraParallaxFromAim()
@@ -870,13 +910,33 @@ void AInspectorPawn::UpdateLaserReticleTransform()
 	const FVector FrameAnchor = LaserPlaneAimComponent->GetFrameAnchorWorld();
 	const FVector FrameForward = LaserPlaneAimComponent->GetFrameForwardUnit();
 	const FVector FrameRight = LaserPlaneAimComponent->GetFrameRightUnit();
-	const double LaserPlaneWorldZ = LaserPlaneAimComponent->GetCurrentPlaneOriginWorld().Z;
+	const FVector PlaneOrigin = LaserPlaneAimComponent->GetCurrentPlaneOriginWorld();
+	const FQuat PlaneOrient = LaserPlaneAimComponent->GetCurrentPlaneOrientationWorld();
+
+	// Dynamically keep reticle readout clear of the right-most projected edge of the laser frame bar.
+	const double PlaneRightOffsetCm = FVector::DotProduct(PlaneOrigin - FrameAnchor, FrameRight);
+	const double HalfSpanDepthCm = 0.5 * (
+		FMath::Max(20.0, static_cast<double>(LaserFrameDepthCm)) +
+		FMath::Max(0.2, static_cast<double>(LaserFrameBarWidthCm)));
+	const double HalfSpanWidthCm = 0.5 * (
+		FMath::Max(20.0, static_cast<double>(LaserFrameWidthCm)) +
+		FMath::Max(0.2, static_cast<double>(LaserFrameBarWidthCm)));
+	const double ProjectedHalfRightSpanCm =
+		(HalfSpanDepthCm * FMath::Abs(FVector::DotProduct(PlaneOrient.GetAxisX(), FrameRight))) +
+		(HalfSpanWidthCm * FMath::Abs(FVector::DotProduct(PlaneOrient.GetAxisY(), FrameRight)));
+	const double MinClearLateralCm =
+		PlaneRightOffsetCm +
+		ProjectedHalfRightSpanCm +
+		static_cast<double>(LaserReticleSheetClearanceGapCm);
+	const double BaseLateralCm = static_cast<double>(LaserReticleLateralOffsetCm);
+	const double MaxLateralCm = FMath::Max(BaseLateralCm, static_cast<double>(LaserReticleMaxLateralOffsetCm));
+	const double EffectiveLateralOffsetCm = FMath::Clamp(FMath::Max(BaseLateralCm, MinClearLateralCm), BaseLateralCm, MaxLateralCm);
 
 	FVector ReticleWorldLocation =
 		FrameAnchor
 		- (FrameForward * static_cast<double>(LaserReticleFrontOffsetCm))
-		+ (FrameRight * static_cast<double>(LaserReticleLateralOffsetCm));
-	ReticleWorldLocation.Z = LaserPlaneWorldZ;
+		+ (FrameRight * EffectiveLateralOffsetCm);
+	ReticleWorldLocation.Z = PlaneOrigin.Z;
 
 	FRotator ReticleWorldRotation = FRotationMatrix::MakeFromX(-FrameForward).Rotator();
 	ReticleWorldRotation.Pitch = 0.0f;
@@ -921,9 +981,78 @@ void AInspectorPawn::UpdateLaserReticleReadoutText()
 		}
 	}
 
+	if (IsValid(LaserReticleYieldReadout))
+	{
+		if (!bCachedIntersectsMonolith || !CachedPreviewTelemetry.bHasValidMassEstimate)
+		{
+			LaserReticleYieldReadout->SetTextRenderColor(ReticleLoadCellColor);
+			LaserReticleYieldReadout->SetText(FText::FromString(TEXT("CUT EST: --- (NO CONTACT)")));
+		}
+		else
+		{
+			constexpr float QuotaFloatEpsilonKg = 1.0e-3f;
+			const float EstSeveredKg = FMath::Max(0.0f, CachedPreviewTelemetry.EstimatedSeveredMassKg);
+			const float EstRemainderKg = FMath::Max(0.0f, CachedPreviewTelemetry.EstimatedRemainderMassKg);
+
+			if (CachedPreviewTelemetry.bWillDetonate)
+			{
+				LaserReticleYieldReadout->SetTextRenderColor(ReticleCrimsonColor);
+				LaserReticleYieldReadout->SetText(
+					FText::FromString(FString::Printf(TEXT("CUT EST: +%.2f KG [VEIN HIT!]"), EstSeveredKg)));
+			}
+			else if (CachedHudSnapshot.ActiveDiverterRoute == EDiverterRoute::TareChute)
+			{
+				const float ProjectedTareKg = FMath::Max(0.0f, CachedHudSnapshot.AccumulatedTareWasteKg) + EstSeveredKg;
+				const float MaxTareKg = FMath::Max(0.0f, CachedHudSnapshot.MaxAllowedTareWasteKg);
+				if (ProjectedTareKg > (MaxTareKg + QuotaFloatEpsilonKg))
+				{
+					LaserReticleYieldReadout->SetTextRenderColor(ReticleCrimsonColor);
+					LaserReticleYieldReadout->SetText(
+						FText::FromString(FString::Printf(TEXT("SCRAP EST: %.2f KG [OVER TARE!]"), EstSeveredKg)));
+				}
+				else
+				{
+					LaserReticleYieldReadout->SetTextRenderColor(ReticleAmberColor);
+					LaserReticleYieldReadout->SetText(
+						FText::FromString(FString::Printf(TEXT("SCRAP EST: %.2f KG (LEFT %.1f KG)"), EstSeveredKg, EstRemainderKg)));
+				}
+			}
+			else
+			{
+				const float SettledKg = FMath::Max(0.0f, CachedHudSnapshot.SettledScaleMassKg);
+				const float InFlightKg = FMath::Max(0.0f, CachedHudSnapshot.InFlightMassKg);
+				const float TargetKg = FMath::Max(0.0f, CachedHudSnapshot.TargetTitheMassKg);
+				const float ToleranceKg = FMath::Max(0.0f, CachedHudSnapshot.QuotaToleranceKg);
+				const float MinWinKg = FMath::Max(0.0f, TargetKg - ToleranceKg);
+				const float MaxWinKg = TargetKg + ToleranceKg;
+				const float ProjectedScaleKg = SettledKg + InFlightKg + EstSeveredKg;
+
+				if (ProjectedScaleKg > (MaxWinKg + QuotaFloatEpsilonKg))
+				{
+					LaserReticleYieldReadout->SetTextRenderColor(ReticleCrimsonColor);
+					LaserReticleYieldReadout->SetText(
+						FText::FromString(FString::Printf(TEXT("CUT EST: +%.2f KG -> %.2f [OVER!]"), EstSeveredKg, ProjectedScaleKg)));
+				}
+				else if (ProjectedScaleKg >= (MinWinKg - QuotaFloatEpsilonKg))
+				{
+					LaserReticleYieldReadout->SetTextRenderColor(ReticleEmeraldColor);
+					LaserReticleYieldReadout->SetText(
+						FText::FromString(FString::Printf(TEXT("CUT EST: +%.2f KG [IN WINDOW!]"), EstSeveredKg)));
+				}
+				else
+				{
+					const float StillNeedKg = FMath::Max(0.01f, TargetKg - ProjectedScaleKg);
+					LaserReticleYieldReadout->SetTextRenderColor(ReticleCyanColor);
+					LaserReticleYieldReadout->SetText(
+						FText::FromString(FString::Printf(TEXT("CUT EST: +%.2f KG (NEED +%.2f)"), EstSeveredKg, StillNeedKg)));
+				}
+			}
+		}
+	}
+
 	if (IsValid(LaserReticleLoadReadout))
 	{
-		const float ClampLoadKg = FMath::Max(0.0f, CachedHudSnapshot.RemainingMonolithMassKg);
+		const float ClampLoadKg = FMath::Max(0.0f, CachedHudSnapshot.RemainderMassKg);
 		LaserReticleLoadReadout->SetTextRenderColor(ReticleLoadCellColor);
 		LaserReticleLoadReadout->SetText(
 			FText::FromString(FString::Printf(TEXT("CLAMP LOAD: %.1f KG"), ClampLoadKg)));
@@ -956,6 +1085,7 @@ void AInspectorPawn::UpdateLaserReticleReadoutText()
 void AInspectorPawn::HandleContractSnapshotUpdated(const FContractRuntimeSnapshot& Snapshot)
 {
 	CachedHudSnapshot = Snapshot;
+	UpdateLaserSheetMaterialVisuals();
 	UpdateLaserReticleReadoutText();
 }
 
@@ -997,6 +1127,7 @@ bool AInspectorPawn::HandleQueryLaserSliceTarget(
 
 void AInspectorPawn::HandlePreviewTelemetryUpdated(const FSlicePreviewTelemetry& PreviewTelemetry)
 {
+	CachedPreviewTelemetry = PreviewTelemetry;
 	bCachedIntersectsMonolith = PreviewTelemetry.bIntersectsMonolith;
 	CachedVeinProximityNormalized = PreviewTelemetry.VeinProximityNormalized;
 	UpdateCameraParallaxFromAim();
@@ -1070,6 +1201,14 @@ void AInspectorPawn::HandleActiveContractLoaded(
 	const UShiftProgressionDataAsset* ShiftConfig,
 	int32 /*ContractIndex*/)
 {
+	if (UWorld* World = GetWorld())
+	{
+		if (const UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
+		{
+			CachedHudSnapshot = ShiftSubsystem->GetCurrentSnapshot();
+		}
+	}
+
 	if (IsValid(LaserCapacitorComponent))
 	{
 		LaserCapacitorComponent->ConfigureFromShiftProgression(ShiftConfig);

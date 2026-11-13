@@ -843,9 +843,10 @@ bool UInspectionShiftSubsystem::LoadAndBeginContract(int32 ContractIndex)
 	InitialContractMassKg = FMath::Max(0.0f, SpawnedInitialMassKg);
 	RemainderMassKg = InitialContractMassKg;
 
-	OnActiveContractLoaded.Broadcast(ActiveContract, ActiveProgressionAsset, CurrentContractIndex);
-	SetShiftPhase(EShiftPhase::ActiveInspection);
+	CurrentPhase = EShiftPhase::ActiveInspection;
 	RefreshAndBroadcastSnapshot();
+	OnActiveContractLoaded.Broadcast(ActiveContract, ActiveProgressionAsset, CurrentContractIndex);
+	OnShiftPhaseChanged.Broadcast(CurrentPhase);
 
 	return true;
 }
@@ -943,7 +944,6 @@ void UInspectionShiftSubsystem::RefreshAndBroadcastSnapshot()
 	CachedSnapshot.QuotaToleranceKg = ToleranceKg;
 	CachedSnapshot.SettledScaleMassKg = SettledPanMassKg;
 	CachedSnapshot.RemainderMassKg = RemainderMassKg;
-	CachedSnapshot.RemainingMonolithMassKg = RemainderMassKg;
 	CachedSnapshot.InFlightMassKg = InFlightMassKg;
 	CachedSnapshot.AccumulatedTareWasteKg = AccumulatedTareWasteKg;
 	CachedSnapshot.MaxAllowedTareWasteKg = MaxTareKg;
@@ -952,6 +952,7 @@ void UInspectionShiftSubsystem::RefreshAndBroadcastSnapshot()
 	CachedSnapshot.bIsWithinQuotaWindow = bWithinWindow;
 	CachedSnapshot.bScaleSettledForStamp = bReadyForStamp;
 
+	OnNativeContractSnapshotUpdated.Broadcast(CachedSnapshot);
 	OnContractSnapshotUpdated.Broadcast(CachedSnapshot);
 }
 
@@ -1110,7 +1111,7 @@ FString UInspectionShiftSubsystem::GetDefaultDirectiveForContractIndex(int32 Con
 	case 0:
 		return TEXT("CUT 12.0 KG TO TITHE | STAMP [E]");
 	case 1:
-		return TEXT("L-BLOCK: DUMP EXCESS TO TARE [SPACE]");
+		return TEXT("CUT GREEN YIELD | [SPACE] DUMPS TARE");
 	case 2:
 		return TEXT("HIDDEN VEIN: AUDIO SCAN & BEVEL [RMB]");
 	case 3:

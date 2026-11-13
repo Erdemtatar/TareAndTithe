@@ -342,7 +342,7 @@ void AScaleAssemblyActor::BeginPlay()
 		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
 		{
 			ShiftSubsystem->RegisterTelemetryPublisher(this, this);
-			ShiftSubsystem->OnContractSnapshotUpdated.AddUniqueDynamic(this, &AScaleAssemblyActor::HandleContractSnapshotUpdated);
+			ShiftSubsystem->OnNativeContractSnapshotUpdated.AddUObject(this, &AScaleAssemblyActor::HandleContractSnapshotUpdated);
 			ShiftSubsystem->OnShiftVerdict.AddUniqueDynamic(this, &AScaleAssemblyActor::HandleShiftVerdict);
 			ShiftSubsystem->OnShiftPhaseChanged.AddUObject(this, &AScaleAssemblyActor::HandleShiftPhaseChanged);
 			ShiftSubsystem->OnActiveContractLoaded.AddUObject(this, &AScaleAssemblyActor::HandleActiveContractLoaded);
@@ -374,7 +374,7 @@ void AScaleAssemblyActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	{
 		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
 		{
-			ShiftSubsystem->OnContractSnapshotUpdated.RemoveDynamic(this, &AScaleAssemblyActor::HandleContractSnapshotUpdated);
+			ShiftSubsystem->OnNativeContractSnapshotUpdated.RemoveAll(this);
 			ShiftSubsystem->OnShiftVerdict.RemoveDynamic(this, &AScaleAssemblyActor::HandleShiftVerdict);
 			ShiftSubsystem->OnShiftPhaseChanged.RemoveAll(this);
 			ShiftSubsystem->OnActiveContractLoaded.RemoveAll(this);
@@ -653,6 +653,7 @@ void AScaleAssemblyActor::HandleActiveContractLoaded(
 void AScaleAssemblyActor::HandleDiverterRouteChanged(EDiverterRoute NewRoute)
 {
 	RefreshRouteReadout();
+	RefreshStatusBannerReadout();
 	if (NewRoute == EDiverterRoute::TitheScale)
 	{
 		ReconcileScaleOverlaps();
@@ -890,6 +891,16 @@ void AScaleAssemblyActor::RefreshStatusBannerReadout()
 	{
 		StatusBannerText->SetTextRenderColor(ReadoutEmeraldColor);
 		StatusBannerText->SetText(FText::FromString(TEXT("QUOTA MET - PRESS [E] TO STAMP")));
+		return;
+	}
+
+	const EDiverterRoute EffectiveRoute = IsValid(DiverterGateComponent)
+		? DiverterGateComponent->GetCurrentRoute()
+		: CachedSnapshot.ActiveDiverterRoute;
+	if (EffectiveRoute == EDiverterRoute::TareChute)
+	{
+		StatusBannerText->SetTextRenderColor(ReadoutTareOrangeColor);
+		StatusBannerText->SetText(FText::FromString(TEXT("TARE CHUTE ACTIVE - HOLD [LMB] TO DUMP SCRAP | [SPACE] TITHE")));
 		return;
 	}
 

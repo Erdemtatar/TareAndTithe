@@ -187,7 +187,7 @@ BASELINE_CONTRACT_SPECS = [
     {
         "name": "DA_Contract_02",
         "code": "ACT I-B // CTR-02: ECCENTRIC L-CASTING",
-        "directive": "L-BLOCK: DUMP EXCESS TO TARE [SPACE]",
+        "directive": "CUT GREEN YIELD | [SPACE] DUMPS TARE",
         "shape": "ASYMMETRIC_L_BLOCK",
         "dims": (24.0, 32.0, 80.0),
         "density": 0.85,

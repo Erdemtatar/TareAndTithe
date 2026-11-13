@@ -109,8 +109,33 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rig|Telemetry", meta = (ClampMin = "0.05", ClampMax = "5.0"))
 	float VaporizedImpulseReferenceMassKg = 0.5f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rig|ClampFit", meta = (ClampMin = "0.0", ClampMax = "4.0"))
+	float JawPocketSeatEmbedZCm = 1.2f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rig|ClampFit", meta = (ClampMin = "0.5", ClampMax = "8.0"))
+	float JawProngOuterProtrusionCm = 3.2f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rig|ClampFit", meta = (ClampMin = "0.25", ClampMax = "0.95"))
+	float CustomJawProngInnerRatioX = 0.52f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rig|ClampFit", meta = (ClampMin = "0.35", ClampMax = "1.0"))
+	float CustomJawProngOuterRatioX = 0.83f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rig|ClampFit", meta = (ClampMin = "0.25", ClampMax = "0.95"))
+	float CustomJawProngInnerRatioY = 0.40f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rig|ClampFit", meta = (ClampMin = "0.35", ClampMax = "1.0"))
+	float CustomJawProngOuterRatioY = 0.75f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rig|ClampFit", meta = (ClampMin = "14.0", ClampMax = "40.0"))
+	float MinAdaptiveJawOuterWidthCm = 22.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rig|ClampFit", meta = (ClampMin = "30.0", ClampMax = "80.0"))
+	float MaxAdaptiveJawOuterWidthCm = 72.0f;
+
 private:
 	void EnsureGreyboxMaterialsInitialized();
+	void FitClampJawToActiveMonolith();
 	UMaterialInterface* ResolveEffectiveOuterMaterial(const UMonolithContractDataAsset* Contract = nullptr) const;
 	UMaterialInterface* ResolveEffectiveCutCapMaterial(const UMonolithContractDataAsset* Contract = nullptr) const;
 	FVector TransformRemainderCoMToMountLocal(const FVector& RemainderLocalCoMCm) const;

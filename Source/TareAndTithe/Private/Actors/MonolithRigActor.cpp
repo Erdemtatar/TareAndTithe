@@ -172,7 +172,19 @@ FSlicePreviewTelemetry AMonolithRigActor::PreviewSlicePlane_Implementation(
 	}
 
 	const bool bIntersects = MonolithSliceComponent->DoesPlaneIntersectRemainder(PlaneOriginWorld, PlaneNormalWorld);
-	return VeinScannerComponent->EvaluateWorldPlane(PlaneOriginWorld, PlaneNormalWorld, bIntersects);
+	FSlicePreviewTelemetry Telemetry = VeinScannerComponent->EvaluateWorldPlane(PlaneOriginWorld, PlaneNormalWorld, bIntersects);
+	if (bIntersects)
+	{
+		float SeveredMassKg = 0.0f;
+		float RemainderMassKg = MonolithSliceComponent->GetRemainderMassKg();
+		if (MonolithSliceComponent->EstimateSeveredMassKg(PlaneOriginWorld, PlaneNormalWorld, SeveredMassKg, RemainderMassKg))
+		{
+			Telemetry.EstimatedSeveredMassKg = SeveredMassKg;
+			Telemetry.EstimatedRemainderMassKg = RemainderMassKg;
+			Telemetry.bHasValidMassEstimate = true;
+		}
+	}
+	return Telemetry;
 }
 
 FSliceResultSummary AMonolithRigActor::CommitSlicePlane_Implementation(
@@ -272,21 +284,20 @@ bool AMonolithRigActor::LoadContractOnRig(
 		ResolveEffectiveCutCapMaterial(Contract)
 	});
 
-	// Align top of generated/imported mesh (whether Center or Base origin) cleanly inside TiltingMountComponent's clamp jaws.
+	// Align actual upper grip cross-section centroid directly under TiltingMountComponent (0, 0) seated inside the jaw pocket,
+	// so asymmetric shapes (L-Blocks, tapered Rodin rocks) hang physically by their upper stem while overhangs generate real torque.
 	const FBox LocalBounds = MonolithSliceComponent->GetRemainderLocalBounds();
+	const FBox TopGripBounds = MonolithSliceComponent->GetTopGripLocalBounds();
+	const FVector TopGripCenter = TopGripBounds.IsValid ? TopGripBounds.GetCenter() : FVector::ZeroVector;
 	const double TopLocalZ = LocalBounds.IsValid
 		? LocalBounds.Max.Z
 		: (0.5 * FMath::Max(5.0, static_cast<double>(Contract->DimensionsCm.Z)));
-	RemainderMeshComponent->SetRelativeLocationAndRotation(FVector(0.0, 0.0, -TopLocalZ), FQuat::Identity);
+	RemainderMeshComponent->SetRelativeLocationAndRotation(
+		FVector(-TopGripCenter.X, -TopGripCenter.Y, -TopLocalZ + static_cast<double>(JawPocketSeatEmbedZCm)),
+		FQuat::Identity);
 	RemainderMeshComponent->UpdateBounds();
 
-	if (IsValid(ClampJawVisual) && !bHasCustomClampJawMesh)
-	{
-		const double JawScaleX = FMath::Max(0.14, (static_cast<double>(Contract->DimensionsCm.X) * 0.68) / 100.0);
-		const double JawScaleY = FMath::Max(0.14, (static_cast<double>(Contract->DimensionsCm.Y) * 0.68) / 100.0);
-		ClampJawVisual->SetRelativeLocation(FVector(0.0, 0.0, -2.0));
-		ClampJawVisual->SetRelativeScale3D(FVector(JawScaleX, JawScaleY, 0.16));
-	}
+	FitClampJawToActiveMonolith();
 
 	VeinScannerComponent->InitializeFromContract(Contract);
 
@@ -317,6 +328,11 @@ void AMonolithRigActor::ApplyPresentationData(const UTareTithePresentationDataAs
 	else if (IsValid(ClampSpringHousingVisual))
 	{
 		ClampSpringHousingVisual->SetVisibility(false, false);
+	}
+
+	if (IsValid(CachedLoadedContract))
+	{
+		FitClampJawToActiveMonolith();
 	}
 
 	if (IsValid(MonolithSliceComponent))
@@ -450,11 +466,130 @@ UMaterialInterface* AMonolithRigActor::ResolveEffectiveCutCapMaterial(const UMon
 
 FVector AMonolithRigActor::TransformRemainderCoMToMountLocal(const FVector& RemainderLocalCoMCm) const
 {
+	FVector MountLocalPos = RemainderLocalCoMCm;
 	if (IsValid(RemainderMeshComponent))
 	{
-		return RemainderMeshComponent->GetRelativeTransform().TransformPosition(RemainderLocalCoMCm);
+		MountLocalPos = RemainderMeshComponent->GetRelativeTransform().TransformPosition(RemainderLocalCoMCm);
 	}
-	return RemainderLocalCoMCm;
+	if (IsValid(TiltingMountComponent))
+	{
+		MountLocalPos += TiltingMountComponent->GetRelativeLocation();
+	}
+	return MountLocalPos;
+}
+
+void AMonolithRigActor::FitClampJawToActiveMonolith()
+{
+	if (!IsValid(ClampJawVisual) || !IsValid(CachedLoadedContract))
+	{
+		return;
+	}
+
+	FVector GripSizeCm = CachedLoadedContract->DimensionsCm;
+	if (IsValid(MonolithSliceComponent))
+	{
+		const FBox TopGripBounds = MonolithSliceComponent->GetTopGripLocalBounds();
+		if (TopGripBounds.IsValid)
+		{
+			GripSizeCm = TopGripBounds.GetSize();
+		}
+	}
+
+	const double GripWidthX = FMath::Max(6.0, static_cast<double>(GripSizeCm.X));
+	const double GripWidthY = FMath::Max(6.0, static_cast<double>(GripSizeCm.Y));
+	const double ProtrusionCm = FMath::Max(0.5, static_cast<double>(JawProngOuterProtrusionCm));
+
+	if (bHasCustomClampJawMesh &&
+		IsValid(PresentationData) &&
+		IsValid(PresentationData->ClampJawMeshSlot.Mesh))
+	{
+		auto ComputeSlotOuterSizeCm = [](const UStaticMesh* Mesh, const FTransform& SlotTransform, const FVector& FallbackSize) -> FVector
+		{
+			if (!IsValid(Mesh))
+			{
+				return FallbackSize;
+			}
+			const FBox RawBox = Mesh->GetBoundingBox();
+			return RawBox.IsValid ? RawBox.TransformBy(SlotTransform).GetSize() : FallbackSize;
+		};
+
+		auto ApplyMountXYScaleToSlot = [](
+			UStaticMeshComponent* VisualComp,
+			const FTransform& BaseSlotTransform,
+			double RatioMountX,
+			double RatioMountY)
+		{
+			if (!IsValid(VisualComp))
+			{
+				return;
+			}
+			const FQuat SlotRot = BaseSlotTransform.GetRotation();
+			const FVector SlotScale = BaseSlotTransform.GetScale3D();
+			const FVector SlotLoc = BaseSlotTransform.GetLocation();
+			const bool bLocalXMapsToMountY = FMath::Abs(SlotRot.GetAxisX().Y) > 0.707;
+			const FVector LocalScaleMult = bLocalXMapsToMountY
+				? FVector(RatioMountY, RatioMountX, 1.0)
+				: FVector(RatioMountX, RatioMountY, 1.0);
+
+			VisualComp->SetRelativeLocation(FVector(SlotLoc.X * RatioMountX, SlotLoc.Y * RatioMountY, SlotLoc.Z));
+			VisualComp->SetRelativeRotation(SlotRot);
+			VisualComp->SetRelativeScale3D(SlotScale * LocalScaleMult);
+		};
+
+		const FTransform& JawSlotXf = PresentationData->ClampJawMeshSlot.VisualLocalTransform;
+		const FVector BaseJawOuterCm = ComputeSlotOuterSizeCm(
+			PresentationData->ClampJawMeshSlot.Mesh,
+			JawSlotXf,
+			FVector(30.0, 30.0, 16.0));
+
+		const double SafeOuterRatioX = FMath::Clamp(static_cast<double>(CustomJawProngOuterRatioX), 0.35, 1.0);
+		const double SafeInnerRatioX = FMath::Clamp(static_cast<double>(CustomJawProngInnerRatioX), 0.20, SafeOuterRatioX - 0.05);
+		const double SafeOuterRatioY = FMath::Clamp(static_cast<double>(CustomJawProngOuterRatioY), 0.35, 1.0);
+		const double SafeInnerRatioY = FMath::Clamp(static_cast<double>(CustomJawProngInnerRatioY), 0.20, SafeOuterRatioY - 0.05);
+		const double MinJawOuterCm = static_cast<double>(MinAdaptiveJawOuterWidthCm);
+		const double MaxJawOuterCm = FMath::Max(MinJawOuterCm + 4.0, static_cast<double>(MaxAdaptiveJawOuterWidthCm));
+
+		const double DesiredMinOuterX = (GripWidthX + (2.0 * ProtrusionCm)) / SafeOuterRatioX;
+		const double DesiredMaxOuterX = FMath::Max(DesiredMinOuterX, FMath::Max(4.0, GripWidthX - 1.2) / SafeInnerRatioX);
+		const double TargetOuterXCm = FMath::Clamp(DesiredMinOuterX, MinJawOuterCm, FMath::Min(DesiredMaxOuterX, MaxJawOuterCm));
+
+		const double DesiredMinOuterY = (GripWidthY + (2.0 * ProtrusionCm)) / SafeOuterRatioY;
+		const double DesiredMaxOuterY = FMath::Max(DesiredMinOuterY, FMath::Max(4.0, GripWidthY - 1.2) / SafeInnerRatioY);
+		const double TargetOuterYCm = FMath::Clamp(DesiredMinOuterY, MinJawOuterCm, FMath::Min(DesiredMaxOuterY, MaxJawOuterCm));
+
+		const double JawRatioX = TargetOuterXCm / FMath::Max(1.0, BaseJawOuterCm.X);
+		const double JawRatioY = TargetOuterYCm / FMath::Max(1.0, BaseJawOuterCm.Y);
+		ApplyMountXYScaleToSlot(ClampJawVisual, JawSlotXf, JawRatioX, JawRatioY);
+
+		if (IsValid(ClampSpringHousingVisual) && IsValid(PresentationData->ClampSpringHousingMeshSlot.Mesh))
+		{
+			const FTransform& HousingSlotXf = PresentationData->ClampSpringHousingMeshSlot.VisualLocalTransform;
+			const FVector BaseHousingOuterCm = ComputeSlotOuterSizeCm(
+				PresentationData->ClampSpringHousingMeshSlot.Mesh,
+				HousingSlotXf,
+				FVector(48.0, 48.0, 40.0));
+
+			const double TargetHousingXCm = FMath::Clamp(
+				FMath::Max(BaseHousingOuterCm.X, TargetOuterXCm * 1.06),
+				BaseHousingOuterCm.X,
+				MaxJawOuterCm + 4.0);
+			const double TargetHousingYCm = FMath::Clamp(
+				FMath::Max(BaseHousingOuterCm.Y, TargetOuterYCm * 1.06),
+				BaseHousingOuterCm.Y,
+				MaxJawOuterCm + 4.0);
+
+			const double HousingRatioX = TargetHousingXCm / FMath::Max(1.0, BaseHousingOuterCm.X);
+			const double HousingRatioY = TargetHousingYCm / FMath::Max(1.0, BaseHousingOuterCm.Y);
+			ApplyMountXYScaleToSlot(ClampSpringHousingVisual, HousingSlotXf, HousingRatioX, HousingRatioY);
+		}
+		return;
+	}
+
+	const double GreyboxJawScaleX = FMath::Clamp((GripWidthX + (2.0 * ProtrusionCm)) / 100.0, 0.16, 0.72);
+	const double GreyboxJawScaleY = FMath::Clamp((GripWidthY + (2.0 * ProtrusionCm)) / 100.0, 0.16, 0.72);
+	ClampJawVisual->SetRelativeLocation(FVector(0.0, 0.0, -2.0));
+	ClampJawVisual->SetRelativeRotation(FRotator::ZeroRotator);
+	ClampJawVisual->SetRelativeScale3D(FVector(GreyboxJawScaleX, GreyboxJawScaleY, 0.16));
 }
 
 float AMonolithRigActor::QueryCurrentRemainderMassKg() const

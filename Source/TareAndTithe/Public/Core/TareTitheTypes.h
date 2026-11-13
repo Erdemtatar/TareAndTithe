@@ -124,6 +124,15 @@ struct FSlicePreviewTelemetry
 
 	UPROPERTY(BlueprintReadOnly, Category = "Slice")
 	bool bWillDetonate = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Slice")
+	float EstimatedSeveredMassKg = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Slice")
+	float EstimatedRemainderMassKg = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Slice")
+	bool bHasValidMassEstimate = false;
 };
 
 USTRUCT(BlueprintType)
@@ -177,9 +186,6 @@ struct FContractRuntimeSnapshot
 	float RemainderMassKg = 0.0f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Shift")
-	float RemainingMonolithMassKg = 0.0f;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Shift")
 	float InFlightMassKg = 0.0f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Shift")
@@ -206,5 +212,6 @@ using FShiftHudSnapshot = FContractRuntimeSnapshot;
 // Native C++ Telemetry Signatures (Zero UHT overhead, zero concrete coupling)
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnTelemetryStreamSignature, ETelemetryStreamId /*StreamId*/, float /*NormalizedValue*/);
 DECLARE_MULTICAST_DELEGATE_ThreeParams(FOnTelemetryImpulseSignature, ETelemetryImpulseId /*ImpulseId*/, float /*NormalizedMagnitude*/, const FVector& /*WorldLocation*/);
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnNativeContractSnapshotUpdatedSignature, const FContractRuntimeSnapshot& /*Snapshot*/);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnContractSnapshotUpdatedSignature, const FContractRuntimeSnapshot&, Snapshot);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnShiftVerdictSignature, EShiftVerdictType, Verdict, EContractFaultReason, FaultReason);

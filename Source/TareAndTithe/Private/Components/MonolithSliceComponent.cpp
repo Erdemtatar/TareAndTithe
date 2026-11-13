@@ -61,6 +61,76 @@ namespace
 		return SixTimesSignedVolume / 6.0;
 	}
 
+	UE::Geometry::FAxisAlignedBox3d ComputeTopGripLocalBounds3d(
+		const UE::Geometry::FDynamicMesh3& Mesh,
+		const UE::Geometry::FAxisAlignedBox3d& FullBounds,
+		double RequestedSampleDepthCm)
+	{
+		if (FullBounds.IsEmpty())
+		{
+			return FullBounds;
+		}
+
+		const double FullHeightZ = FMath::Max(1.0, FullBounds.Max.Z - FullBounds.Min.Z);
+		const double SampleDepth = FMath::Clamp(RequestedSampleDepthCm, 2.0, 0.45 * FullHeightZ);
+		const double ZPlaneLow = FullBounds.Max.Z - SampleDepth;
+		const double ZPlaneMid = FullBounds.Max.Z - (0.5 * SampleDepth);
+
+		UE::Geometry::FAxisAlignedBox3d TopBandBounds = UE::Geometry::FAxisAlignedBox3d::Empty();
+
+		for (int32 Vid : Mesh.VertexIndicesItr())
+		{
+			const FVector3d Pos = Mesh.GetVertex(Vid);
+			if (Pos.Z >= ZPlaneLow - 1.0e-4)
+			{
+				TopBandBounds.Contain(Pos);
+			}
+		}
+
+		auto AccumulateEdgePlaneCrossing = [&TopBandBounds](const FVector3d& A, const FVector3d& B, double PlaneZ)
+		{
+			const double Da = A.Z - PlaneZ;
+			const double Db = B.Z - PlaneZ;
+			if ((Da <= 0.0 && Db >= 0.0) || (Da >= 0.0 && Db <= 0.0))
+			{
+				const double Denom = B.Z - A.Z;
+				if (FMath::Abs(Denom) > 1.0e-8)
+				{
+					const double Alpha = FMath::Clamp((PlaneZ - A.Z) / Denom, 0.0, 1.0);
+					TopBandBounds.Contain(A + Alpha * (B - A));
+				}
+			}
+		};
+
+		for (int32 Tid : Mesh.TriangleIndicesItr())
+		{
+			FVector3d TriV[3];
+			Mesh.GetTriVertices(Tid, TriV[0], TriV[1], TriV[2]);
+			const double TriMinZ = FMath::Min3(TriV[0].Z, TriV[1].Z, TriV[2].Z);
+			const double TriMaxZ = FMath::Max3(TriV[0].Z, TriV[1].Z, TriV[2].Z);
+			if (TriMaxZ < ZPlaneLow - 1.0e-4)
+			{
+				continue;
+			}
+
+			for (int32 EdgeIdx = 0; EdgeIdx < 3; ++EdgeIdx)
+			{
+				const FVector3d& E0 = TriV[EdgeIdx];
+				const FVector3d& E1 = TriV[(EdgeIdx + 1) % 3];
+				if (TriMinZ <= ZPlaneLow && TriMaxZ >= ZPlaneLow)
+				{
+					AccumulateEdgePlaneCrossing(E0, E1, ZPlaneLow);
+				}
+				if (TriMinZ <= ZPlaneMid && TriMaxZ >= ZPlaneMid)
+				{
+					AccumulateEdgePlaneCrossing(E0, E1, ZPlaneMid);
+				}
+			}
+		}
+
+		return TopBandBounds.IsEmpty() ? FullBounds : TopBandBounds;
+	}
+
 	bool DoesTriangleIntersectAABB3d(
 		const UE::Geometry::FTriangle3d& Tri,
 		const UE::Geometry::FAxisAlignedBox3d& Box)
@@ -469,11 +539,13 @@ bool UMonolithSliceComponent::InitializeMonolithFromContract(
 
 	// Step 4: Enable MaterialID attribute and stamp Slot 0 (OuterShellMaterial) across all initial triangles.
 	UE::Geometry::FAxisAlignedBox3d InitialLocalBounds = UE::Geometry::FAxisAlignedBox3d::Empty();
+	UE::Geometry::FAxisAlignedBox3d InitialTopGripBounds = UE::Geometry::FAxisAlignedBox3d::Empty();
 	double InitialVolumeCm3 = 0.0;
 	FVector3d InitialCoMCm = FVector3d::Zero();
 	int32 InitialTriCount = 0;
+	const double RequestedTopGripDepthCm = static_cast<double>(TopGripCrossSectionSampleDepthCm);
 
-	RemainderDynMesh->EditMesh([&InitialLocalBounds, &InitialVolumeCm3, &InitialCoMCm, &InitialTriCount](
+	RemainderDynMesh->EditMesh([&InitialLocalBounds, &InitialTopGripBounds, &InitialVolumeCm3, &InitialCoMCm, &InitialTriCount, RequestedTopGripDepthCm](
 		UE::Geometry::FDynamicMesh3& EditMesh)
 	{
 		EditMesh.EnableAttributes();
@@ -488,6 +560,7 @@ bool UMonolithSliceComponent::InitializeMonolithFromContract(
 
 		InitialTriCount = EditMesh.TriangleCount();
 		InitialLocalBounds = EditMesh.GetBounds();
+		InitialTopGripBounds = ComputeTopGripLocalBounds3d(EditMesh, InitialLocalBounds, RequestedTopGripDepthCm);
 		const FVector2d VolArea = UE::Geometry::TMeshQueries<UE::Geometry::FDynamicMesh3>::GetVolumeAreaCenter(
 			EditMesh,
 			InitialCoMCm);
@@ -520,17 +593,32 @@ bool UMonolithSliceComponent::InitializeMonolithFromContract(
 		CurrentRemainderLocalBounds = FBox(ForceInit);
 	}
 
+	if (!InitialTopGripBounds.IsEmpty())
+	{
+		CurrentTopGripLocalBounds = FBox(
+			static_cast<FVector>(InitialTopGripBounds.Min),
+			static_cast<FVector>(InitialTopGripBounds.Max));
+	}
+	else
+	{
+		CurrentTopGripLocalBounds = CurrentRemainderLocalBounds;
+	}
+
 	if (bAutoFitClampGripBoxToTopOfContract && !InitialLocalBounds.IsEmpty())
 	{
-		const FVector3d BoxSize = InitialLocalBounds.Max - InitialLocalBounds.Min;
-		const FVector3d BoxCenter = InitialLocalBounds.Center();
-		const double HalfJawX = FMath::Max(4.0, 0.5 * BoxSize.X * static_cast<double>(AutoFitJawHorizontalCoverageRatio));
-		const double HalfJawY = FMath::Max(4.0, 0.5 * BoxSize.Y * static_cast<double>(AutoFitJawHorizontalCoverageRatio));
-		const double JawEmbedZ = FMath::Max(5.0, BoxSize.Z * static_cast<double>(AutoFitJawVerticalDepthRatio));
+		const FVector3d FullBoxSize = InitialLocalBounds.Max - InitialLocalBounds.Min;
+		const UE::Geometry::FAxisAlignedBox3d EffectiveGripBounds = InitialTopGripBounds.IsEmpty()
+			? InitialLocalBounds
+			: InitialTopGripBounds;
+		const FVector3d GripSize = EffectiveGripBounds.Max - EffectiveGripBounds.Min;
+		const FVector3d GripCenter = EffectiveGripBounds.Center();
+		const double HalfJawX = FMath::Max(3.0, 0.5 * GripSize.X * static_cast<double>(AutoFitJawHorizontalCoverageRatio));
+		const double HalfJawY = FMath::Max(3.0, 0.5 * GripSize.Y * static_cast<double>(AutoFitJawHorizontalCoverageRatio));
+		const double JawEmbedZ = FMath::Max(5.0, FullBoxSize.Z * static_cast<double>(AutoFitJawVerticalDepthRatio));
 
 		ClampGripBoxLocal = FBox(
-			FVector(BoxCenter.X - HalfJawX, BoxCenter.Y - HalfJawY, InitialLocalBounds.Max.Z - JawEmbedZ),
-			FVector(BoxCenter.X + HalfJawX, BoxCenter.Y + HalfJawY, InitialLocalBounds.Max.Z + 8.0));
+			FVector(GripCenter.X - HalfJawX, GripCenter.Y - HalfJawY, InitialLocalBounds.Max.Z - JawEmbedZ),
+			FVector(GripCenter.X + HalfJawX, GripCenter.Y + HalfJawY, InitialLocalBounds.Max.Z + 8.0));
 	}
 
 	RemainderMeshComponent->UpdateBounds();
@@ -1022,6 +1110,147 @@ bool UMonolithSliceComponent::DoesPlaneIntersectRemainder(
 	});
 
 	return bIntersects;
+}
+
+bool UMonolithSliceComponent::EstimateSeveredMassKg(
+	const FVector& PlaneOriginWorld,
+	const FVector& PlaneNormalWorld,
+	float& OutSeveredMassKg,
+	float& OutRemainderMassKg) const
+{
+	OutSeveredMassKg = 0.0f;
+	OutRemainderMassKg = CurrentRemainderMassKg;
+
+	const UMonolithContractDataAsset* Contract = ActiveContract.Get();
+	if (!IsValid(Contract) || CurrentRemainderMassKg <= 0.0f || !IsValid(RemainderMeshComponent))
+	{
+		return false;
+	}
+
+	const UDynamicMesh* RemainderDynMesh = RemainderMeshComponent->GetDynamicMesh();
+	if (!IsValid(RemainderDynMesh))
+	{
+		return false;
+	}
+
+	const FVector UnitWorldNormal = PlaneNormalWorld.GetSafeNormal();
+	if (UnitWorldNormal.IsNearlyZero())
+	{
+		return false;
+	}
+
+	const FTransform RemainderTransform = RemainderMeshComponent->GetComponentTransform();
+	const FVector3d LocalOrigin = static_cast<FVector3d>(RemainderTransform.InverseTransformPosition(PlaneOriginWorld));
+	FVector3d LocalNormal = static_cast<FVector3d>(RemainderTransform.InverseTransformVector(UnitWorldNormal));
+	if (!LocalNormal.Normalize())
+	{
+		return false;
+	}
+
+	// Orient SeveredNormal strictly away from the overhead clamp grip center (blade-roll invariant).
+	const FVector3d GripCenterLocal = ClampGripBoxLocal.IsValid
+		? static_cast<FVector3d>(ClampGripBoxLocal.GetCenter())
+		: FVector3d(0.0, 0.0, CurrentRemainderLocalBounds.IsValid ? static_cast<double>(CurrentRemainderLocalBounds.Max.Z) : 40.0);
+	const double GripSideSignedDist = (GripCenterLocal - LocalOrigin).Dot(LocalNormal);
+	FVector3d SeveredNormal = LocalNormal;
+	if (GripSideSignedDist > 1.0e-4)
+	{
+		SeveredNormal = -LocalNormal;
+	}
+	else if (GripSideSignedDist >= -1.0e-4)
+	{
+		SeveredNormal = (LocalNormal.Z >= 0.0) ? -LocalNormal : LocalNormal;
+	}
+
+	// Zero-allocation Planar-Origin Divergence Theorem half-space clipped volume integration.
+	// Shifting vertices by -LocalOrigin places the cut plane through (0,0,0), making planar cap volume identically 0.
+	bool bHasValidMesh = false;
+	double SixTimesSeveredVolumeCm3 = 0.0;
+
+	RemainderDynMesh->ProcessMesh([&LocalOrigin, &SeveredNormal, &bHasValidMesh, &SixTimesSeveredVolumeCm3](
+		const UE::Geometry::FDynamicMesh3& SourceMesh)
+	{
+		if (SourceMesh.TriangleCount() < MinValidIslandTriangles)
+		{
+			return;
+		}
+
+		bHasValidMesh = true;
+		double AccumSixVol = 0.0;
+
+		for (int32 Tid : SourceMesh.TriangleIndicesItr())
+		{
+			FVector3d V[3];
+			SourceMesh.GetTriVertices(Tid, V[0], V[1], V[2]);
+
+			const FVector3d P[3] = {
+				V[0] - LocalOrigin,
+				V[1] - LocalOrigin,
+				V[2] - LocalOrigin
+			};
+
+			const double D[3] = {
+				P[0].Dot(SeveredNormal),
+				P[1].Dot(SeveredNormal),
+				P[2].Dot(SeveredNormal)
+			};
+
+			const bool bPos[3] = { D[0] > 0.0, D[1] > 0.0, D[2] > 0.0 };
+			const int32 PosCount = (bPos[0] ? 1 : 0) + (bPos[1] ? 1 : 0) + (bPos[2] ? 1 : 0);
+
+			if (PosCount == 0)
+			{
+				continue;
+			}
+			if (PosCount == 3)
+			{
+				AccumSixVol += P[0].Dot(P[1].Cross(P[2]));
+				continue;
+			}
+			if (PosCount == 1)
+			{
+				// Guard A: Preserve cyclic vertex winding (i, (i+1)%3, (i+2)%3) for the single positive vertex i.
+				const int32 i = bPos[0] ? 0 : (bPos[1] ? 1 : 2);
+				const int32 j = (i + 1) % 3;
+				const int32 k = (i + 2) % 3;
+
+				const double Tij = D[i] / (D[i] - D[j]);
+				const double Tik = D[i] / (D[i] - D[k]);
+				const FVector3d Qij = P[i] + Tij * (P[j] - P[i]);
+				const FVector3d Qik = P[i] + Tik * (P[k] - P[i]);
+
+				AccumSixVol += P[i].Dot(Qij.Cross(Qik));
+			}
+			else // PosCount == 2
+			{
+				// Guard A: Preserve cyclic vertex winding (i, (i+1)%3, (i+2)%3) around the single non-positive vertex i.
+				const int32 i = !bPos[0] ? 0 : (!bPos[1] ? 1 : 2);
+				const int32 j = (i + 1) % 3;
+				const int32 k = (i + 2) % 3;
+
+				const double Tji = D[j] / (D[j] - D[i]);
+				const double Tki = D[k] / (D[k] - D[i]);
+				const FVector3d Qji = P[j] + Tji * (P[i] - P[j]);
+				const FVector3d Qki = P[k] + Tki * (P[i] - P[k]);
+
+				AccumSixVol += P[j].Dot(P[k].Cross(Qki));
+				AccumSixVol += P[j].Dot(Qki.Cross(Qji));
+			}
+		}
+
+		SixTimesSeveredVolumeCm3 = AccumSixVol;
+	});
+
+	if (!bHasValidMesh)
+	{
+		return false;
+	}
+
+	const double DensityKgPerCm3 = static_cast<double>(Contract->DensityGramsPerCm3) * 1.0e-3;
+	const double ClippedVolumeCm3 = FMath::Max(0.0, SixTimesSeveredVolumeCm3 / 6.0);
+	OutSeveredMassKg = FMath::Clamp(static_cast<float>(ClippedVolumeCm3 * DensityKgPerCm3), 0.0f, CurrentRemainderMassKg);
+	OutRemainderMassKg = FMath::Max(0.0f, CurrentRemainderMassKg - OutSeveredMassKg);
+	return true;
 }
 
 FBox UMonolithSliceComponent::GetRemainderWorldBounds() const

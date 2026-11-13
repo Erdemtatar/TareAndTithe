@@ -5,11 +5,12 @@ import unreal
 MATERIALS_DIR = "/Game/Presentation/Materials"
 CONTRACTS_DIR = "/Game/Presentation/Contracts"
 MESHES_DIR = "/Game/Presentation/Meshes"
+VFX_DIR = "/Game/Presentation/VFX"
 DA_PRESENTATION_PATH = "/Game/Presentation/DA_Presentation"
 
 CONTRACT_DIRECTIVES: List[Tuple[str, str]] = [
     ("DA_Contract_01", "CUT 12.0 KG TO TITHE | STAMP [E]"),
-    ("DA_Contract_02", "L-BLOCK: DUMP EXCESS TO TARE [SPACE]"),
+    ("DA_Contract_02", "CUT GREEN YIELD | [SPACE] DUMPS TARE"),
     ("DA_Contract_03", "HIDDEN VEIN: AUDIO SCAN & BEVEL [RMB]"),
     ("DA_Contract_04", "SLAG COLUMN: DODGE VEIN | WATCH TARE"),
     ("DA_Contract_05", "TORQUE LIMIT: KEEP CUTS BALANCED"),
@@ -546,10 +547,35 @@ def bind_materials_to_presentation(
             unreal.EditorAssetLibrary.save_loaded_asset(flapper_sm, only_if_is_dirty=False)
             log_info(f"Bound M_DarkGunmetal_Master to {flapper_mesh_path} Slot 0")
 
+    # Verify & enforce all 4 Niagara VFX slots on DA_Presentation (SliverVaporizedVFX -> NS_LaserSliceSparks)
+    required_vfx_bindings: List[Tuple[str, str]] = [
+        ("laser_slice_sparks_vfx", f"{VFX_DIR}/NS_LaserSliceSparks"),
+        ("sliver_vaporized_vfx", f"{VFX_DIR}/NS_LaserSliceSparks"),
+        ("vein_detonation_vfx", f"{VFX_DIR}/NS_VeinDetonation"),
+        ("scale_heavy_impact_vfx", f"{VFX_DIR}/NS_ScaleHeavyImpact"),
+    ]
+    bound_vfx_summary: List[str] = []
+    for vfx_prop, default_vfx_path in required_vfx_bindings:
+        current_vfx = da_pres.get_editor_property(vfx_prop)
+        if current_vfx is None:
+            loaded_vfx = unreal.EditorAssetLibrary.load_asset(default_vfx_path)
+            if loaded_vfx is None:
+                raise AssertionError(
+                    f"Missing required NiagaraSystem asset {default_vfx_path} for DA_Presentation.{vfx_prop}!"
+                )
+            da_pres.set_editor_property(vfx_prop, loaded_vfx)
+            current_vfx = da_pres.get_editor_property(vfx_prop)
+            log_info(f"Bound DA_Presentation.{vfx_prop} -> {default_vfx_path}")
+        if current_vfx is None:
+            raise AssertionError(f"DA_Presentation.{vfx_prop} is None after binding!")
+        bound_vfx_summary.append(f"{vfx_prop}={current_vfx.get_name()}")
+
+    log_info(f"Verified all 4 Niagara VFX slots on DA_Presentation ({', '.join(bound_vfx_summary)})")
+
     if not unreal.EditorAssetLibrary.save_loaded_asset(da_pres, only_if_is_dirty=False):
         raise RuntimeError(f"Failed saving {DA_PRESENTATION_PATH}")
 
-    log_info(f"Bound all master materials + flapper dark gunmetal override and saved {DA_PRESENTATION_PATH}")
+    log_info(f"Bound all master materials, VFX slots + flapper dark gunmetal override and saved {DA_PRESENTATION_PATH}")
 
 
 def update_contracts_and_monoliths(
@@ -596,7 +622,7 @@ def update_contracts_and_monoliths(
 
 
 def main() -> None:
-    log_info("Starting Phase 9.4 master material generation, contract directives & DA_Presentation binding...")
+    log_info("Starting Phase 9.5 master material generation, VFX assertions, contract directives & DA_Presentation binding...")
     m_laser = build_laser_sheet_master()
     m_molten = build_molten_cut_cap_master()
     m_slag = build_slag_outer_master()
@@ -612,7 +638,7 @@ def main() -> None:
         m_gunmetal=m_gunmetal,
     )
     update_contracts_and_monoliths(m_slag=m_slag, m_molten=m_molten)
-    log_info("Completed Phase 9.4 BuildMaterialsAndBind successfully.")
+    log_info("Completed Phase 9.5 BuildMaterialsAndBind successfully.")
 
 
 if __name__ == "__main__":

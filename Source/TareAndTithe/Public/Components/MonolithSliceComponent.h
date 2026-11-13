@@ -46,8 +46,15 @@ public:
 		TArray<ASeveredChunkActor*>& OutSpawnedChunks);
 
 	bool DoesPlaneIntersectRemainder(const FVector& PlaneOriginWorld, const FVector& PlaneNormalWorld) const;
+	bool EstimateSeveredMassKg(
+		const FVector& PlaneOriginWorld,
+		const FVector& PlaneNormalWorld,
+		float& OutSeveredMassKg,
+		float& OutRemainderMassKg) const;
+
 	FBox GetRemainderWorldBounds() const;
 	FBox GetRemainderLocalBounds() const { return CurrentRemainderLocalBounds; }
+	FBox GetTopGripLocalBounds() const { return CurrentTopGripLocalBounds; }
 
 	float GetRemainderMassKg() const { return CurrentRemainderMassKg; }
 	FVector GetRemainderLocalCoMCm() const { return CurrentRemainderLocalCoMCm; }
@@ -71,6 +78,9 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Monolith|Clamp", meta = (ClampMin = "0.02", ClampMax = "0.35"))
 	float AutoFitJawVerticalDepthRatio = 0.175f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Monolith|Clamp", meta = (ClampMin = "2.0", ClampMax = "24.0"))
+	float TopGripCrossSectionSampleDepthCm = 9.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Monolith|Defaults", meta = (ClampMin = "5.0", ClampMax = "250.0"))
 	float FallbackMinSliverVolumeCm3 = 20.0f;
@@ -111,4 +121,5 @@ private:
 	float CurrentRemainderMassKg = 0.0f;
 	FVector CurrentRemainderLocalCoMCm = FVector::ZeroVector;
 	FBox CurrentRemainderLocalBounds = FBox(ForceInit);
+	FBox CurrentTopGripLocalBounds = FBox(ForceInit);
 };

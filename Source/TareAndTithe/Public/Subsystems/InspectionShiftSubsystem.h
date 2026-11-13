@@ -156,6 +156,7 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Shift")
 	FOnShiftVerdictSignature OnShiftVerdict;
 
+	FOnNativeContractSnapshotUpdatedSignature OnNativeContractSnapshotUpdated;
 	FOnShiftPhaseChangedSignature OnShiftPhaseChanged;
 	FOnPresentationAssetChangedSignature OnPresentationAssetChanged;
 	FOnActiveContractLoadedSignature OnActiveContractLoaded;
