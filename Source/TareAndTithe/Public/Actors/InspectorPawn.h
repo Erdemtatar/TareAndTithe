@@ -7,6 +7,7 @@
 #include "Core/TareTitheTypes.h"
 #include "Interfaces/TelemetryPublisherInterface.h"
 #include "Subsystems/InspectionShiftSubsystem.h"
+#include "UI/HudViewModels.h"
 #include "InspectorPawn.generated.h"
 
 struct FInputActionValue;
@@ -15,6 +16,7 @@ class UAudioTelemetryBridgeComponent;
 class UCameraComponent;
 class UInputAction;
 class UInputMappingContext;
+class UInspectorHudBridgeComponent;
 class UInspectorKinestheticsComponent;
 class ULaserCapacitorComponent;
 class ULaserPlaneAimComponent;
@@ -50,6 +52,13 @@ public:
 
 	FOnTelemetryStreamSignature OnTelemetryStream;
 	FOnTelemetryImpulseSignature OnTelemetryImpulse;
+	FOnInspectorReticleProjectionUpdatedSignature OnReticleProjectionUpdated;
+
+	UFUNCTION(BlueprintPure, Category = "Inspector|HUD")
+	UInspectorHudBridgeComponent* GetInspectorHudBridgeComponent() const { return InspectorHudBridgeComponent; }
+
+	UFUNCTION(BlueprintCallable, Category = "Inspector|Diagnostics")
+	void InjectAimCursorDeltaForTest(FVector2D MouseDelta);
 
 protected:
 	virtual void BeginPlay() override;
@@ -110,6 +119,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inspector|Audio")
 	TObjectPtr<UAudioTelemetryBridgeComponent> AudioTelemetryBridgeComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inspector|HUD")
+	TObjectPtr<UInspectorHudBridgeComponent> InspectorHudBridgeComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inspector|Audio")
 	TObjectPtr<UAudioComponent> ContinuousMetaSoundAudioComponent;
@@ -304,6 +316,9 @@ private:
 	bool HasValidPredictiveSliceContact() const;
 	bool DoesCurrentSliceEstimateLandInQuotaWindow() const;
 	void UpdateCameraParallaxFromAim();
+	bool IsLegacyWorldSpaceReadoutEnabled() const;
+	void UpdateLegacyReticleVisibility();
+	bool ProjectSteadyWorldAnchorToNormalizedUV(const FVector& SteadyWorldAnchor, FVector2D& OutNormalizedUV) const;
 	void UpdateLaserReticleTransform();
 	void UpdateLaserReticleReadoutText();
 	void ApplyNativeScalabilityPreset(int32 QualityLevel, float TsrResolutionScalePercent);
@@ -426,9 +441,12 @@ private:
 	FTimerHandle ManualResetHoldTimerHandle;
 	FShiftHudSnapshot CachedHudSnapshot;
 	FSlicePreviewTelemetry CachedPreviewTelemetry;
+	FVector2D LastBroadcastReticleUV = FVector2D(-1.0f, -1.0f);
+	EShiftPhase CachedShiftPhase = EShiftPhase::WaitingForStations;
 	float CachedVeinProximityNormalized = 0.0f;
 	float CachedClampStrainNormalized = 0.0f;
 	float CachedLaserChargeNormalized = 0.0f;
 	bool bCachedIntersectsMonolith = false;
 	bool bIsFastRollSnapHeld = false;
+	bool bLastBroadcastReticleVisible = false;
 };

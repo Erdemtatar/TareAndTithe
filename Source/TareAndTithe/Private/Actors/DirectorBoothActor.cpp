@@ -221,6 +221,8 @@ ADirectorBoothActor::ADirectorBoothActor()
 		}
 		PlateComp->SetRelativeLocation(FVector::ZeroVector);
 		PlateComp->SetRelativeScale3D(Scale3D);
+		PlateComp->SetVisibility(false, false);
+		PlateComp->SetHiddenInGame(true, false);
 	};
 
 	// Unscaled (1,1,1) root grouping Top-Left & Top-Right corner HUD terminal plaques.
@@ -228,6 +230,8 @@ ADirectorBoothActor::ADirectorBoothActor()
 	BoothSignRoot->SetupAttachment(BoothRoot);
 	BoothSignRoot->PrimaryComponentTick.bCanEverTick = false;
 	BoothSignRoot->SetRelativeTransform(FTransform::Identity);
+	BoothSignRoot->SetVisibility(false, false);
+	BoothSignRoot->SetHiddenInGame(true, false);
 
 	auto ConfigureWingText = [this](
 		UTextRenderComponent* TextComp,
@@ -259,6 +263,8 @@ ADirectorBoothActor::ADirectorBoothActor()
 		}
 		TextComp->SetTextRenderColor(Color);
 		TextComp->SetText(FText::FromString(DefaultText));
+		TextComp->SetVisibility(false, false);
+		TextComp->SetHiddenInGame(true, false);
 	};
 
 	// Top-Left Viewport Corner Plaque (World X=192, Y=-129.0, Z=237.5; pitched +12 deg down & yawed -14 deg inward toward camera).
@@ -477,6 +483,7 @@ void ADirectorBoothActor::BeginPlay()
 	}
 
 	SetShutterTargetOpenAlpha(0.0f, true);
+	UpdateLegacySignboardVisibility();
 
 	if (UWorld* World = GetWorld())
 	{
@@ -500,7 +507,8 @@ void ADirectorBoothActor::BeginPlay()
 			CachedSnapshot = InitialSnapshot;
 			CachedDirectiveText = InitialSnapshot.ContractDirectiveText;
 			CachedBriefText = InitialSnapshot.ContractBriefText;
-			bIsBriefPulseActive = (CachedShiftPhase == EShiftPhase::ActiveInspection) &&
+			bIsBriefPulseActive = IsLegacyWorldSpaceReadoutEnabled() &&
+				(CachedShiftPhase == EShiftPhase::ActiveInspection) &&
 				InitialSnapshot.bIsContractBriefActive &&
 				!CachedBriefText.IsEmpty();
 			bIsBriefFadingOut = false;
@@ -508,6 +516,7 @@ void ADirectorBoothActor::BeginPlay()
 			BriefFadeElapsedSeconds = 0.0f;
 
 			HandleShiftPhaseChanged(CachedShiftPhase);
+			UpdateLegacySignboardVisibility();
 			RefreshContractDirectiveWingReadout();
 			RefreshRequisitionCornerReadout();
 			RefreshDirectorIntercomWingReadout();
@@ -543,6 +552,7 @@ void ADirectorBoothActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void ADirectorBoothActor::ApplyPresentationData(const UTareTithePresentationDataAsset* InPresentationData)
 {
 	PresentationData = InPresentationData;
+	UpdateLegacySignboardVisibility();
 
 	if (!IsValid(InPresentationData))
 	{
@@ -550,6 +560,7 @@ void ADirectorBoothActor::ApplyPresentationData(const UTareTithePresentationData
 		{
 			BoothSignRoot->SetRelativeTransform(FTransform::Identity);
 		}
+		UpdateBoothTickEnabled();
 		return;
 	}
 
@@ -587,6 +598,14 @@ void ADirectorBoothActor::ApplyPresentationData(const UTareTithePresentationData
 		UnscaledSignTransform.SetScale3D(FVector::OneVector);
 		BoothSignRoot->SetRelativeTransform(UnscaledSignTransform);
 	}
+
+	if (IsLegacyWorldSpaceReadoutEnabled())
+	{
+		RefreshContractDirectiveWingReadout();
+		RefreshRequisitionCornerReadout();
+		RefreshDirectorIntercomWingReadout();
+	}
+	UpdateBoothTickEnabled();
 }
 
 void ADirectorBoothActor::Tick(float DeltaSeconds)
@@ -748,7 +767,8 @@ void ADirectorBoothActor::HandleContractSnapshotUpdated(const FContractRuntimeSn
 		}
 	}
 
-	const bool bShouldShowBrief = (CachedShiftPhase == EShiftPhase::ActiveInspection) &&
+	const bool bShouldShowBrief = IsLegacyWorldSpaceReadoutEnabled() &&
+		(CachedShiftPhase == EShiftPhase::ActiveInspection) &&
 		Snapshot.bIsContractBriefActive &&
 		!Snapshot.ContractBriefText.IsEmpty();
 
@@ -834,8 +854,59 @@ void ADirectorBoothActor::HandleActiveContractLoaded(
 	UpdateBoothTickEnabled();
 }
 
+bool ADirectorBoothActor::IsLegacyWorldSpaceReadoutEnabled() const
+{
+	return IsValid(PresentationData) && PresentationData->HudConfig.bEnableLegacyWorldSpaceReadouts;
+}
+
+void ADirectorBoothActor::UpdateLegacySignboardVisibility()
+{
+	const bool bShowLegacy = IsLegacyWorldSpaceReadoutEnabled();
+	if (!bShowLegacy)
+	{
+		bIsBriefPulseActive = false;
+		bIsBriefFadingOut = false;
+	}
+
+	USceneComponent* const SignRootsAndPlates[3] = {
+		BoothSignRoot,
+		BoothHeaderBackingPlate,
+		BoothVerdictBackingPlate
+	};
+	for (USceneComponent* Comp : SignRootsAndPlates)
+	{
+		if (IsValid(Comp))
+		{
+			Comp->SetVisibility(bShowLegacy, false);
+			Comp->SetHiddenInGame(!bShowLegacy, false);
+		}
+	}
+
+	UTextRenderComponent* const CornerTexts[6] = {
+		BoothStencilText,
+		ContractDirectiveReadoutText,
+		RequisitionReadoutText,
+		BoothRightHeaderText,
+		VerdictBannerText,
+		VerdictBannerSubText
+	};
+	for (UTextRenderComponent* TextComp : CornerTexts)
+	{
+		if (IsValid(TextComp))
+		{
+			TextComp->SetVisibility(bShowLegacy, false);
+			TextComp->SetHiddenInGame(!bShowLegacy, false);
+		}
+	}
+}
+
 void ADirectorBoothActor::RefreshContractDirectiveWingReadout()
 {
+	if (!IsLegacyWorldSpaceReadoutEnabled())
+	{
+		return;
+	}
+
 	const int32 DisplayContractNum = FMath::Clamp(CachedContractIndex + 1, 1, FMath::Max(1, CachedTotalContracts));
 	const int32 DisplayTotalCount = FMath::Max(1, CachedTotalContracts);
 	const int32 ShiftNum = FMath::Max(1, CachedSnapshot.CurrentShiftNumber);
@@ -887,7 +958,7 @@ void ADirectorBoothActor::RefreshContractDirectiveWingReadout()
 
 void ADirectorBoothActor::RefreshRequisitionCornerReadout()
 {
-	if (!IsValid(RequisitionReadoutText))
+	if (!IsLegacyWorldSpaceReadoutEnabled() || !IsValid(RequisitionReadoutText))
 	{
 		return;
 	}
@@ -945,6 +1016,11 @@ void ADirectorBoothActor::RefreshRequisitionCornerReadout()
 
 void ADirectorBoothActor::RefreshDirectorIntercomWingReadout()
 {
+	if (!IsLegacyWorldSpaceReadoutEnabled())
+	{
+		return;
+	}
+
 	if (IsValid(BoothRightHeaderText))
 	{
 		BoothRightHeaderText->SetTextRenderColor(BoothHeaderCyanColor);

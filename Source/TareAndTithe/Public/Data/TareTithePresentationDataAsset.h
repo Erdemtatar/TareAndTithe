@@ -249,6 +249,93 @@ struct TAREANDTITHE_API FCameraPostProcessPolishConfig
 	float TonemapperSharpen = 0.35f;
 };
 
+USTRUCT(BlueprintType)
+struct TAREANDTITHE_API FHudPresentationConfig
+{
+	GENERATED_BODY()
+
+	/** Legacy 3D world-space UTextRenderComponent kill-switch (default false: pure C++ post-tonemap Slate HUD active). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Legacy")
+	bool bEnableLegacyWorldSpaceReadouts = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Opacity", meta = (ClampMin = "0.40", ClampMax = "0.98"))
+	float CornerPanelOpacity = 0.80f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Opacity", meta = (ClampMin = "0.35", ClampMax = "0.95"))
+	float ReticleBackingOpacity = 0.65f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Opacity", meta = (ClampMin = "0.50", ClampMax = "0.98"))
+	float BottomCrtConsoleOpacity = 0.88f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|CRT", meta = (ClampMin = "0.00", ClampMax = "0.60"))
+	float CrtScanlineOpacity = 0.20f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|CRT", meta = (ClampMin = "2.0", ClampMax = "8.0"))
+	float CrtScanlinePitchPx = 3.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Layout", meta = (ClampMin = "240.0", ClampMax = "520.0"))
+	float CornerPanelWidthPx = 350.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Layout", meta = (ClampMin = "6.0", ClampMax = "40.0"))
+	float CornerPanelMarginPx = 14.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Layout", meta = (ClampMin = "0.14", ClampMax = "0.28"))
+	float CornerPanelMaxViewportWidthFraction = 0.20f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Layout", meta = (ClampMin = "480.0", ClampMax = "1000.0"))
+	float BottomConsoleWidthPx = 720.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Layout", meta = (ClampMin = "0.35", ClampMax = "0.75"))
+	float BottomConsoleMaxViewportWidthFraction = 0.54f;
+
+	/** Uncluttered central sightline corridor between lowest laser plane travel (~0.575 Y) and scale pan top lip (~0.790 Y). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Banner", meta = (ClampMin = "0.05", ClampMax = "0.72"))
+	float HazardBannerTopAnchorNormalized = 0.595f;
+
+	/** Dead-center authoritative stamp zone for P0 terminal fault/pass/shift/bond plaques. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Banner", meta = (ClampMin = "0.28", ClampMax = "0.55"))
+	float VerdictStampTopAnchorNormalized = 0.42f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Banner", meta = (ClampMin = "1", ClampMax = "5"))
+	int32 AlertPulseCount = 3;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Banner", meta = (ClampMin = "0.30", ClampMax = "3.00"))
+	float AlertPulseEnvelopeSeconds = 1.05f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Banner", meta = (ClampMin = "0.30", ClampMax = "0.95"))
+	float AlertPostPulseBackgroundOpacity = 0.62f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Banner", meta = (ClampMin = "0.60", ClampMax = "1.00"))
+	float AlertPostPulseTextOpacity = 0.95f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Hysteresis", meta = (ClampMin = "0.10", ClampMax = "0.90"))
+	float VeinHazardEnterThreshold = 0.35f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Hysteresis", meta = (ClampMin = "0.05", ClampMax = "0.80"))
+	float VeinHazardExitThreshold = 0.22f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Hysteresis", meta = (ClampMin = "0.50", ClampMax = "0.98"))
+	float ClampCriticalEnterThreshold = 0.78f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Hysteresis", meta = (ClampMin = "0.35", ClampMax = "0.90"))
+	float ClampCriticalExitThreshold = 0.68f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Hysteresis", meta = (ClampMin = "0.10", ClampMax = "0.90"))
+	float ClampFatigueWarnEnterThreshold = 0.35f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Hysteresis", meta = (ClampMin = "0.05", ClampMax = "0.80"))
+	float ClampFatigueWarnExitThreshold = 0.20f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Reticle", meta = (ClampMin = "0.0001", ClampMax = "0.02"))
+	float ReticleNormalizedUvDeadband = 0.001f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Theme")
+	FLinearColor PanelAnthraciteTint = FLinearColor(0.014f, 0.017f, 0.022f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Theme")
+	FLinearColor PanelBorderGunmetalTint = FLinearColor(0.19f, 0.23f, 0.28f, 0.92f);
+};
+
 UCLASS(BlueprintType)
 class TAREANDTITHE_API UTareTithePresentationDataAsset : public UPrimaryDataAsset
 {
@@ -367,6 +454,13 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ConsoleAlignment")
 	FTransform BoothSignLocalOffset = FTransform::Identity;
+
+	// ============================================================================
+	// Pure C++ Screen-Space Slate HUD Styling & Hysteresis Configuration
+	// ============================================================================
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD")
+	FHudPresentationConfig HudConfig;
 
 	// ============================================================================
 	// Niagara VFX

@@ -287,6 +287,8 @@ private:
 		const UMonolithContractDataAsset* Contract,
 		const UShiftProgressionDataAsset* ShiftConfig,
 		int32 ContractIndex);
+	bool IsLegacyWorldSpaceReadoutEnabled() const;
+	void UpdateLegacySignboardVisibility();
 	void RefreshContractDirectiveWingReadout();
 	void RefreshRequisitionCornerReadout();
 	void RefreshDirectorIntercomWingReadout();

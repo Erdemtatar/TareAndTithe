@@ -259,6 +259,8 @@ private:
 	void HandleDiverterRouteSlewCompleted(EDiverterRoute ConvergedRoute);
 	bool ShouldIgnorePayloadInPanForTareRamp(const AActor* CandidateActor) const;
 	void EnforcePanTriggerGeometryAndCollision();
+	bool IsLegacyWorldSpaceReadoutEnabled() const;
+	void UpdateLegacyConsoleVisibility();
 	void RefreshContractHeaderReadout();
 	void RefreshStatusBannerReadout();
 	void SetStatusBannerTextFitted(const FString& BannerString, const FColor& BannerColor);

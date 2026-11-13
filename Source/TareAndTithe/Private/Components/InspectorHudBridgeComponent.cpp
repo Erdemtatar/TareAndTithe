@@ -1,0 +1,1277 @@
+// Copyright Epic Games, Inc. All Rights Reserved.
+
+#include "Components/InspectorHudBridgeComponent.h"
+#include "Components/AudioTelemetryBridgeComponent.h"
+#include "Components/LaserPlaneAimComponent.h"
+#include "Data/MonolithContractDataAsset.h"
+#include "Data/ShiftProgressionDataAsset.h"
+#include "Engine/Engine.h"
+#include "Engine/GameViewportClient.h"
+#include "Engine/World.h"
+#include "HAL/FileManager.h"
+#include "Misc/Paths.h"
+#include "UI/STareTitheHudOverlay.h"
+#include "UnrealClient.h"
+
+#define LOCTEXT_NAMESPACE "TareAndTitheHud"
+
+int32 UInspectorHudBridgeComponent::GActiveMountedOverlayCount = 0;
+
+namespace
+{
+	constexpr float QuotaEpsilonKg = 1.0e-3f;
+	constexpr float MinPredictiveMassKg = 0.01f;
+	constexpr double VeinDropEdgeDebounceSeconds = 0.18;
+}
+
+UInspectorHudBridgeComponent::UInspectorHudBridgeComponent()
+{
+	// Tier 1 strictly enforced: 0.00 ms idle CPU cost.
+	PrimaryComponentTick.bCanEverTick = false;
+	PrimaryComponentTick.bStartWithTickEnabled = false;
+}
+
+int32 UInspectorHudBridgeComponent::GetActiveMountedOverlayCount()
+{
+	return GActiveMountedOverlayCount;
+}
+
+void UInspectorHudBridgeComponent::BeginPlay()
+{
+	Super::BeginPlay();
+
+	ResetTransientTelemetryAndHysteresis();
+
+	UWorld* World = GetWorld();
+	if (!IsValid(World) || !World->IsGameWorld())
+	{
+		return;
+	}
+
+	if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
+	{
+		ShiftSubsystem->OnNativeContractSnapshotUpdated.AddUObject(this, &UInspectorHudBridgeComponent::HandleContractSnapshotUpdated);
+		ShiftSubsystem->OnShiftVerdict.AddUniqueDynamic(this, &UInspectorHudBridgeComponent::HandleShiftVerdict);
+		ShiftSubsystem->OnShiftPhaseChanged.AddUObject(this, &UInspectorHudBridgeComponent::HandleShiftPhaseChanged);
+		ShiftSubsystem->OnActiveContractLoaded.AddUObject(this, &UInspectorHudBridgeComponent::HandleActiveContractLoaded);
+		ShiftSubsystem->OnPresentationAssetChanged.AddUObject(this, &UInspectorHudBridgeComponent::ApplyPresentationData);
+
+		ApplyPresentationData(ShiftSubsystem->GetActivePresentationAsset());
+		CachedShiftPhase = ShiftSubsystem->GetCurrentPhase();
+		CachedContractIndex = ShiftSubsystem->GetCurrentContractIndex();
+		CachedTotalContracts = FMath::Max(1, ShiftSubsystem->GetTotalContractCount());
+		CachedSnapshot = ShiftSubsystem->GetCurrentSnapshot();
+		bCachedReticleVisible = (CachedShiftPhase == EShiftPhase::ActiveInspection);
+	}
+
+	MountOverlayIfNeeded();
+	PushAllPanels();
+}
+
+void UInspectorHudBridgeComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (UWorld* World = GetWorld())
+	{
+		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
+		{
+			ShiftSubsystem->OnNativeContractSnapshotUpdated.RemoveAll(this);
+			ShiftSubsystem->OnShiftVerdict.RemoveDynamic(this, &UInspectorHudBridgeComponent::HandleShiftVerdict);
+			ShiftSubsystem->OnShiftPhaseChanged.RemoveAll(this);
+			ShiftSubsystem->OnActiveContractLoaded.RemoveAll(this);
+			ShiftSubsystem->OnPresentationAssetChanged.RemoveAll(this);
+		}
+	}
+
+	if (IsValid(BoundLaserAimComp))
+	{
+		BoundLaserAimComp->OnPreviewUpdated.RemoveAll(this);
+		BoundLaserAimComp = nullptr;
+	}
+	if (IsValid(BoundAudioBridgeComp))
+	{
+		BoundAudioBridgeComp->OnFilteredTelemetryStream.RemoveAll(this);
+		BoundAudioBridgeComp = nullptr;
+	}
+
+	if (ViewportResizeDelegateHandle.IsValid())
+	{
+		FViewport::ViewportResizedEvent.Remove(ViewportResizeDelegateHandle);
+		ViewportResizeDelegateHandle.Reset();
+	}
+
+	UnmountOverlayDeterministic();
+
+	Super::EndPlay(EndPlayReason);
+}
+
+void UInspectorHudBridgeComponent::BindPawnTelemetrySources(
+	ULaserPlaneAimComponent* InLaserAimComp,
+	UAudioTelemetryBridgeComponent* InAudioBridgeComp,
+	FOnInspectorReticleProjectionUpdatedSignature& InReticleProjectionDelegate)
+{
+	if (IsValid(BoundLaserAimComp))
+	{
+		BoundLaserAimComp->OnPreviewUpdated.RemoveAll(this);
+	}
+	BoundLaserAimComp = InLaserAimComp;
+	if (IsValid(BoundLaserAimComp))
+	{
+		BoundLaserAimComp->OnPreviewUpdated.AddUObject(this, &UInspectorHudBridgeComponent::HandlePreviewUpdated);
+		CachedPreview = BoundLaserAimComp->GetLastPreviewTelemetry();
+	}
+
+	if (IsValid(BoundAudioBridgeComp))
+	{
+		BoundAudioBridgeComp->OnFilteredTelemetryStream.RemoveAll(this);
+	}
+	BoundAudioBridgeComp = InAudioBridgeComp;
+	if (IsValid(BoundAudioBridgeComp))
+	{
+		BoundAudioBridgeComp->OnFilteredTelemetryStream.AddUObject(this, &UInspectorHudBridgeComponent::HandleFilteredTelemetryStream);
+		CachedClampStrain = FMath::Clamp(
+			BoundAudioBridgeComp->GetLastFlushedStreamValue(ETelemetryStreamId::ClampStrain),
+			0.0f,
+			1.0f);
+		CachedClampFatigue = FMath::Clamp(
+			BoundAudioBridgeComp->GetLastFlushedStreamValue(ETelemetryStreamId::ClampFatigue),
+			0.0f,
+			1.0f);
+	}
+
+	if (ReticleProjectionDelegateHandle.IsValid())
+	{
+		InReticleProjectionDelegate.Remove(ReticleProjectionDelegateHandle);
+		ReticleProjectionDelegateHandle.Reset();
+	}
+	ReticleProjectionDelegateHandle = InReticleProjectionDelegate.AddUObject(
+		this,
+		&UInspectorHudBridgeComponent::HandleReticleProjectionUpdated);
+
+	PushAllPanels();
+}
+
+void UInspectorHudBridgeComponent::ApplyPresentationData(const UTareTithePresentationDataAsset* InPresentationData)
+{
+	PresentationData = InPresentationData;
+	ActiveHudConfig = IsValid(InPresentationData)
+		? InPresentationData->HudConfig
+		: FHudPresentationConfig();
+
+	if (ActiveHudConfig.bEnableLegacyWorldSpaceReadouts)
+	{
+		UnmountOverlayDeterministic();
+		return;
+	}
+
+	MountOverlayIfNeeded();
+	if (OverlayWidget.IsValid())
+	{
+		OverlayWidget->ApplyHudConfig(ActiveHudConfig);
+		PushAllPanels();
+	}
+}
+
+void UInspectorHudBridgeComponent::MountOverlayIfNeeded()
+{
+	if (bIsMountedToViewport || ActiveHudConfig.bEnableLegacyWorldSpaceReadouts)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!IsValid(World) || !World->IsGameWorld())
+	{
+		return;
+	}
+
+	UGameViewportClient* ViewportClient = World->GetGameViewport();
+	if (!IsValid(ViewportClient))
+	{
+		return;
+	}
+
+	const FVector2D InitialLocalSize = ComputeCurrentViewportLocalSize();
+	SAssignNew(OverlayWidget, STareTitheHudOverlay)
+		.HudConfig(ActiveHudConfig)
+		.InitialLocalViewportSize(InitialLocalSize);
+
+	ViewportClient->AddViewportWidgetContent(OverlayWidget.ToSharedRef(), 10);
+	MountedViewportClient = ViewportClient;
+	bIsMountedToViewport = true;
+	++GActiveMountedOverlayCount;
+
+	if (!ViewportResizeDelegateHandle.IsValid())
+	{
+		ViewportResizeDelegateHandle = FViewport::ViewportResizedEvent.AddUObject(
+			this,
+			&UInspectorHudBridgeComponent::HandleViewportResized);
+	}
+}
+
+void UInspectorHudBridgeComponent::UnmountOverlayDeterministic()
+{
+	if (bIsMountedToViewport)
+	{
+		UGameViewportClient* ViewportClient = MountedViewportClient.Get();
+		if (!IsValid(ViewportClient))
+		{
+			if (UWorld* World = GetWorld())
+			{
+				ViewportClient = World->GetGameViewport();
+			}
+		}
+
+		if (IsValid(ViewportClient) && OverlayWidget.IsValid())
+		{
+			ViewportClient->RemoveViewportWidgetContent(OverlayWidget.ToSharedRef());
+		}
+
+		bIsMountedToViewport = false;
+		GActiveMountedOverlayCount = FMath::Max(0, GActiveMountedOverlayCount - 1);
+	}
+
+	MountedViewportClient.Reset();
+	OverlayWidget.Reset();
+}
+
+FVector2D UInspectorHudBridgeComponent::ComputeCurrentViewportLocalSize() const
+{
+	const UWorld* World = GetWorld();
+	const UGameViewportClient* ViewportClient = IsValid(World) ? World->GetGameViewport() : nullptr;
+	if (!IsValid(ViewportClient))
+	{
+		return FVector2D(1536.0f, 864.0f);
+	}
+
+	FVector2D PixelSize(1920.0f, 1080.0f);
+	ViewportClient->GetViewportSize(PixelSize);
+	const float DpiScale = FMath::Max(0.25f, ViewportClient->GetDPIScale());
+	return FVector2D(
+		FMath::Max(320.0f, PixelSize.X / DpiScale),
+		FMath::Max(240.0f, PixelSize.Y / DpiScale));
+}
+
+void UInspectorHudBridgeComponent::HandleViewportResized(FViewport* /*Viewport*/, uint32 /*UnusedResizeCode*/)
+{
+	if (OverlayWidget.IsValid())
+	{
+		OverlayWidget->SetLocalViewportSize(ComputeCurrentViewportLocalSize());
+	}
+}
+
+void UInspectorHudBridgeComponent::ResetTransientTelemetryAndHysteresis()
+{
+	// Correction E: Explicit contract & intro reset hygiene so stale hazard/strain latches never bleed across resets.
+	CachedClampStrain = 0.0f;
+	CachedClampFatigue = 0.0f;
+	CachedPreview = FSlicePreviewTelemetry();
+
+	bLatchedIsotopeHazard = false;
+	bLatchedVeinInDrop = false;
+	bLatchedClampCritical = false;
+	bLatchedDirectorsCutReady = false;
+	bLatchedQuotaMetReady = false;
+	bHasLatchedTerminalVerdict = false;
+	LatchedFaultReason = EContractFaultReason::None;
+	ActiveCenterAlertState = EHudCenterAlertState::None;
+	LastVeinInDropAutoClearTimeSec = -10.0;
+}
+
+void UInspectorHudBridgeComponent::HandleShiftVerdict(EShiftVerdictType Verdict, EContractFaultReason FaultReason)
+{
+	LatchedVerdict = Verdict;
+	LatchedFaultReason = FaultReason;
+	bHasLatchedTerminalVerdict = true;
+
+	bLatchedIsotopeHazard = false;
+	bLatchedVeinInDrop = false;
+	bLatchedClampCritical = false;
+	bLatchedDirectorsCutReady = false;
+	bLatchedQuotaMetReady = false;
+
+	PushTopRightPanel();
+	PushCenterAlertBanner();
+	PushBottomCrtConsole();
+}
+
+void UInspectorHudBridgeComponent::HandleContractSnapshotUpdated(const FContractRuntimeSnapshot& Snapshot)
+{
+	const EDiverterRoute PreviousRoute = CachedSnapshot.ActiveDiverterRoute;
+	CachedSnapshot = Snapshot;
+	CachedContractIndex = Snapshot.ContractIndex;
+
+	if (UWorld* World = GetWorld())
+	{
+		if (const UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
+		{
+			CachedTotalContracts = FMath::Max(1, ShiftSubsystem->GetTotalContractCount());
+			CachedShiftPhase = ShiftSubsystem->GetCurrentPhase();
+		}
+	}
+
+	// Allow immediate re-arm if operator manually toggles diverter back to TitheScale while hovering a vein drop
+	if (PreviousRoute != Snapshot.ActiveDiverterRoute && Snapshot.ActiveDiverterRoute == EDiverterRoute::TitheScale)
+	{
+		LastVeinInDropAutoClearTimeSec = -10.0;
+	}
+
+	PushAllPanels();
+}
+
+void UInspectorHudBridgeComponent::HandleShiftPhaseChanged(EShiftPhase NewPhase)
+{
+	CachedShiftPhase = NewPhase;
+	bCachedReticleVisible = (NewPhase == EShiftPhase::ActiveInspection);
+
+	if (NewPhase == EShiftPhase::ContractIntro)
+	{
+		ResetTransientTelemetryAndHysteresis();
+	}
+	else if (NewPhase == EShiftPhase::ActiveInspection)
+	{
+		bHasLatchedTerminalVerdict = false;
+		LatchedFaultReason = EContractFaultReason::None;
+	}
+	else if (NewPhase == EShiftPhase::FaultResetDelay)
+	{
+		bLatchedIsotopeHazard = false;
+		bLatchedVeinInDrop = false;
+		bLatchedClampCritical = false;
+		bLatchedDirectorsCutReady = false;
+		bLatchedQuotaMetReady = false;
+
+		if (UWorld* World = GetWorld())
+		{
+			if (const UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
+			{
+				LatchedVerdict = EShiftVerdictType::ContractFaultReset;
+				LatchedFaultReason = ShiftSubsystem->GetLastFaultReason();
+				bHasLatchedTerminalVerdict = true;
+			}
+		}
+	}
+	else
+	{
+		bLatchedIsotopeHazard = false;
+		bLatchedVeinInDrop = false;
+		bLatchedClampCritical = false;
+		bLatchedDirectorsCutReady = false;
+		bLatchedQuotaMetReady = false;
+	}
+
+	PushAllPanels();
+}
+
+void UInspectorHudBridgeComponent::HandleActiveContractLoaded(
+	const UMonolithContractDataAsset* Contract,
+	const UShiftProgressionDataAsset* ShiftConfig,
+	int32 ContractIndex)
+{
+	ResetTransientTelemetryAndHysteresis();
+
+	CachedContractIndex = ContractIndex;
+	if (IsValid(ShiftConfig))
+	{
+		CachedTotalContracts = FMath::Max(1, ShiftConfig->OrderedContracts.Num());
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		if (const UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
+		{
+			CachedSnapshot = ShiftSubsystem->GetCurrentSnapshot();
+			CachedShiftPhase = ShiftSubsystem->GetCurrentPhase();
+			bCachedReticleVisible = (CachedShiftPhase == EShiftPhase::ActiveInspection);
+		}
+	}
+
+	if (IsValid(Contract) && CachedSnapshot.ContractDirectiveText.IsEmpty())
+	{
+		CachedSnapshot.ContractDirectiveText = Contract->ContractDirectiveText;
+	}
+
+	PushAllPanels();
+}
+
+void UInspectorHudBridgeComponent::HandlePreviewUpdated(const FSlicePreviewTelemetry& PreviewTelemetry)
+{
+	CachedPreview = PreviewTelemetry;
+	PushReticleCard();
+	PushCenterAlertBanner();
+}
+
+void UInspectorHudBridgeComponent::HandleFilteredTelemetryStream(ETelemetryStreamId StreamId, float NormalizedValue)
+{
+	if (StreamId == ETelemetryStreamId::ClampStrain)
+	{
+		CachedClampStrain = FMath::Clamp(NormalizedValue, 0.0f, 1.0f);
+		PushReticleCard();
+		PushCenterAlertBanner();
+		PushTopRightPanel();
+		PushBottomCrtConsole();
+	}
+	else if (StreamId == ETelemetryStreamId::ClampFatigue)
+	{
+		CachedClampFatigue = FMath::Clamp(NormalizedValue, 0.0f, 1.0f);
+		PushReticleCard();
+		PushCenterAlertBanner();
+	}
+}
+
+void UInspectorHudBridgeComponent::HandleReticleProjectionUpdated(
+	const FVector2D& NormalizedViewportUV,
+	bool bReticleVisible,
+	const FVector& /*SteadyWorldAnchor*/)
+{
+	CachedReticleNormalizedUV = NormalizedViewportUV;
+	bCachedReticleVisible = bReticleVisible;
+	PushReticleCard();
+}
+
+void UInspectorHudBridgeComponent::PushAllPanels()
+{
+	if (!OverlayWidget.IsValid())
+	{
+		return;
+	}
+	PushTopLeftPanel();
+	PushTopRightPanel();
+	PushBottomCrtConsole();
+	PushCenterAlertBanner();
+	PushReticleCard();
+}
+
+void UInspectorHudBridgeComponent::PushTopLeftPanel()
+{
+	if (!OverlayWidget.IsValid())
+	{
+		return;
+	}
+
+	FTopLeftIndentureViewModel VM;
+
+	const int32 DisplayCtr = FMath::Clamp(CachedContractIndex + 1, 1, FMath::Max(1, CachedTotalContracts));
+	const int32 TotalCtrs = FMath::Max(1, CachedTotalContracts);
+	const int32 ShiftNum = FMath::Max(1, CachedSnapshot.CurrentShiftNumber);
+	const int32 TargetShifts = FMath::Max(1, CachedSnapshot.TargetBondShifts);
+
+	const FString HeaderStr = (ShiftNum <= TargetShifts)
+		? FString::Printf(TEXT("INDENTURE #409 // SHIFT %02d/%02d - CTR %02d/%02d"), ShiftNum, TargetShifts, DisplayCtr, TotalCtrs)
+		: FString::Printf(TEXT("INDENTURE #409 // OVT-%02d - CTR %02d/%02d"), ShiftNum, DisplayCtr, TotalCtrs);
+	VM.HeaderText = FText::FromString(HeaderStr);
+
+	const bool bShowBrief = (CachedShiftPhase == EShiftPhase::ActiveInspection) &&
+		CachedSnapshot.bIsContractBriefActive &&
+		!CachedSnapshot.ContractBriefText.IsEmpty();
+
+	if (bShowBrief)
+	{
+		VM.DirectiveBodyText = FText::FromString(CachedSnapshot.ContractBriefText);
+		VM.DirectiveTextColor = FLinearColor(1.00f, 0.78f, 0.16f, 1.0f);
+		VM.AccentBarColor = FLinearColor(1.00f, 0.72f, 0.10f, 1.0f);
+	}
+	else
+	{
+		const FString DirectiveStr = CachedSnapshot.ContractDirectiveText.IsEmpty()
+			? TEXT("CUT TO QUOTA | STAMP [E]")
+			: CachedSnapshot.ContractDirectiveText;
+		VM.DirectiveBodyText = FText::FromString(DirectiveStr);
+		VM.DirectiveTextColor = FLinearColor(1.00f, 0.84f, 0.22f, 1.0f);
+		VM.AccentBarColor = FLinearColor(0.05f, 0.88f, 1.00f, 1.0f);
+	}
+
+	const int32 Scrip = FMath::Max(0, CachedSnapshot.ScripBalance);
+	VM.ScripBalanceText = FText::FromString(FString::Printf(TEXT("SCRIP: %02d"), Scrip));
+
+	const uint8 Levels[3] = {
+		CachedSnapshot.ClampHydraulicsLevel,
+		CachedSnapshot.TareHopperLevel,
+		CachedSnapshot.VeinScannerDamperLevel
+	};
+	const TCHAR* Labels[3] = { TEXT("[1]HYD"), TEXT("[2]TARE"), TEXT("[3]SCAN") };
+
+	for (int32 Idx = 0; Idx < 3; ++Idx)
+	{
+		const int32 Lv = FMath::Clamp(static_cast<int32>(Levels[Idx]), 0, 3);
+		if (Lv >= 3)
+		{
+			VM.UpgradePillTexts[Idx] = FText::FromString(FString::Printf(TEXT("%s MAX"), Labels[Idx]));
+			VM.UpgradePillColors[Idx] = FLinearColor(1.00f, 0.82f, 0.18f, 1.0f);
+		}
+		else
+		{
+			const int32 Cost = UInspectionShiftSubsystem::GetRequisitionNextCost(static_cast<uint8>(Lv));
+			VM.UpgradePillTexts[Idx] = FText::FromString(FString::Printf(TEXT("%s L%d(%d)"), Labels[Idx], Lv, Cost));
+			VM.UpgradePillColors[Idx] = (Scrip >= Cost)
+				? FLinearColor(0.10f, 0.98f, 0.44f, 1.0f)
+				: FLinearColor(0.58f, 0.66f, 0.74f, 0.92f);
+		}
+	}
+
+	if (!CachedSnapshot.TransientRequisitionFeedback.IsEmpty())
+	{
+		VM.bHasTransientFeedback = true;
+		VM.TransientFeedbackText = FText::FromString(CachedSnapshot.TransientRequisitionFeedback);
+		VM.TransientFeedbackColor = CachedSnapshot.bLastRequisitionSucceeded
+			? FLinearColor(0.10f, 0.98f, 0.44f, 1.0f)
+			: FLinearColor(1.00f, 0.24f, 0.18f, 1.0f);
+	}
+
+	OverlayWidget->UpdateTopLeftPanel(VM);
+}
+
+void UInspectorHudBridgeComponent::PushTopRightPanel()
+{
+	if (!OverlayWidget.IsValid())
+	{
+		return;
+	}
+
+	FTopRightDirectorViewModel VM;
+	VM.HeaderText = LOCTEXT("DirectorHeader", "OFFICE OF THE DIRECTOR // OVERLOOK DECK");
+
+	const FString IntercomStr = CachedSnapshot.DirectorIntercomLine.IsEmpty()
+		? TEXT("#409: WORK OFF YOUR 3-SHIFT BOND. CARVE.")
+		: CachedSnapshot.DirectorIntercomLine;
+	VM.IntercomBodyText = FText::FromString(IntercomStr);
+
+	const float EffectiveStrain = FMath::Max(CachedClampStrain, CachedSnapshot.ClampStrainNormalized);
+
+	if (CachedShiftPhase == EShiftPhase::FaultResetDelay)
+	{
+		VM.StatusBadgeText = LOCTEXT("BadgeFault", "[FAULT]");
+		VM.AccentBarColor = FLinearColor(1.00f, 0.20f, 0.14f, 1.0f);
+		VM.IntercomTextColor = FLinearColor(1.00f, 0.34f, 0.26f, 1.0f);
+	}
+	else if (CachedShiftPhase == EShiftPhase::BondCleared)
+	{
+		VM.StatusBadgeText = LOCTEXT("BadgeCleared", "[CLEARED]");
+		VM.AccentBarColor = FLinearColor(1.00f, 0.82f, 0.18f, 1.0f);
+		VM.IntercomTextColor = FLinearColor(1.00f, 0.86f, 0.30f, 1.0f);
+	}
+	else if (CachedShiftPhase == EShiftPhase::ContractPassTransition || CachedShiftPhase == EShiftPhase::ShiftCompleted)
+	{
+		const bool bGold = CachedSnapshot.bLastStampWasDirectorsCut;
+		VM.StatusBadgeText = LOCTEXT("BadgeStamped", "[STAMPED]");
+		VM.AccentBarColor = bGold ? FLinearColor(1.00f, 0.82f, 0.18f, 1.0f) : FLinearColor(0.10f, 0.98f, 0.44f, 1.0f);
+		VM.IntercomTextColor = VM.AccentBarColor;
+	}
+	else if (EffectiveStrain >= ActiveHudConfig.ClampCriticalEnterThreshold)
+	{
+		VM.StatusBadgeText = LOCTEXT("BadgeShear", "[WARN]");
+		VM.AccentBarColor = FLinearColor(1.00f, 0.24f, 0.16f, 1.0f);
+		VM.IntercomTextColor = FLinearColor(1.00f, 0.42f, 0.24f, 1.0f);
+	}
+	else if (CachedSnapshot.bScaleSettledForStamp && CachedSnapshot.bIsWithinDirectorsCutWindow)
+	{
+		VM.StatusBadgeText = LOCTEXT("BadgeDirCut", "[DIR CUT]");
+		VM.AccentBarColor = FLinearColor(1.00f, 0.82f, 0.18f, 1.0f);
+		VM.IntercomTextColor = FLinearColor(1.00f, 0.86f, 0.28f, 1.0f);
+	}
+	else if (CachedSnapshot.bScaleSettledForStamp)
+	{
+		VM.StatusBadgeText = LOCTEXT("BadgeReady", "[READY]");
+		VM.AccentBarColor = FLinearColor(0.10f, 0.98f, 0.44f, 1.0f);
+		VM.IntercomTextColor = FLinearColor(0.24f, 0.98f, 0.54f, 1.0f);
+	}
+	else
+	{
+		VM.StatusBadgeText = LOCTEXT("BadgeLive", "[PA LIVE]");
+		VM.AccentBarColor = FLinearColor(0.05f, 0.86f, 1.00f, 1.0f);
+		VM.IntercomTextColor = FLinearColor(0.46f, 0.84f, 1.00f, 1.0f);
+	}
+
+	OverlayWidget->UpdateTopRightPanel(VM);
+}
+
+void UInspectorHudBridgeComponent::PushCenterAlertBanner()
+{
+	if (!OverlayWidget.IsValid())
+	{
+		return;
+	}
+
+	const UWorld* World = GetWorld();
+	const double NowSec = IsValid(World) ? World->GetTimeSeconds() : 0.0;
+
+	FCenterAlertViewModel VM;
+	EHudCenterAlertState NextState = EHudCenterAlertState::None;
+
+	// ========================================================================
+	// PRIORITY P0: TERMINAL VERDICT / FAULT / SHIFT / BOND STAMPS
+	// ========================================================================
+	if (CachedShiftPhase == EShiftPhase::FaultResetDelay ||
+		(bHasLatchedTerminalVerdict && LatchedVerdict == EShiftVerdictType::ContractFaultReset))
+	{
+		NextState = EHudCenterAlertState::P0_FaultStamp;
+		VM.bIsTerminalStamp = true;
+		VM.PrimaryBannerText = FormatFaultStampHeadline(LatchedFaultReason);
+		VM.SecondarySubText = LOCTEXT("FaultSubPrompt", "AUTO-RESETTING CELL // HOLD [R] TO RESET");
+		VM.AccentColor = FLinearColor(1.00f, 0.20f, 0.14f, 1.0f);
+	}
+	else if (CachedShiftPhase == EShiftPhase::BondCleared ||
+		(bHasLatchedTerminalVerdict && LatchedVerdict == EShiftVerdictType::BondCleared))
+	{
+		NextState = EHudCenterAlertState::P0_BondCleared;
+		VM.bIsTerminalStamp = true;
+		VM.PrimaryBannerText = LOCTEXT("BondClearedStamp", "3-SHIFT INDENTURE BOND CLEARED - #409 RELEASED");
+		VM.SecondarySubText = LOCTEXT("BondClearedSub", "PRESS [E] OVERTIME  |  [1-3] SPEND SCRIP  |  HOLD [R] CAREER RESET");
+		VM.AccentColor = FLinearColor(1.00f, 0.82f, 0.18f, 1.0f);
+	}
+	else if (CachedShiftPhase == EShiftPhase::ShiftCompleted ||
+		(bHasLatchedTerminalVerdict && LatchedVerdict == EShiftVerdictType::ShiftCompleted))
+	{
+		NextState = EHudCenterAlertState::P0_ShiftSummary;
+		VM.bIsTerminalStamp = true;
+		const int32 CurShift = FMath::Max(1, CachedSnapshot.CurrentShiftNumber);
+		const int32 TargetShifts = FMath::Max(1, CachedSnapshot.TargetBondShifts);
+		VM.PrimaryBannerText = (CurShift <= TargetShifts)
+			? FText::FromString(FString::Printf(TEXT("SHIFT %02d/%02d COMPLETE - REQUISITION TERMINAL OPEN"), CurShift, TargetShifts))
+			: FText::FromString(FString::Printf(TEXT("OVERTIME SHIFT %02d COMPLETE - REQUISITION OPEN"), CurShift));
+		VM.SecondarySubText = LOCTEXT("ShiftCompleteSub", "PRESS [E] NEXT SHIFT  |  [1-3] SPEND SCRIP  |  HOLD [R] CAREER RESET");
+		VM.AccentColor = FLinearColor(0.10f, 0.98f, 0.44f, 1.0f);
+	}
+	else if (CachedShiftPhase == EShiftPhase::ContractPassTransition ||
+		(bHasLatchedTerminalVerdict &&
+			(LatchedVerdict == EShiftVerdictType::ContractPassed || LatchedVerdict == EShiftVerdictType::DirectorsCutPassed)))
+	{
+		NextState = EHudCenterAlertState::P0_PassStamp;
+		VM.bIsTerminalStamp = true;
+		const bool bDirCut = (LatchedVerdict == EShiftVerdictType::DirectorsCutPassed) || CachedSnapshot.bLastStampWasDirectorsCut;
+		VM.PrimaryBannerText = bDirCut
+			? LOCTEXT("DirCutPassStamp", "DIRECTOR'S CUT STAMPED (+2 SCRIP)")
+			: LOCTEXT("StandardPassStamp", "QUOTA STAMPED (+1 SCRIP)");
+		VM.SecondarySubText = LOCTEXT("PassSub", "ADVANCING TO NEXT MONOLITH CONTRACT...");
+		VM.AccentColor = bDirCut
+			? FLinearColor(1.00f, 0.82f, 0.18f, 1.0f)
+			: FLinearColor(0.10f, 0.98f, 0.44f, 1.0f);
+	}
+	else if (CachedShiftPhase == EShiftPhase::ActiveInspection)
+	{
+		// ====================================================================
+		// PRIORITY P1: CRITICAL CUTTING HAZARDS (SCHMITT-TRIGGER HYSTERESIS)
+		// ====================================================================
+
+		// P1a: Isotope Proximity / Detonation
+		if (!CachedPreview.bIntersectsMonolith ||
+			(!CachedPreview.bWillDetonate && CachedPreview.VeinProximityNormalized <= ActiveHudConfig.VeinHazardExitThreshold))
+		{
+			bLatchedIsotopeHazard = false;
+		}
+		else if (CachedPreview.bIntersectsMonolith &&
+			(CachedPreview.bWillDetonate || CachedPreview.VeinProximityNormalized >= ActiveHudConfig.VeinHazardEnterThreshold))
+		{
+			bLatchedIsotopeHazard = true;
+		}
+
+		// P1b: Severed Drop Contains Vein While Routed to Tithe (Instant Clear on [SPACE])
+		const bool bValidContact = CachedPreview.bIntersectsMonolith &&
+			CachedPreview.bHasValidMassEstimate &&
+			(CachedPreview.EstimatedSeveredMassKg > MinPredictiveMassKg);
+		const bool bRawVeinInTitheDrop = bValidContact &&
+			CachedPreview.bSeveredHalfContainsVein &&
+			(CachedSnapshot.ActiveDiverterRoute == EDiverterRoute::TitheScale);
+
+		if (!bRawVeinInTitheDrop)
+		{
+			if (bLatchedVeinInDrop)
+			{
+				bLatchedVeinInDrop = false;
+				if (CachedSnapshot.ActiveDiverterRoute == EDiverterRoute::TitheScale)
+				{
+					LastVeinInDropAutoClearTimeSec = NowSec;
+				}
+			}
+		}
+		else if (!bLatchedVeinInDrop)
+		{
+			if ((NowSec - LastVeinInDropAutoClearTimeSec) >= VeinDropEdgeDebounceSeconds)
+			{
+				bLatchedVeinInDrop = true;
+			}
+		}
+
+		// P1c: Critical Clamp Torque Strain OR Rising Bolt Fatigue
+		const float EffectiveStrain = FMath::Max(CachedClampStrain, CachedSnapshot.ClampStrainNormalized);
+		if (EffectiveStrain <= ActiveHudConfig.ClampCriticalExitThreshold &&
+			CachedClampFatigue <= ActiveHudConfig.ClampFatigueWarnExitThreshold)
+		{
+			bLatchedClampCritical = false;
+		}
+		else if (EffectiveStrain >= ActiveHudConfig.ClampCriticalEnterThreshold ||
+			CachedClampFatigue >= ActiveHudConfig.ClampFatigueWarnEnterThreshold)
+		{
+			bLatchedClampCritical = true;
+		}
+
+		// P2: Settled Quota Ready Callout
+		bLatchedDirectorsCutReady = CachedSnapshot.bScaleSettledForStamp && CachedSnapshot.bIsWithinDirectorsCutWindow;
+		bLatchedQuotaMetReady = CachedSnapshot.bScaleSettledForStamp &&
+			CachedSnapshot.bIsWithinQuotaWindow &&
+			!CachedSnapshot.bIsWithinDirectorsCutWindow;
+
+		if (bLatchedIsotopeHazard)
+		{
+			NextState = EHudCenterAlertState::P1_IsotopeHazard;
+			VM.PrimaryBannerText = CachedPreview.bWillDetonate
+				? LOCTEXT("IsotopeIntersectAlert", "ISOTOPE INTERSECT - ADJUST PLANE!")
+				: LOCTEXT("IsotopeProximityAlert", "ISOTOPE PROXIMITY - ADJUST PLANE!");
+			VM.SecondarySubText = LOCTEXT("IsotopeAlertSub", "VOLATILE VEIN CLEARANCE CRITICAL");
+			VM.AccentColor = CachedPreview.bWillDetonate
+				? FLinearColor(1.00f, 0.16f, 0.12f, 1.0f)
+				: FLinearColor(1.00f, 0.56f, 0.08f, 1.0f);
+		}
+		else if (bLatchedVeinInDrop)
+		{
+			NextState = EHudCenterAlertState::P1_VeinInDrop;
+			VM.PrimaryBannerText = LOCTEXT("VeinInDropAlert", "VEIN IN DROP - [SPACE] TO TARE!");
+			VM.SecondarySubText = LOCTEXT("VeinInDropSub", "CONTAMINATED DROP ROUTED TO TITHE SCALE");
+			VM.AccentColor = FLinearColor(1.00f, 0.62f, 0.08f, 1.0f);
+		}
+		else if (bLatchedClampCritical)
+		{
+			NextState = EHudCenterAlertState::P1_ClampShearCritical;
+			VM.PrimaryBannerText = LOCTEXT("JawShearAlert", "JAW SHEAR CRITICAL - BALANCE CUT!");
+			const int32 StrainPct = FMath::Clamp(FMath::RoundToInt(EffectiveStrain * 100.0f), 0, 999);
+			const int32 FatiguePct = FMath::Clamp(FMath::RoundToInt(CachedClampFatigue * 100.0f), 0, 100);
+			VM.SecondarySubText = FText::FromString(
+				FString::Printf(TEXT("TORQUE LOAD: %d%%  |  BOLT FATIGUE: %d%%"), StrainPct, FatiguePct));
+			VM.AccentColor = FLinearColor(1.00f, 0.22f, 0.14f, 1.0f);
+		}
+		else if (bLatchedDirectorsCutReady)
+		{
+			NextState = EHudCenterAlertState::P2_DirectorsCutReady;
+			VM.PrimaryBannerText = LOCTEXT("DirectorsCutReadyAlert", "DIRECTOR'S CUT - PRESS [E] (+2 SCRIP)!");
+			VM.SecondarySubText = LOCTEXT("DirectorsCutReadySub", "PRECISION TOLERANCE LOCKED ON TITHE SCALE");
+			VM.AccentColor = FLinearColor(1.00f, 0.84f, 0.18f, 1.0f);
+		}
+		else if (bLatchedQuotaMetReady)
+		{
+			NextState = EHudCenterAlertState::P2_QuotaMetReady;
+			VM.PrimaryBannerText = LOCTEXT("QuotaMetReadyAlert", "QUOTA MET - PRESS [E] TO STAMP (+1 SCRIP)");
+			VM.SecondarySubText = LOCTEXT("QuotaMetReadySub", "VALID TITHE PAYLOAD SETTLED ON SCALE");
+			VM.AccentColor = FLinearColor(0.10f, 0.98f, 0.44f, 1.0f);
+		}
+	}
+
+	if (NextState != EHudCenterAlertState::None && NextState != ActiveCenterAlertState)
+	{
+		++AlertTriggerGeneration;
+	}
+	ActiveCenterAlertState = NextState;
+
+	VM.AlertState = NextState;
+	VM.TriggerGeneration = AlertTriggerGeneration;
+	OverlayWidget->UpdateCenterAlertBanner(VM);
+}
+
+void UInspectorHudBridgeComponent::PushReticleCard()
+{
+	if (!OverlayWidget.IsValid())
+	{
+		return;
+	}
+
+	FReticleReadoutViewModel VM;
+	VM.bIsVisible = bCachedReticleVisible && (CachedShiftPhase == EShiftPhase::ActiveInspection);
+	VM.NormalizedViewportUV = CachedReticleNormalizedUV;
+
+	if (!VM.bIsVisible)
+	{
+		OverlayWidget->UpdateReticleCard(VM);
+		return;
+	}
+
+	const float SettledKg = FMath::Max(0.0f, CachedSnapshot.SettledScaleMassKg);
+	const float TargetKg = FMath::Max(0.0f, CachedSnapshot.TargetTitheMassKg);
+	const float ToleranceKg = FMath::Max(0.0f, CachedSnapshot.QuotaToleranceKg);
+
+	const FLinearColor CyanColor(0.05f, 0.90f, 1.00f, 1.0f);
+	const FLinearColor EmeraldColor(0.10f, 0.98f, 0.44f, 1.0f);
+	const FLinearColor GoldColor(1.00f, 0.84f, 0.18f, 1.0f);
+	const FLinearColor AmberColor(1.00f, 0.66f, 0.10f, 1.0f);
+	const FLinearColor CrimsonColor(1.00f, 0.22f, 0.16f, 1.0f);
+	const FLinearColor PurgeMintColor(0.08f, 0.96f, 0.66f, 1.0f);
+	const FLinearColor NeutralIceColor(0.82f, 0.94f, 1.00f, 1.0f);
+
+	// Line 1: Primary Need / Route / Stamp Status
+	if (CachedSnapshot.ActiveDiverterRoute == EDiverterRoute::TareChute)
+	{
+		VM.PrimaryNeedOrStatusText = LOCTEXT("ReticleTareRoute", "ROUTE: TARE SCRAP [SPACE]");
+		VM.PrimaryColor = AmberColor;
+	}
+	else if (SettledKg > (TargetKg + ToleranceKg + QuotaEpsilonKg))
+	{
+		VM.PrimaryNeedOrStatusText = LOCTEXT("ReticleOverQuota", "OVER QUOTA!");
+		VM.PrimaryColor = CrimsonColor;
+	}
+	else if (CachedSnapshot.bIsWithinDirectorsCutWindow)
+	{
+		VM.PrimaryNeedOrStatusText = FText::FromString(
+			FString::Printf(TEXT("DIRECTOR'S CUT [E] +2 SCRIP (%.2f KG)"), SettledKg));
+		VM.PrimaryColor = GoldColor;
+	}
+	else if (CachedSnapshot.bIsWithinQuotaWindow || SettledKg >= (TargetKg - ToleranceKg - QuotaEpsilonKg))
+	{
+		VM.PrimaryNeedOrStatusText = FText::FromString(
+			FString::Printf(TEXT("STAMP READY [E] +1 SCRIP (%.2f KG)"), SettledKg));
+		VM.PrimaryColor = EmeraldColor;
+	}
+	else
+	{
+		const float NeededDeltaKg = FMath::Max(0.01f, TargetKg - SettledKg);
+		VM.PrimaryNeedOrStatusText = FText::FromString(
+			FString::Printf(TEXT("TITHE | NEED +%.2f KG"), NeededDeltaKg));
+		VM.PrimaryColor = CyanColor;
+	}
+	VM.AccentColor = VM.PrimaryColor;
+
+	// Line 2: Predictive Slice / Scrap Yield Estimate
+	const bool bValidContact = CachedPreview.bIntersectsMonolith &&
+		CachedPreview.bHasValidMassEstimate &&
+		(CachedPreview.EstimatedSeveredMassKg > MinPredictiveMassKg);
+	const bool bDirectVeinHit = CachedPreview.bIntersectsMonolith && CachedPreview.bWillDetonate;
+
+	if (!bValidContact && !bDirectVeinHit)
+	{
+		VM.YieldEstimateText = LOCTEXT("ReticleNoContact", "CUT EST: --- (NO CONTACT)");
+		VM.YieldColor = NeutralIceColor;
+	}
+	else
+	{
+		const float EstSeveredKg = FMath::Max(0.0f, CachedPreview.EstimatedSeveredMassKg);
+		const float EstRemainderKg = FMath::Max(0.0f, CachedPreview.EstimatedRemainderMassKg);
+		const float ProjectedTareKg = FMath::Max(0.0f, CachedSnapshot.AccumulatedTareWasteKg) + EstSeveredKg;
+		const float MaxTareKg = FMath::Max(0.0f, CachedSnapshot.MaxAllowedTareWasteKg);
+		const bool bTareOverflow = ProjectedTareKg > (MaxTareKg + QuotaEpsilonKg);
+
+		if (bDirectVeinHit)
+		{
+			VM.YieldEstimateText = FText::FromString(
+				FString::Printf(TEXT("CUT EST: +%.2f KG [VEIN INTERSECT]"), EstSeveredKg));
+			VM.YieldColor = CrimsonColor;
+			VM.AccentColor = CrimsonColor;
+		}
+		else if (CachedPreview.bSeveredHalfContainsVein)
+		{
+			if (CachedSnapshot.ActiveDiverterRoute == EDiverterRoute::TitheScale)
+			{
+				VM.YieldEstimateText = FText::FromString(
+					FString::Printf(TEXT("CUT EST: +%.2f KG [VEIN -> SPACE]"), EstSeveredKg));
+				VM.YieldColor = AmberColor;
+				VM.AccentColor = AmberColor;
+			}
+			else if (bTareOverflow)
+			{
+				VM.YieldEstimateText = FText::FromString(
+					FString::Printf(TEXT("SCRAP EST: %.2f KG [TARE OVERFLOW!]"), EstSeveredKg));
+				VM.YieldColor = CrimsonColor;
+				VM.AccentColor = CrimsonColor;
+			}
+			else
+			{
+				VM.YieldEstimateText = FText::FromString(
+					FString::Printf(TEXT("SCRAP EST: %.2f KG [PURGE READY]"), EstSeveredKg));
+				VM.YieldColor = PurgeMintColor;
+			}
+		}
+		else if (CachedSnapshot.ActiveDiverterRoute == EDiverterRoute::TareChute)
+		{
+			if (bTareOverflow)
+			{
+				VM.YieldEstimateText = FText::FromString(
+					FString::Printf(TEXT("SCRAP EST: %.2f KG [TARE OVERFLOW!]"), EstSeveredKg));
+				VM.YieldColor = CrimsonColor;
+				VM.AccentColor = CrimsonColor;
+			}
+			else
+			{
+				VM.YieldEstimateText = FText::FromString(
+					FString::Printf(TEXT("SCRAP EST: %.2f KG (LEFT %.1f KG)"), EstSeveredKg, EstRemainderKg));
+				VM.YieldColor = AmberColor;
+			}
+		}
+		else
+		{
+			const float InFlightKg = FMath::Max(0.0f, CachedSnapshot.InFlightMassKg);
+			const float MinWinKg = FMath::Max(0.0f, TargetKg - ToleranceKg);
+			const float MaxWinKg = TargetKg + ToleranceKg;
+			const float ProjectedScaleKg = SettledKg + InFlightKg + EstSeveredKg;
+
+			if (ProjectedScaleKg > (MaxWinKg + QuotaEpsilonKg))
+			{
+				VM.YieldEstimateText = FText::FromString(
+					FString::Printf(TEXT("CUT EST: +%.2f -> %.2f KG [OVER!]"), EstSeveredKg, ProjectedScaleKg));
+				VM.YieldColor = CrimsonColor;
+				VM.AccentColor = CrimsonColor;
+			}
+			else if (ProjectedScaleKg >= (MinWinKg - QuotaEpsilonKg))
+			{
+				const float DirCutTolKg = FMath::Max(0.15f, CachedSnapshot.DirectorsCutToleranceKg);
+				if (FMath::Abs(ProjectedScaleKg - TargetKg) <= (DirCutTolKg + QuotaEpsilonKg))
+				{
+					VM.YieldEstimateText = FText::FromString(
+						FString::Printf(TEXT("CUT EST: +%.2f KG [DIRECTOR'S CUT!]"), EstSeveredKg));
+					VM.YieldColor = GoldColor;
+					VM.AccentColor = GoldColor;
+				}
+				else
+				{
+					VM.YieldEstimateText = FText::FromString(
+						FString::Printf(TEXT("CUT EST: +%.2f KG [IN WINDOW!]"), EstSeveredKg));
+					VM.YieldColor = EmeraldColor;
+					VM.AccentColor = EmeraldColor;
+				}
+			}
+			else
+			{
+				const float StillNeedKg = FMath::Max(0.01f, TargetKg - ProjectedScaleKg);
+				VM.YieldEstimateText = FText::FromString(
+					FString::Printf(TEXT("CUT EST: +%.2f KG (NEED +%.2f)"), EstSeveredKg, StillNeedKg));
+				VM.YieldColor = CyanColor;
+			}
+		}
+	}
+
+	// Line 3: Clamp Load & Torque Strain
+	const float ClampLoadKg = FMath::Max(0.0f, CachedSnapshot.RemainderMassKg);
+	const float EffectiveStrain = FMath::Max(CachedClampStrain, CachedSnapshot.ClampStrainNormalized);
+	const int32 TorquePct = FMath::Clamp(FMath::RoundToInt(EffectiveStrain * 100.0f), 0, 999);
+
+	if (EffectiveStrain >= ActiveHudConfig.ClampCriticalEnterThreshold ||
+		CachedClampFatigue >= ActiveHudConfig.ClampFatigueWarnEnterThreshold)
+	{
+		VM.ClampLoadText = FText::FromString(
+			FString::Printf(TEXT("CLAMP LOAD: %.1f KG  |  SHEAR: %d%%!"), ClampLoadKg, TorquePct));
+		VM.ClampLoadColor = CrimsonColor;
+	}
+	else if (EffectiveStrain >= 0.42f)
+	{
+		VM.ClampLoadText = FText::FromString(
+			FString::Printf(TEXT("CLAMP LOAD: %.1f KG  |  TORQUE: %d%%"), ClampLoadKg, TorquePct));
+		VM.ClampLoadColor = AmberColor;
+	}
+	else
+	{
+		VM.ClampLoadText = FText::FromString(
+			FString::Printf(TEXT("CLAMP LOAD: %.1f KG"), ClampLoadKg));
+		VM.ClampLoadColor = NeutralIceColor;
+	}
+
+	OverlayWidget->UpdateReticleCard(VM);
+}
+
+void UInspectorHudBridgeComponent::PushBottomCrtConsole()
+{
+	if (!OverlayWidget.IsValid())
+	{
+		return;
+	}
+
+	FBottomCrtConsoleViewModel VM;
+	VM.ConsoleHeaderText = LOCTEXT("CrtConsoleHeader", "TITHE WEIGHING CONSOLE");
+
+	const float TargetKg = FMath::Max(0.0f, CachedSnapshot.TargetTitheMassKg);
+	const float TolKg = FMath::Max(0.0f, CachedSnapshot.QuotaToleranceKg);
+	const float MinValidKg = FMath::Max(0.0f, TargetKg - TolKg);
+	const float MaxValidKg = TargetKg + TolKg;
+	const float DirTolKg = FMath::Max(0.15f, CachedSnapshot.DirectorsCutToleranceKg);
+	const float MinDirKg = FMath::Max(0.0f, TargetKg - DirTolKg);
+	const float MaxDirKg = TargetKg + DirTolKg;
+
+	VM.WindowsSummaryText = FText::FromString(
+		FString::Printf(
+			TEXT("VALID: %.2f-%.2f KG  |  DIR CUT: %.2f-%.2f KG (+2 SCRIP)"),
+			MinValidKg,
+			MaxValidKg,
+			MinDirKg,
+			MaxDirKg));
+
+	const float SettledKg = FMath::Max(0.0f, CachedSnapshot.SettledScaleMassKg);
+	VM.MassReadoutText = FText::FromString(FString::Printf(TEXT("%05.2f / %05.2f KG"), SettledKg, TargetKg));
+
+	const bool bOvershoot = SettledKg > (MaxValidKg + QuotaEpsilonKg);
+	const bool bFaultActive = (CachedShiftPhase == EShiftPhase::FaultResetDelay);
+	if (bOvershoot || bFaultActive)
+	{
+		VM.MassReadoutColor = FLinearColor(1.00f, 0.22f, 0.16f, 1.0f);
+	}
+	else if (CachedSnapshot.bIsWithinDirectorsCutWindow)
+	{
+		VM.MassReadoutColor = FLinearColor(1.00f, 0.86f, 0.20f, 1.0f);
+	}
+	else if (CachedSnapshot.bIsWithinQuotaWindow)
+	{
+		VM.MassReadoutColor = FLinearColor(0.10f, 0.98f, 0.44f, 1.0f);
+	}
+	else
+	{
+		VM.MassReadoutColor = FLinearColor(1.00f, 0.78f, 0.14f, 1.0f);
+	}
+
+	const float GaugeMaxKg = FMath::Max(1.0f, MaxValidKg * 1.15f);
+	VM.NormalizedMassFill = FMath::Clamp(SettledKg / GaugeMaxKg, 0.0f, 1.0f);
+	VM.NormalizedValidMin = FMath::Clamp(MinValidKg / GaugeMaxKg, 0.0f, 1.0f);
+	VM.NormalizedValidMax = FMath::Clamp(MaxValidKg / GaugeMaxKg, 0.0f, 1.0f);
+	VM.NormalizedDirCutMin = FMath::Clamp(MinDirKg / GaugeMaxKg, 0.0f, 1.0f);
+	VM.NormalizedDirCutMax = FMath::Clamp(MaxDirKg / GaugeMaxKg, 0.0f, 1.0f);
+
+	const float TareKg = FMath::Max(0.0f, CachedSnapshot.AccumulatedTareWasteKg);
+	const float MaxTareKg = FMath::Max(0.0f, CachedSnapshot.MaxAllowedTareWasteKg);
+	const bool bTareExceeded = TareKg > (MaxTareKg + QuotaEpsilonKg);
+	VM.TareBadgeText = FText::FromString(FString::Printf(TEXT("TARE: %.1f / %.1f KG"), TareKg, MaxTareKg));
+	VM.TareBadgeColor = bTareExceeded
+		? FLinearColor(1.00f, 0.22f, 0.16f, 1.0f)
+		: FLinearColor(1.00f, 0.78f, 0.14f, 1.0f);
+
+	if (CachedSnapshot.ActiveDiverterRoute == EDiverterRoute::TareChute)
+	{
+		VM.RouteBadgeText = LOCTEXT("CrtRouteTare", "ROUTE: TARE [SPACE]");
+		VM.RouteBadgeColor = FLinearColor(1.00f, 0.56f, 0.06f, 1.0f);
+	}
+	else
+	{
+		VM.RouteBadgeText = LOCTEXT("CrtRouteTithe", "ROUTE: TITHE [SPACE]");
+		VM.RouteBadgeColor = FLinearColor(0.05f, 0.90f, 1.00f, 1.0f);
+	}
+
+	// Operational status line
+	const FLinearColor SkyBlue(0.45f, 0.84f, 1.00f, 1.0f);
+	const FLinearColor Emerald(0.10f, 0.98f, 0.44f, 1.0f);
+	const FLinearColor Gold(1.00f, 0.84f, 0.18f, 1.0f);
+	const FLinearColor Crimson(1.00f, 0.24f, 0.18f, 1.0f);
+	const FLinearColor Orange(1.00f, 0.56f, 0.06f, 1.0f);
+
+	if (bFaultActive)
+	{
+		VM.OperationalStatusText = FormatFaultStampHeadline(LatchedFaultReason);
+		VM.OperationalStatusColor = Crimson;
+	}
+	else if (CachedShiftPhase == EShiftPhase::BondCleared)
+	{
+		VM.OperationalStatusText = LOCTEXT("CrtStatusBondCleared", "BOND CLEARED - PRESS [E] OVERTIME | HOLD [R] CAREER RESET");
+		VM.OperationalStatusColor = Gold;
+	}
+	else if (CachedShiftPhase == EShiftPhase::ShiftCompleted)
+	{
+		VM.OperationalStatusText = LOCTEXT("CrtStatusShiftDone", "SHIFT COMPLETE - PRESS [E] ADVANCE | [1-3] UPGRADE | HOLD [R] RESET");
+		VM.OperationalStatusColor = Emerald;
+	}
+	else if (CachedShiftPhase == EShiftPhase::ContractPassTransition)
+	{
+		VM.OperationalStatusText = CachedSnapshot.bLastStampWasDirectorsCut
+			? LOCTEXT("CrtStatusDirPass", "DIRECTOR'S CUT STAMPED (+2 SCRIP) - LOADING NEXT CONTRACT")
+			: LOCTEXT("CrtStatusStdPass", "QUOTA STAMPED (+1 SCRIP) - LOADING NEXT CONTRACT");
+		VM.OperationalStatusColor = CachedSnapshot.bLastStampWasDirectorsCut ? Gold : Emerald;
+	}
+	else if (CachedSnapshot.InFlightMassKg > 0.01f)
+	{
+		VM.OperationalStatusText = LOCTEXT("CrtStatusDropping", "PAYLOAD IN FLIGHT...");
+		VM.OperationalStatusColor = SkyBlue;
+	}
+	else if (!CachedSnapshot.bScaleSettledForStamp && SettledKg > 0.01f && CachedSnapshot.bIsWithinQuotaWindow)
+	{
+		VM.OperationalStatusText = LOCTEXT("CrtStatusSettling", "SCALE DAMPING - SETTLING PAYLOAD...");
+		VM.OperationalStatusColor = Gold;
+	}
+	else if (CachedSnapshot.bScaleSettledForStamp && CachedSnapshot.bIsWithinDirectorsCutWindow)
+	{
+		VM.OperationalStatusText = LOCTEXT("CrtStatusDirReady", "DIRECTOR'S CUT LOCKED - PRESS [E] TO STAMP (+2 SCRIP)");
+		VM.OperationalStatusColor = Gold;
+	}
+	else if (CachedSnapshot.bScaleSettledForStamp && CachedSnapshot.bIsWithinQuotaWindow)
+	{
+		VM.OperationalStatusText = LOCTEXT("CrtStatusQuotaReady", "QUOTA MET - PRESS [E] TO STAMP (+1 SCRIP)");
+		VM.OperationalStatusColor = Emerald;
+	}
+	else if (CachedSnapshot.ActiveDiverterRoute == EDiverterRoute::TareChute)
+	{
+		VM.OperationalStatusText = LOCTEXT("CrtStatusTareActive", "TARE CHUTE ACTIVE - HOLD [LMB] TO PURGE SCRAP | [SPACE] TITHE");
+		VM.OperationalStatusColor = Orange;
+	}
+	else if (SettledKg > KINDA_SMALL_NUMBER && SettledKg < MinValidKg)
+	{
+		const float NeedToMinKg = FMath::Max(0.01f, MinValidKg - SettledKg);
+		VM.OperationalStatusText = FText::FromString(
+			FString::Printf(TEXT("UNDER QUOTA - ADD %.2f KG TO REACH VALID WINDOW"), NeedToMinKg));
+		VM.OperationalStatusColor = SkyBlue;
+	}
+	else
+	{
+		VM.OperationalStatusText = LOCTEXT("CrtStatusReady", "SCALE READY - HOLD [LMB] TO SLICE MONOLITH INTO TITHE");
+		VM.OperationalStatusColor = SkyBlue;
+	}
+
+	VM.ControlLegendText = LOCTEXT(
+		"CrtControlLegend",
+		"LMB: SLICE  |  SCROLL: ROLL  |  RMB: BEVEL  |  [SPACE]: ROUTE  |  [E]: STAMP  |  [1-3]: UPGRADE  |  HOLD [R]: RESET");
+
+	OverlayWidget->UpdateBottomCrtConsole(VM);
+}
+
+FText UInspectorHudBridgeComponent::FormatFaultStampHeadline(EContractFaultReason FaultReason)
+{
+	switch (FaultReason)
+	{
+	case EContractFaultReason::ClampStructuralSnap:
+		return LOCTEXT("FaultClampSheared", "FAULT: CLAMP SHEARED");
+	case EContractFaultReason::ScaleContaminated:
+		return LOCTEXT("FaultContaminatedTithe", "FAULT: CONTAMINATED TITHE");
+	case EContractFaultReason::VolatileDetonation:
+		return LOCTEXT("FaultIsotopeDetonated", "FAULT: ISOTOPE DETONATED");
+	case EContractFaultReason::QuotaOvershoot:
+		return LOCTEXT("FaultQuotaOvershoot", "FAULT: QUOTA OVERSHOOT");
+	case EContractFaultReason::TareAllowanceExceeded:
+		return LOCTEXT("FaultTareExceeded", "FAULT: TARE EXCEEDED");
+	case EContractFaultReason::MathematicallyUnreachable:
+		return LOCTEXT("FaultUnreachableQuota", "FAULT: UNREACHABLE QUOTA");
+	case EContractFaultReason::ManualOperatorReset:
+		return LOCTEXT("FaultManualReset", "CELL PURGED BY OPERATOR #409");
+	default:
+		return LOCTEXT("FaultGeneric", "FAULT: INSPECTION ABORTED");
+	}
+}
+
+FString UInspectorHudBridgeComponent::AlertStateToDiagnosticString(EHudCenterAlertState State)
+{
+	switch (State)
+	{
+	case EHudCenterAlertState::None:
+		return TEXT("None");
+	case EHudCenterAlertState::P0_FaultStamp:
+		return TEXT("P0_FaultStamp");
+	case EHudCenterAlertState::P0_PassStamp:
+		return TEXT("P0_PassStamp");
+	case EHudCenterAlertState::P0_ShiftSummary:
+		return TEXT("P0_ShiftSummary");
+	case EHudCenterAlertState::P0_BondCleared:
+		return TEXT("P0_BondCleared");
+	case EHudCenterAlertState::P1_IsotopeHazard:
+		return TEXT("P1_IsotopeHazard");
+	case EHudCenterAlertState::P1_VeinInDrop:
+		return TEXT("P1_VeinInDrop");
+	case EHudCenterAlertState::P1_ClampShearCritical:
+		return TEXT("P1_ClampShearCritical");
+	case EHudCenterAlertState::P2_DirectorsCutReady:
+		return TEXT("P2_DirectorsCutReady");
+	case EHudCenterAlertState::P2_QuotaMetReady:
+		return TEXT("P2_QuotaMetReady");
+	default:
+		return TEXT("Unknown");
+	}
+}
+
+bool UInspectorHudBridgeComponent::RequestCompositedViewportScreenshot(const FString& AbsoluteFilePath)
+{
+	if (AbsoluteFilePath.IsEmpty())
+	{
+		return false;
+	}
+
+	const FString DirectoryPath = FPaths::GetPath(AbsoluteFilePath);
+	if (!DirectoryPath.IsEmpty())
+	{
+		IFileManager::Get().MakeDirectory(*DirectoryPath, true);
+	}
+
+	// Decision 2: Capture both the HWRT 3D cell and post-tonemap pure C++ Slate HUD in one composited frame.
+	FScreenshotRequest::RequestScreenshot(AbsoluteFilePath, /*bShowUI=*/true, /*bAddFilenameSuffix=*/false);
+	if (UWorld* World = GetWorld())
+	{
+		if (UGameViewportClient* ViewportClient = World->GetGameViewport())
+		{
+			if (FViewport* Viewport = ViewportClient->Viewport)
+			{
+				Viewport->Invalidate();
+			}
+		}
+	}
+	return true;
+}
+
+FVector2D UInspectorHudBridgeComponent::GetLastLocalViewportSize() const
+{
+	return OverlayWidget.IsValid() ? OverlayWidget->GetResolvedLayoutTelemetry().LocalViewportSize : FVector2D::ZeroVector;
+}
+
+float UInspectorHudBridgeComponent::GetLastEffectiveCornerPanelWidth() const
+{
+	return OverlayWidget.IsValid() ? OverlayWidget->GetResolvedLayoutTelemetry().EffectiveCornerPanelWidth : 0.0f;
+}
+
+float UInspectorHudBridgeComponent::GetLastEffectiveBottomConsoleWidth() const
+{
+	return OverlayWidget.IsValid() ? OverlayWidget->GetResolvedLayoutTelemetry().EffectiveBottomConsoleWidth : 0.0f;
+}
+
+FVector2D UInspectorHudBridgeComponent::GetTopLeftPanelBoundsMin() const
+{
+	return OverlayWidget.IsValid() ? OverlayWidget->GetResolvedLayoutTelemetry().TopLeftMin : FVector2D::ZeroVector;
+}
+
+FVector2D UInspectorHudBridgeComponent::GetTopLeftPanelBoundsMax() const
+{
+	return OverlayWidget.IsValid() ? OverlayWidget->GetResolvedLayoutTelemetry().TopLeftMax : FVector2D::ZeroVector;
+}
+
+FVector2D UInspectorHudBridgeComponent::GetTopRightPanelBoundsMin() const
+{
+	return OverlayWidget.IsValid() ? OverlayWidget->GetResolvedLayoutTelemetry().TopRightMin : FVector2D::ZeroVector;
+}
+
+FVector2D UInspectorHudBridgeComponent::GetTopRightPanelBoundsMax() const
+{
+	return OverlayWidget.IsValid() ? OverlayWidget->GetResolvedLayoutTelemetry().TopRightMax : FVector2D::ZeroVector;
+}
+
+FVector2D UInspectorHudBridgeComponent::GetCenterBannerBoundsMin() const
+{
+	return OverlayWidget.IsValid() ? OverlayWidget->GetResolvedLayoutTelemetry().CenterBannerMin : FVector2D::ZeroVector;
+}
+
+FVector2D UInspectorHudBridgeComponent::GetCenterBannerBoundsMax() const
+{
+	return OverlayWidget.IsValid() ? OverlayWidget->GetResolvedLayoutTelemetry().CenterBannerMax : FVector2D::ZeroVector;
+}
+
+FVector2D UInspectorHudBridgeComponent::GetReticleCardBoundsMin() const
+{
+	return OverlayWidget.IsValid() ? OverlayWidget->GetResolvedLayoutTelemetry().ReticleCardMin : FVector2D::ZeroVector;
+}
+
+FVector2D UInspectorHudBridgeComponent::GetReticleCardBoundsMax() const
+{
+	return OverlayWidget.IsValid() ? OverlayWidget->GetResolvedLayoutTelemetry().ReticleCardMax : FVector2D::ZeroVector;
+}
+
+FVector2D UInspectorHudBridgeComponent::GetBottomConsoleBoundsMin() const
+{
+	return OverlayWidget.IsValid() ? OverlayWidget->GetResolvedLayoutTelemetry().BottomConsoleMin : FVector2D::ZeroVector;
+}
+
+FVector2D UInspectorHudBridgeComponent::GetBottomConsoleBoundsMax() const
+{
+	return OverlayWidget.IsValid() ? OverlayWidget->GetResolvedLayoutTelemetry().BottomConsoleMax : FVector2D::ZeroVector;
+}
+
+FString UInspectorHudBridgeComponent::GetActiveCenterAlertStateName() const
+{
+	return AlertStateToDiagnosticString(ActiveCenterAlertState);
+}
+
+bool UInspectorHudBridgeComponent::IsCenterAlertPulseTimerActive() const
+{
+	return OverlayWidget.IsValid() && OverlayWidget->IsCenterAlertPulseTimerActive();
+}
+
+float UInspectorHudBridgeComponent::GetCenterAlertBgOpacity() const
+{
+	return OverlayWidget.IsValid() ? OverlayWidget->GetCenterAlertCurrentBgOpacity() : 0.0f;
+}
+
+float UInspectorHudBridgeComponent::GetCenterAlertTextOpacity() const
+{
+	return OverlayWidget.IsValid() ? OverlayWidget->GetCenterAlertCurrentTextOpacity() : 0.0f;
+}
+
+#undef LOCTEXT_NAMESPACE

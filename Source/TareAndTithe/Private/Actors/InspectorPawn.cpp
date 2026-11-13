@@ -2,8 +2,10 @@
 
 #include "Actors/InspectorPawn.h"
 #include "Camera/CameraComponent.h"
+#include "Camera/CameraTypes.h"
 #include "Components/AudioComponent.h"
 #include "Components/AudioTelemetryBridgeComponent.h"
+#include "Components/InspectorHudBridgeComponent.h"
 #include "Components/InspectorKinestheticsComponent.h"
 #include "Components/LaserCapacitorComponent.h"
 #include "Components/LaserPlaneAimComponent.h"
@@ -13,6 +15,7 @@
 #include "Data/MonolithContractDataAsset.h"
 #include "Data/ShiftProgressionDataAsset.h"
 #include "Data/TareTithePresentationDataAsset.h"
+#include "Engine/GameViewportClient.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
@@ -30,8 +33,10 @@
 #include "Materials/MaterialInterface.h"
 #include "Math/RotationMatrix.h"
 #include "Misc/PackageName.h"
+#include "SceneView.h"
 #include "Sound/SoundBase.h"
 #include "TimerManager.h"
+#include "UnrealClient.h"
 #include "UObject/ConstructorHelpers.h"
 
 AInspectorPawn::AInspectorPawn()
@@ -168,6 +173,8 @@ AInspectorPawn::AInspectorPawn()
 		}
 		TextComp->SetTextRenderColor(Color);
 		TextComp->SetText(FText::FromString(InitialText));
+		TextComp->SetVisibility(false, false);
+		TextComp->SetHiddenInGame(true, false);
 	};
 
 	// Roll-stabilized reticle readout attached to PawnRoot (strictly isolated from CameraShakeOffsetComponent and LaserPlaneVisualPivot).
@@ -217,6 +224,7 @@ AInspectorPawn::AInspectorPawn()
 	LaserCapacitorComponent = CreateDefaultSubobject<ULaserCapacitorComponent>(TEXT("LaserCapacitorComponent"));
 	InspectorKinestheticsComponent = CreateDefaultSubobject<UInspectorKinestheticsComponent>(TEXT("InspectorKinestheticsComponent"));
 	AudioTelemetryBridgeComponent = CreateDefaultSubobject<UAudioTelemetryBridgeComponent>(TEXT("AudioTelemetryBridgeComponent"));
+	InspectorHudBridgeComponent = CreateDefaultSubobject<UInspectorHudBridgeComponent>(TEXT("InspectorHudBridgeComponent"));
 
 	ContinuousMetaSoundAudioComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("ContinuousMetaSoundAudioComponent"));
 	ContinuousMetaSoundAudioComponent->SetupAttachment(PawnRoot);
@@ -342,6 +350,14 @@ void AInspectorPawn::BeginPlay()
 		LaserCapacitorComponent->OnTelemetryImpulse.AddUObject(this, &AInspectorPawn::HandleCapacitorTelemetryImpulse);
 	}
 
+	if (IsValid(InspectorHudBridgeComponent))
+	{
+		InspectorHudBridgeComponent->BindPawnTelemetrySources(
+			LaserPlaneAimComponent,
+			AudioTelemetryBridgeComponent,
+			OnReticleProjectionUpdated);
+	}
+
 	if (UWorld* World = GetWorld())
 	{
 		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
@@ -376,6 +392,7 @@ void AInspectorPawn::BeginPlay()
 		}
 	}
 
+	UpdateLegacyReticleVisibility();
 	UpdateLaserSheetMaterialVisuals();
 	UpdateLaserReticleTransform();
 	UpdateLaserReticleReadoutText();
@@ -528,9 +545,20 @@ void AInspectorPawn::ApplyPresentationData(const UTareTithePresentationDataAsset
 		AudioTelemetryBridgeComponent->ApplyPresentationData(InPresentationData);
 	}
 
+	if (IsValid(InspectorHudBridgeComponent))
+	{
+		InspectorHudBridgeComponent->ApplyPresentationData(InPresentationData);
+	}
+
+	UpdateLegacyReticleVisibility();
 	ApplyLockedCameraExposureSettings();
 	InitializeLaserSheetDynamicMaterial();
 	UpdateLaserSheetMaterialVisuals();
+	if (IsLegacyWorldSpaceReadoutEnabled())
+	{
+		UpdateLaserReticleTransform();
+		UpdateLaserReticleReadoutText();
+	}
 }
 
 void AInspectorPawn::RefreshAimTargetAndFrameFromShift()
@@ -1034,9 +1062,121 @@ void AInspectorPawn::UpdateCameraParallaxFromAim()
 	CameraViewPivot->SetRelativeRotation(FRotator(FinalPitchDeg, TargetYawDeg, 0.0f));
 }
 
+bool AInspectorPawn::IsLegacyWorldSpaceReadoutEnabled() const
+{
+	return IsValid(PresentationData) && PresentationData->HudConfig.bEnableLegacyWorldSpaceReadouts;
+}
+
+void AInspectorPawn::UpdateLegacyReticleVisibility()
+{
+	const bool bShowLegacy = IsLegacyWorldSpaceReadoutEnabled() && (CachedShiftPhase == EShiftPhase::ActiveInspection);
+	UTextRenderComponent* const ReticleLines[4] = {
+		LaserReticleReadout,
+		LaserReticleYieldReadout,
+		LaserReticleLoadReadout,
+		LaserReticleHazardReadout
+	};
+	for (UTextRenderComponent* LineComp : ReticleLines)
+	{
+		if (IsValid(LineComp))
+		{
+			LineComp->SetVisibility(bShowLegacy, false);
+			LineComp->SetHiddenInGame(!bShowLegacy, false);
+		}
+	}
+}
+
+bool AInspectorPawn::ProjectSteadyWorldAnchorToNormalizedUV(
+	const FVector& SteadyWorldAnchor,
+	FVector2D& OutNormalizedUV) const
+{
+	const FTransform SteadyCamTransform = (IsValid(InspectorCamera) && IsValid(CameraViewPivot))
+		? (InspectorCamera->GetRelativeTransform() * CameraViewPivot->GetComponentTransform())
+		: (IsValid(CameraViewPivot) ? CameraViewPivot->GetComponentTransform() : GetActorTransform());
+
+	UWorld* World = GetWorld();
+	UGameViewportClient* ViewportClient = IsValid(World) ? World->GetGameViewport() : nullptr;
+	FViewport* Viewport = IsValid(ViewportClient) ? ViewportClient->Viewport : nullptr;
+
+	if (Viewport != nullptr)
+	{
+		const FIntPoint ViewportSize = Viewport->GetSizeXY();
+		if (ViewportSize.X > 0 && ViewportSize.Y > 0)
+		{
+			FMinimalViewInfo ViewInfo;
+			if (IsValid(InspectorCamera))
+			{
+				InspectorCamera->GetCameraView(0.0f, ViewInfo);
+			}
+			else
+			{
+				ViewInfo.FOV = DefaultCameraFieldOfView;
+			}
+			ViewInfo.Location = SteadyCamTransform.GetLocation();
+			ViewInfo.Rotation = SteadyCamTransform.Rotator();
+
+			FSceneViewProjectionData ProjectionData;
+			ProjectionData.SetViewRectangle(FIntRect(0, 0, ViewportSize.X, ViewportSize.Y));
+			ProjectionData.ViewOrigin = ViewInfo.Location;
+			ProjectionData.ViewRotationMatrix = FInverseRotationMatrix(ViewInfo.Rotation) * FMatrix(
+				FPlane(0.0, 0.0, 1.0, 0.0),
+				FPlane(1.0, 0.0, 0.0, 0.0),
+				FPlane(0.0, 1.0, 0.0, 0.0),
+				FPlane(0.0, 0.0, 0.0, 1.0));
+
+			TEnumAsByte<EAspectRatioAxisConstraint> AspectConstraint = AspectRatio_MaintainXFOV;
+			if (const APlayerController* PC = GetController<APlayerController>())
+			{
+				if (const ULocalPlayer* LP = PC->GetLocalPlayer())
+				{
+					AspectConstraint = LP->AspectRatioAxisConstraint;
+				}
+			}
+
+			FMinimalViewInfo::CalculateProjectionMatrixGivenView(
+				ViewInfo,
+				AspectConstraint,
+				Viewport,
+				ProjectionData);
+
+			FVector2D ScreenPixelPos = FVector2D::ZeroVector;
+			if (FSceneView::ProjectWorldToScreen(
+				SteadyWorldAnchor,
+				ProjectionData.GetConstrainedViewRect(),
+				ProjectionData.ComputeViewProjectionMatrix(),
+				ScreenPixelPos))
+			{
+				OutNormalizedUV.X = FMath::Clamp(ScreenPixelPos.X / static_cast<double>(ViewportSize.X), 0.0, 1.0);
+				OutNormalizedUV.Y = FMath::Clamp(ScreenPixelPos.Y / static_cast<double>(ViewportSize.Y), 0.0, 1.0);
+				return true;
+			}
+			return false;
+		}
+	}
+
+	// Pre-viewport-init analytical fallback (strictly unshaken steady camera space).
+	const FVector RelCam = SteadyCamTransform.InverseTransformPositionNoScale(SteadyWorldAnchor);
+	if (RelCam.X <= 1.0)
+	{
+		return false;
+	}
+
+	const double FovDeg = IsValid(InspectorCamera)
+		? static_cast<double>(InspectorCamera->FieldOfView)
+		: static_cast<double>(DefaultCameraFieldOfView);
+	const double TanHalfHoriz = FMath::Max(0.1, FMath::Tan(FMath::DegreesToRadians(0.5 * FovDeg)));
+	const double TanHalfVert = TanHalfHoriz * (9.0 / 16.0);
+
+	const double NdcX = RelCam.Y / (RelCam.X * TanHalfHoriz);
+	const double NdcY = RelCam.Z / (RelCam.X * TanHalfVert);
+	OutNormalizedUV.X = FMath::Clamp(0.5 + (0.5 * NdcX), 0.0, 1.0);
+	OutNormalizedUV.Y = FMath::Clamp(0.5 - (0.5 * NdcY), 0.0, 1.0);
+	return true;
+}
+
 void AInspectorPawn::UpdateLaserReticleTransform()
 {
-	if (!IsValid(LaserReticleReadout) || !IsValid(LaserPlaneAimComponent))
+	if (!IsValid(LaserPlaneAimComponent))
 	{
 		return;
 	}
@@ -1056,7 +1196,10 @@ void AInspectorPawn::UpdateLaserReticleTransform()
 		FMath::Max(0.2, static_cast<double>(LaserFrameBarWidthCm)));
 
 	const FVector ReticlePlanePoint = FrameAnchor - (FrameForward * static_cast<double>(LaserReticleFrontOffsetCm));
-	const FVector CamWorldLoc = IsValid(InspectorCamera) ? InspectorCamera->GetComponentLocation() : GetActorLocation();
+	const FTransform SteadyCamTransform = (IsValid(InspectorCamera) && IsValid(CameraViewPivot))
+		? (InspectorCamera->GetRelativeTransform() * CameraViewPivot->GetComponentTransform())
+		: (IsValid(CameraViewPivot) ? CameraViewPivot->GetComponentTransform() : GetActorTransform());
+	const FVector CamWorldLoc = SteadyCamTransform.GetLocation();
 	const double DepthReticleFromCam = FMath::Max(20.0, FVector::DotProduct(ReticlePlanePoint - CamWorldLoc, FrameForward));
 	const double CamRightOffsetFromAnchor = FVector::DotProduct(CamWorldLoc - FrameAnchor, FrameRight);
 
@@ -1093,16 +1236,44 @@ void AInspectorPawn::UpdateLaserReticleTransform()
 	FVector ReticleWorldLocation = ReticlePlanePoint + (FrameRight * EffectiveLateralOffsetCm);
 	ReticleWorldLocation.Z = PlaneOrigin.Z;
 
-	FRotator ReticleWorldRotation = FRotationMatrix::MakeFromX(-FrameForward).Rotator();
-	ReticleWorldRotation.Pitch = 0.0f;
-	ReticleWorldRotation.Roll = 0.0f;
+	if (IsLegacyWorldSpaceReadoutEnabled() && IsValid(LaserReticleReadout))
+	{
+		FRotator ReticleWorldRotation = FRotationMatrix::MakeFromX(-FrameForward).Rotator();
+		ReticleWorldRotation.Pitch = 0.0f;
+		ReticleWorldRotation.Roll = 0.0f;
 
-	LaserReticleReadout->SetWorldLocationAndRotation(ReticleWorldLocation, ReticleWorldRotation);
-	LaserReticleReadout->SetWorldScale3D(FVector::OneVector);
+		LaserReticleReadout->SetWorldLocationAndRotation(ReticleWorldLocation, ReticleWorldRotation);
+		LaserReticleReadout->SetWorldScale3D(FVector::OneVector);
+	}
+
+	const float UvDeadband = IsValid(PresentationData)
+		? FMath::Max(0.0001f, PresentationData->HudConfig.ReticleNormalizedUvDeadband)
+		: 0.001f;
+	const bool bActivePhase = (CachedShiftPhase == EShiftPhase::ActiveInspection);
+	FVector2D NormalizedUV = LastBroadcastReticleUV;
+	const bool bProjected = bActivePhase && ProjectSteadyWorldAnchorToNormalizedUV(ReticleWorldLocation, NormalizedUV);
+	const bool bShouldShow = bActivePhase && bProjected;
+
+	const bool bVisibilityChanged = (bShouldShow != bLastBroadcastReticleVisible);
+	const bool bMovedPastDeadband =
+		(FMath::Abs(NormalizedUV.X - LastBroadcastReticleUV.X) >= static_cast<double>(UvDeadband)) ||
+		(FMath::Abs(NormalizedUV.Y - LastBroadcastReticleUV.Y) >= static_cast<double>(UvDeadband));
+
+	if (bVisibilityChanged || (bShouldShow && bMovedPastDeadband))
+	{
+		LastBroadcastReticleUV = NormalizedUV;
+		bLastBroadcastReticleVisible = bShouldShow;
+		OnReticleProjectionUpdated.Broadcast(NormalizedUV, bShouldShow, ReticleWorldLocation);
+	}
 }
 
 void AInspectorPawn::UpdateLaserReticleReadoutText()
 {
+	if (!IsLegacyWorldSpaceReadoutEnabled())
+	{
+		return;
+	}
+
 	if (IsValid(LaserReticleReadout))
 	{
 		constexpr float QuotaFloatEpsilonKg = 1.0e-3f;
@@ -1415,6 +1586,7 @@ void AInspectorPawn::HandleCapacitorTelemetryImpulse(
 
 void AInspectorPawn::HandleShiftPhaseChanged(EShiftPhase NewPhase)
 {
+	CachedShiftPhase = NewPhase;
 	const bool bActiveInspection = (NewPhase == EShiftPhase::ActiveInspection);
 
 	if (!bActiveInspection && IsValid(LaserCapacitorComponent))
@@ -1431,14 +1603,17 @@ void AInspectorPawn::HandleShiftPhaseChanged(EShiftPhase NewPhase)
 		LaserPlaneAimComponent->SetAimingEnabled(bActiveInspection);
 	}
 
-	if (IsValid(LaserReticleReadout))
-	{
-		LaserReticleReadout->SetVisibility(bActiveInspection, true);
-	}
+	UpdateLegacyReticleVisibility();
 	if (bActiveInspection)
 	{
+		LastBroadcastReticleUV = FVector2D(-1.0f, -1.0f);
 		UpdateLaserReticleTransform();
 		UpdateLaserReticleReadoutText();
+	}
+	else if (bLastBroadcastReticleVisible)
+	{
+		bLastBroadcastReticleVisible = false;
+		OnReticleProjectionUpdated.Broadcast(LastBroadcastReticleUV, false, FVector::ZeroVector);
 	}
 }
 
@@ -1453,9 +1628,11 @@ void AInspectorPawn::HandleActiveContractLoaded(
 		if (const UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
 		{
 			CachedHudSnapshot = ShiftSubsystem->GetCurrentSnapshot();
-			bActiveInspectionPhase = (ShiftSubsystem->GetCurrentPhase() == EShiftPhase::ActiveInspection);
+			CachedShiftPhase = ShiftSubsystem->GetCurrentPhase();
+			bActiveInspectionPhase = (CachedShiftPhase == EShiftPhase::ActiveInspection);
 		}
 	}
+	LastBroadcastReticleUV = FVector2D(-1.0f, -1.0f);
 
 	if (IsValid(LaserCapacitorComponent))
 	{
@@ -1492,6 +1669,7 @@ void AInspectorPawn::HandleActiveContractLoaded(
 		LaserPlaneAimComponent->ForceRefreshPreview();
 	}
 	UpdateCameraParallaxFromAim();
+	UpdateLegacyReticleVisibility();
 	UpdateLaserSheetMaterialVisuals();
 	UpdateLaserReticleTransform();
 	UpdateLaserReticleReadoutText();
@@ -1505,6 +1683,14 @@ void AInspectorPawn::HandleManualResetHoldElapsed()
 		{
 			ShiftSubsystem->RequestManualContractReset();
 		}
+	}
+}
+
+void AInspectorPawn::InjectAimCursorDeltaForTest(FVector2D MouseDelta)
+{
+	if (IsValid(LaserPlaneAimComponent) && LaserPlaneAimComponent->IsAimingEnabled())
+	{
+		LaserPlaneAimComponent->AddAimCursorDelta(MouseDelta);
 	}
 }
 

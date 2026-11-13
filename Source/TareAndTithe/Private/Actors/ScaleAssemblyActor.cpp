@@ -226,12 +226,16 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 	ReadoutConsolePivot->SetRelativeLocation(FVector(-43.5, 0.0, 18.2));
 	ReadoutConsolePivot->SetRelativeRotation(FRotator(-10.0f, 0.0f, 0.0f));
 	ReadoutConsolePivot->SetRelativeScale3D(FVector::OneVector);
+	ReadoutConsolePivot->SetVisibility(false, false);
+	ReadoutConsolePivot->SetHiddenInGame(true, false);
 
 	// Unscaled (1, 1, 1) grouping root translated/rotated by ScaleConsoleLocalOffset so custom mesh housings never squash text scale.
 	ScaleConsoleRoot = CreateDefaultSubobject<USceneComponent>(TEXT("ScaleConsoleRoot"));
 	ScaleConsoleRoot->SetupAttachment(ReadoutConsolePivot);
 	ScaleConsoleRoot->PrimaryComponentTick.bCanEverTick = false;
 	ScaleConsoleRoot->SetRelativeTransform(FTransform::Identity);
+	ScaleConsoleRoot->SetVisibility(false, false);
+	ScaleConsoleRoot->SetHiddenInGame(true, false);
 
 	ReadoutBackingPlate = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ReadoutBackingPlate"));
 	ReadoutBackingPlate->SetupAttachment(ScaleConsoleRoot);
@@ -251,6 +255,8 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 	}
 	ReadoutBackingPlate->SetRelativeLocation(FVector::ZeroVector);
 	ReadoutBackingPlate->SetRelativeScale3D(FVector(0.016, static_cast<double>(ReadoutBackingPlateWidthCm) / 100.0, 0.37));
+	ReadoutBackingPlate->SetVisibility(false, false);
+	ReadoutBackingPlate->SetHiddenInGame(true, false);
 
 	// Backing plate front face is at local X = -0.8 cm; placing all text at local X = -2.0 cm positions glyphs exactly 1.2 cm in front.
 	auto ConfigureReadoutText = [this](
@@ -273,6 +279,8 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 		}
 		TextComp->SetTextRenderColor(Color);
 		TextComp->SetText(FText::FromString(DefaultStr));
+		TextComp->SetVisibility(false, false);
+		TextComp->SetHiddenInGame(true, false);
 	};
 
 	HeaderStencilText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("HeaderStencilText"));
@@ -330,6 +338,7 @@ void AScaleAssemblyActor::BeginPlay()
 
 	InitializeGreyboxVisualMaterials();
 	EnforcePanTriggerGeometryAndCollision();
+	UpdateLegacyConsoleVisibility();
 
 	if (IsValid(ScaleWellThermalLightComponent))
 	{
@@ -565,6 +574,7 @@ void AScaleAssemblyActor::ReconcileScaleOverlaps()
 void AScaleAssemblyActor::ApplyPresentationData(const UTareTithePresentationDataAsset* InPresentationData)
 {
 	PresentationData = InPresentationData;
+	UpdateLegacyConsoleVisibility();
 
 	if (IsValid(ScaleConsoleRoot))
 	{
@@ -622,6 +632,13 @@ void AScaleAssemblyActor::ApplyPresentationData(const UTareTithePresentationData
 		ApplyDarkGunmetalMaterial(DiverterFlapperVisual);
 	}
 	ApplyDarkGunmetalMaterial(LeftHopperGuideVisual);
+
+	if (IsLegacyWorldSpaceReadoutEnabled())
+	{
+		RefreshContractHeaderReadout();
+		RefreshRouteReadout();
+		RefreshStatusBannerReadout();
+	}
 }
 
 void AScaleAssemblyActor::HandleContractSnapshotUpdated(const FContractRuntimeSnapshot& Snapshot)
@@ -644,48 +661,51 @@ void AScaleAssemblyActor::HandleContractSnapshotUpdated(const FContractRuntimeSn
 		}
 	}
 
-	const bool bContaminated = HasContaminationFault_Implementation();
-	const bool bOvershoot = Snapshot.SettledScaleMassKg > (Snapshot.TargetTitheMassKg + Snapshot.QuotaToleranceKg + 1.0e-3f);
-
-	RefreshContractHeaderReadout();
-
-	if (IsValid(MassReadoutText))
+	if (IsLegacyWorldSpaceReadoutEnabled())
 	{
-		const FString MassLine = FString::Printf(
-			TEXT("%05.2f / %05.2f KG"),
-			Snapshot.SettledScaleMassKg,
-			Snapshot.TargetTitheMassKg);
-		MassReadoutText->SetText(FText::FromString(MassLine));
+		const bool bContaminated = HasContaminationFault_Implementation();
+		const bool bOvershoot = Snapshot.SettledScaleMassKg > (Snapshot.TargetTitheMassKg + Snapshot.QuotaToleranceKg + 1.0e-3f);
 
-		const bool bFaultActive = (CachedShiftPhase == EShiftPhase::FaultResetDelay);
-		if (bContaminated || bOvershoot || bFaultActive)
+		RefreshContractHeaderReadout();
+
+		if (IsValid(MassReadoutText))
 		{
-			MassReadoutText->SetTextRenderColor(ReadoutCrimsonColor);
+			const FString MassLine = FString::Printf(
+				TEXT("%05.2f / %05.2f KG"),
+				Snapshot.SettledScaleMassKg,
+				Snapshot.TargetTitheMassKg);
+			MassReadoutText->SetText(FText::FromString(MassLine));
+
+			const bool bFaultActive = (CachedShiftPhase == EShiftPhase::FaultResetDelay);
+			if (bContaminated || bOvershoot || bFaultActive)
+			{
+				MassReadoutText->SetTextRenderColor(ReadoutCrimsonColor);
+			}
+			else if (Snapshot.bIsWithinQuotaWindow)
+			{
+				MassReadoutText->SetTextRenderColor(ReadoutEmeraldColor);
+			}
+			else
+			{
+				MassReadoutText->SetTextRenderColor(ReadoutGoldColor);
+			}
 		}
-		else if (Snapshot.bIsWithinQuotaWindow)
+
+		if (IsValid(TareReadoutText))
 		{
-			MassReadoutText->SetTextRenderColor(ReadoutEmeraldColor);
+			const FString TareLine = FString::Printf(
+				TEXT("TARE: %.1f / %.1f KG"),
+				Snapshot.AccumulatedTareWasteKg,
+				Snapshot.MaxAllowedTareWasteKg);
+			TareReadoutText->SetText(FText::FromString(TareLine));
+
+			const bool bTareExceeded = Snapshot.AccumulatedTareWasteKg > (Snapshot.MaxAllowedTareWasteKg + 1.0e-3f);
+			TareReadoutText->SetTextRenderColor(bTareExceeded ? ReadoutCrimsonColor : ReadoutGoldColor);
 		}
-		else
-		{
-			MassReadoutText->SetTextRenderColor(ReadoutGoldColor);
-		}
+
+		RefreshRouteReadout();
+		RefreshStatusBannerReadout();
 	}
-
-	if (IsValid(TareReadoutText))
-	{
-		const FString TareLine = FString::Printf(
-			TEXT("TARE: %.1f / %.1f KG"),
-			Snapshot.AccumulatedTareWasteKg,
-			Snapshot.MaxAllowedTareWasteKg);
-		TareReadoutText->SetText(FText::FromString(TareLine));
-
-		const bool bTareExceeded = Snapshot.AccumulatedTareWasteKg > (Snapshot.MaxAllowedTareWasteKg + 1.0e-3f);
-		TareReadoutText->SetTextRenderColor(bTareExceeded ? ReadoutCrimsonColor : ReadoutGoldColor);
-	}
-
-	RefreshRouteReadout();
-	RefreshStatusBannerReadout();
 
 	if (IsValid(ScaleWellThermalLightComponent))
 	{
@@ -879,7 +899,10 @@ void AScaleAssemblyActor::EnforcePanTriggerGeometryAndCollision()
 		ReadoutBackingPlate->SetRelativeLocation(FVector::ZeroVector);
 		ReadoutBackingPlate->SetRelativeScale3D(FVector(0.016, static_cast<double>(ReadoutBackingPlateWidthCm) / 100.0, 0.37));
 	}
-	FitReadoutLineWidth(ControlStencilText, ControlStencilDefaultWorldSize, ControlStencilMinWorldSize, ControlStencilMaxSafeWidthCm);
+	if (IsLegacyWorldSpaceReadoutEnabled())
+	{
+		FitReadoutLineWidth(ControlStencilText, ControlStencilDefaultWorldSize, ControlStencilMinWorldSize, ControlStencilMaxSafeWidthCm);
+	}
 
 	EnforceAuthoritativeCollider(
 		LeftHopperGuideCollider,
@@ -920,9 +943,51 @@ void AScaleAssemblyActor::EnforcePanTriggerGeometryAndCollision()
 	PanTriggerBox->SetGenerateOverlapEvents(true);
 }
 
+bool AScaleAssemblyActor::IsLegacyWorldSpaceReadoutEnabled() const
+{
+	return IsValid(PresentationData) && PresentationData->HudConfig.bEnableLegacyWorldSpaceReadouts;
+}
+
+void AScaleAssemblyActor::UpdateLegacyConsoleVisibility()
+{
+	const bool bShowLegacy = IsLegacyWorldSpaceReadoutEnabled();
+
+	USceneComponent* const ConsoleRootsAndPlate[3] = {
+		ReadoutConsolePivot,
+		ScaleConsoleRoot,
+		ReadoutBackingPlate
+	};
+	for (USceneComponent* Comp : ConsoleRootsAndPlate)
+	{
+		if (IsValid(Comp))
+		{
+			Comp->SetVisibility(bShowLegacy, false);
+			Comp->SetHiddenInGame(!bShowLegacy, false);
+		}
+	}
+
+	UTextRenderComponent* const ConsoleTexts[7] = {
+		HeaderStencilText,
+		ContractCodeText,
+		StatusBannerText,
+		MassReadoutText,
+		TareReadoutText,
+		RouteReadoutText,
+		ControlStencilText
+	};
+	for (UTextRenderComponent* TextComp : ConsoleTexts)
+	{
+		if (IsValid(TextComp))
+		{
+			TextComp->SetVisibility(bShowLegacy, false);
+			TextComp->SetHiddenInGame(!bShowLegacy, false);
+		}
+	}
+}
+
 void AScaleAssemblyActor::RefreshContractHeaderReadout()
 {
-	if (!IsValid(ContractCodeText))
+	if (!IsLegacyWorldSpaceReadoutEnabled() || !IsValid(ContractCodeText))
 	{
 		return;
 	}
@@ -964,7 +1029,7 @@ void AScaleAssemblyActor::RefreshContractHeaderReadout()
 
 void AScaleAssemblyActor::RefreshStatusBannerReadout()
 {
-	if (!IsValid(StatusBannerText))
+	if (!IsLegacyWorldSpaceReadoutEnabled() || !IsValid(StatusBannerText))
 	{
 		return;
 	}
@@ -1164,7 +1229,7 @@ FString AScaleAssemblyActor::FormatFaultReasonBanner(EContractFaultReason FaultR
 
 void AScaleAssemblyActor::RefreshRouteReadout()
 {
-	if (!IsValid(RouteReadoutText) || !IsValid(DiverterGateComponent))
+	if (!IsLegacyWorldSpaceReadoutEnabled() || !IsValid(RouteReadoutText) || !IsValid(DiverterGateComponent))
 	{
 		return;
 	}
