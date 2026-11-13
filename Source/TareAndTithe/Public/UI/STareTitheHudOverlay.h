@@ -19,7 +19,7 @@ class SBottomCrtWeighingConsole;
 /**
  * Root pure-C++ post-tonemap Slate HUD overlay (SCompoundWidget + SOverlay hierarchy, zero .uasset WBPs).
  * - Root and all child nodes strictly enforce EVisibility::HitTestInvisible (or Collapsed) to preserve FInputModeGameOnly mouse capture.
- * - Dynamically clamps Top-Left & Top-Right widths to <= 20% of local viewport width for 100%..150% DPI safety.
+ * - Dynamically clamps Top-Left & Top-Right widths to <= 34% of local viewport width (525 px target) for 100%..150% DPI safety.
  * - Converts unshaken normalized [0..1] reticle UV into local Slate coordinates clamped clear of all sibling panels.
  */
 class TAREANDTITHE_API STareTitheHudOverlay : public SCompoundWidget
@@ -92,8 +92,9 @@ private:
 	FHudPresentationConfig ActiveConfig;
 	FVector2D EffectiveLocalViewportSize = FVector2D(1536.0f, 864.0f);
 	FVector2D CachedReticleNormalizedUV = FVector2D(0.68f, 0.42f);
-	float CachedEffectiveCornerWidth = 307.2f;
+	float CachedEffectiveCornerWidth = 522.2f;
 	float CachedEffectiveBottomWidth = 720.0f;
+	uint64 LastObservedBannerGeneration = 0;
 	bool bIsCenterBannerTerminalStamp = false;
 
 	mutable FVector2D PendingObservedLocalSize = FVector2D::ZeroVector;

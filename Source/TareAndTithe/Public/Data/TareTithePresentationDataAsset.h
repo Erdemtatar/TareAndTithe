@@ -273,14 +273,26 @@ struct TAREANDTITHE_API FHudPresentationConfig
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|CRT", meta = (ClampMin = "2.0", ClampMax = "8.0"))
 	float CrtScanlinePitchPx = 3.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Layout", meta = (ClampMin = "240.0", ClampMax = "520.0"))
-	float CornerPanelWidthPx = 350.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Layout", meta = (ClampMin = "240.0", ClampMax = "680.0"))
+	float CornerPanelWidthPx = 525.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Layout", meta = (ClampMin = "6.0", ClampMax = "40.0"))
 	float CornerPanelMarginPx = 14.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Layout", meta = (ClampMin = "0.14", ClampMax = "0.28"))
-	float CornerPanelMaxViewportWidthFraction = 0.20f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Layout", meta = (ClampMin = "0.14", ClampMax = "0.38"))
+	float CornerPanelMaxViewportWidthFraction = 0.34f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Typography", meta = (ClampMin = "8", ClampMax = "22"))
+	int32 CornerHeaderFontSizePt = 13;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Typography", meta = (ClampMin = "9", ClampMax = "24"))
+	int32 CornerBodyFontSizePt = 14;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Typography", meta = (ClampMin = "8", ClampMax = "22"))
+	int32 CornerSubFontSizePt = 13;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Typography", meta = (ClampMin = "7", ClampMax = "18"))
+	int32 CornerPillFontSizePt = 11;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Layout", meta = (ClampMin = "480.0", ClampMax = "1000.0"))
 	float BottomConsoleWidthPx = 720.0f;
@@ -334,6 +346,33 @@ struct TAREANDTITHE_API FHudPresentationConfig
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Theme")
 	FLinearColor PanelBorderGunmetalTint = FLinearColor(0.19f, 0.23f, 0.28f, 0.92f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Tutorial")
+	bool bEnableShift1MicroTutorial = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Tutorial", meta = (ClampMin = "1.0", ClampMax = "15.0"))
+	float Shift1Stage1DurationSeconds = 4.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Tutorial", meta = (ClampMin = "1.0", ClampMax = "15.0"))
+	float Shift1Stage2DurationSeconds = 5.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Tutorial", meta = (ClampMin = "1.0", ClampMax = "15.0"))
+	float Shift1Stage3DurationSeconds = 5.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Tutorial", meta = (ClampMin = "1.0", ClampMax = "25.0"))
+	float Shift1Stage2DismissTiltDegrees = 3.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Tutorial")
+	FLinearColor TutorialIceCyanTint = FLinearColor(0.18f, 0.90f, 1.00f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Tutorial", meta = (ClampMin = "1", ClampMax = "5"))
+	int32 TutorialPulseCount = 2;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Tutorial", meta = (ClampMin = "0.25", ClampMax = "2.50"))
+	float TutorialPulseEnvelopeSeconds = 0.80f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Tutorial", meta = (ClampMin = "0.40", ClampMax = "0.95"))
+	float TutorialPostPulseBackgroundOpacity = 0.76f;
 };
 
 USTRUCT(BlueprintType)
@@ -439,46 +478,55 @@ struct TAREANDTITHE_API FOuterEdgeFramingConfig
 	bool bEnableOuterArchitecturalFraming = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Layout", meta = (ClampMin = "155.0", ClampMax = "225.0"))
-	float ForegroundPipeWorldX = 176.0f;
+	float ForegroundPipeWorldX = 172.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Layout", meta = (ClampMin = "188.0", ClampMax = "245.0"))
-	float ForegroundPipeAbsY = 198.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Layout", meta = (ClampMin = "185.0", ClampMax = "245.0"))
+	float ForegroundPipeAbsY = 205.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Layout", meta = (ClampMin = "8.0", ClampMax = "19.0"))
-	float ForegroundPipeRadiusCm = 15.5f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Layout", meta = (ClampMin = "8.0", ClampMax = "20.0"))
+	float ForegroundPipeRadiusCm = 18.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Layout", meta = (ClampMin = "215.0", ClampMax = "335.0"))
-	float MidgroundColumnWorldX = 232.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Layout", meta = (ClampMin = "205.0", ClampMax = "335.0"))
+	float MidgroundColumnWorldX = 224.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Layout", meta = (ClampMin = "210.0", ClampMax = "315.0"))
-	float MidgroundColumnAbsY = 248.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Layout", meta = (ClampMin = "175.0", ClampMax = "315.0"))
+	float MidgroundColumnAbsY = 198.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Layout", meta = (ClampMin = "0.60", ClampMax = "1.30"))
-	float MidgroundColumnXYScale = 1.00f;
+	float MidgroundColumnXYScale = 0.92f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Layout", meta = (ClampMin = "205.0", ClampMax = "320.0"))
-	float CompanionPipeWorldX = 210.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Layout", meta = (ClampMin = "175.0", ClampMax = "320.0"))
+	float CompanionPipeWorldX = 192.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Layout", meta = (ClampMin = "200.0", ClampMax = "275.0"))
-	float CompanionPipeAbsY = 208.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Layout", meta = (ClampMin = "170.0", ClampMax = "275.0"))
+	float CompanionPipeAbsY = 185.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Layout", meta = (ClampMin = "5.0", ClampMax = "15.0"))
-	float CompanionPipeRadiusCm = 13.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Layout", meta = (ClampMin = "5.0", ClampMax = "16.0"))
+	float CompanionPipeRadiusCm = 14.5f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Material", meta = (ClampMin = "0.30", ClampMax = "2.20"))
-	float OuterMetalAlbedoScale = 1.52f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Material", meta = (ClampMin = "0.15", ClampMax = "2.20"))
+	float OuterMetalAlbedoScale = 0.605f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Material", meta = (ClampMin = "0.004", ClampMax = "0.25"))
+	float OuterMetalConductorMinF0Scale = 0.0168f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Material", meta = (ClampMin = "0.16", ClampMax = "0.70"))
 	float OuterMetalRoughnessMin = 0.48f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Material", meta = (ClampMin = "0.20", ClampMax = "0.85"))
-	float OuterMetalRoughnessMax = 0.65f;
+	float OuterMetalRoughnessMax = 0.64f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Material", meta = (ClampMin = "0.20", ClampMax = "0.95"))
-	float OuterMetalMetallic = 0.36f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Material", meta = (ClampMin = "0.15", ClampMax = "0.95"))
+	float OuterMetalMetallic = 0.42f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Material", meta = (ClampMin = "0.15", ClampMax = "1.00"))
-	float OuterMetalSpecularScale = 0.30f;
+	float OuterMetalSpecularScale = 0.68f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Material", meta = (ClampMin = "0.10", ClampMax = "1.00"))
+	float OuterMetalAOStrength = 0.15f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|Material", meta = (ClampMin = "0.25", ClampMax = "2.50"))
+	float OuterMetalNormalStrength = 1.45f;
 
 	/** Strategy 1 locked shipping default (false): zero extra lights; catches grazing rim from CellFillPoint + cross-axis RimSpotLeft/Right + TC_CellAmbientCubemap. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OuterFraming|RimLighting")

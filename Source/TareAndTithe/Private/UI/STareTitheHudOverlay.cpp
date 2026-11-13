@@ -88,11 +88,17 @@ namespace TareTitheHudPaint
 }
 
 // ============================================================================
-// 1. TOP-LEFT INDENTURE & REQUISITION PANEL
+// 1. TOP-LEFT INDENTURE & REQUISITION PANEL (+50% EXPANDED, PROPORTIONAL TYPOGRAPHY)
 // ============================================================================
 class STopLeftIndenturePanel : public SCompoundWidget
 {
 public:
+	static constexpr float PadLeftPx = 15.0f;
+	static constexpr float PadTopPx = 10.0f;
+	static constexpr float PadRightPx = 13.0f;
+	static constexpr float PadBottomPx = 9.0f;
+	static constexpr float HorizontalPadTotalPx = PadLeftPx + PadRightPx;
+
 	SLATE_BEGIN_ARGS(STopLeftIndenturePanel)
 	{
 		_Visibility = EVisibility::HitTestInvisible;
@@ -103,46 +109,46 @@ public:
 	{
 		SetVisibility(EVisibility::HitTestInvisible);
 
-		const FSlateFontInfo HeaderFont = FCoreStyle::GetDefaultFontStyle("Bold", 9);
-		const FSlateFontInfo DirectiveFont = FCoreStyle::GetDefaultFontStyle("Bold", 10);
-		const FSlateFontInfo ScripFont = FCoreStyle::GetDefaultFontStyle("Bold", 9);
-		const FSlateFontInfo PillFont = FCoreStyle::GetDefaultFontStyle("Regular", 8);
+		const FSlateFontInfo HeaderFont = FCoreStyle::GetDefaultFontStyle("Bold", 13);
+		const FSlateFontInfo DirectiveFont = FCoreStyle::GetDefaultFontStyle("Bold", 14);
+		const FSlateFontInfo ScripFont = FCoreStyle::GetDefaultFontStyle("Bold", 13);
+		const FSlateFontInfo PillFont = FCoreStyle::GetDefaultFontStyle("Bold", 11);
 
 		ChildSlot
-		.Padding(FMargin(12.0f, 9.0f, 10.0f, 9.0f))
+		.Padding(FMargin(PadLeftPx, PadTopPx, PadRightPx, PadBottomPx))
 		[
 			SNew(SVerticalBox)
 			.Visibility(EVisibility::HitTestInvisible)
 
 			+ SVerticalBox::Slot()
 			.AutoHeight()
-			.Padding(0.0f, 0.0f, 0.0f, 4.0f)
+			.Padding(0.0f, 0.0f, 0.0f, 5.0f)
 			[
 				SAssignNew(HeaderTextBlock, STextBlock)
 				.Visibility(EVisibility::HitTestInvisible)
 				.Font(HeaderFont)
 				.ColorAndOpacity(FLinearColor(0.05f, 0.88f, 1.00f, 1.0f))
 				.ShadowOffset(FVector2D(1.0f, 1.0f))
-				.ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.85f))
+				.ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.88f))
 			]
 
 			+ SVerticalBox::Slot()
 			.AutoHeight()
-			.Padding(0.0f, 2.0f, 0.0f, 6.0f)
+			.Padding(0.0f, 3.0f, 0.0f, 5.0f)
 			[
 				SAssignNew(DirectiveTextBlock, STextBlock)
 				.Visibility(EVisibility::HitTestInvisible)
 				.Font(DirectiveFont)
 				.AutoWrapText(true)
-				.WrapTextAt(280.0f)
+				.WrapTextAt(494.0f)
 				.ColorAndOpacity(FLinearColor(1.00f, 0.82f, 0.18f, 1.0f))
 				.ShadowOffset(FVector2D(1.0f, 1.0f))
-				.ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.85f))
+				.ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.88f))
 			]
 
 			+ SVerticalBox::Slot()
 			.AutoHeight()
-			.Padding(0.0f, 2.0f, 0.0f, 2.0f)
+			.Padding(0.0f, 1.0f, 0.0f, 1.0f)
 			[
 				SNew(SHorizontalBox)
 				.Visibility(EVisibility::HitTestInvisible)
@@ -150,12 +156,14 @@ public:
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
 				.VAlign(VAlign_Center)
-				.Padding(0.0f, 0.0f, 8.0f, 0.0f)
+				.Padding(0.0f, 0.0f, 10.0f, 0.0f)
 				[
 					SAssignNew(ScripTextBlock, STextBlock)
 					.Visibility(EVisibility::HitTestInvisible)
 					.Font(ScripFont)
 					.ColorAndOpacity(FLinearColor(1.00f, 0.82f, 0.18f, 1.0f))
+					.ShadowOffset(FVector2D(1.0f, 1.0f))
+					.ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.85f))
 				]
 
 				+ SHorizontalBox::Slot()
@@ -167,20 +175,24 @@ public:
 
 					+ SHorizontalBox::Slot()
 					.AutoWidth()
-					.Padding(0.0f, 0.0f, 5.0f, 0.0f)
+					.Padding(0.0f, 0.0f, 7.0f, 0.0f)
 					[
 						SAssignNew(UpgradePillBlocks[0], STextBlock)
 						.Visibility(EVisibility::HitTestInvisible)
 						.Font(PillFont)
+						.ShadowOffset(FVector2D(1.0f, 1.0f))
+						.ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.82f))
 					]
 
 					+ SHorizontalBox::Slot()
 					.AutoWidth()
-					.Padding(0.0f, 0.0f, 5.0f, 0.0f)
+					.Padding(0.0f, 0.0f, 7.0f, 0.0f)
 					[
 						SAssignNew(UpgradePillBlocks[1], STextBlock)
 						.Visibility(EVisibility::HitTestInvisible)
 						.Font(PillFont)
+						.ShadowOffset(FVector2D(1.0f, 1.0f))
+						.ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.82f))
 					]
 
 					+ SHorizontalBox::Slot()
@@ -189,6 +201,8 @@ public:
 						SAssignNew(UpgradePillBlocks[2], STextBlock)
 						.Visibility(EVisibility::HitTestInvisible)
 						.Font(PillFont)
+						.ShadowOffset(FVector2D(1.0f, 1.0f))
+						.ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.82f))
 					]
 				]
 			]
@@ -199,9 +213,9 @@ public:
 			[
 				SAssignNew(FeedbackTextBlock, STextBlock)
 				.Visibility(EVisibility::Collapsed)
-				.Font(ScripFont)
+				.Font(PillFont)
 				.AutoWrapText(true)
-				.WrapTextAt(280.0f)
+				.WrapTextAt(494.0f)
 			]
 		];
 	}
@@ -209,11 +223,70 @@ public:
 	void SetConfig(const FHudPresentationConfig& InCfg)
 	{
 		Config = InCfg;
+		CachedHeaderPt = -1;
+	}
+
+	void UpdateResponsiveTypography(float EffectiveCornerWidth)
+	{
+		// Refinement C: Full 13/14/13/11 pt at >= 500 px; proportional FMath::Clamp(EffectiveCornerWidth / 525.0f, 0.80f, 1.0f) scaling below 500 px.
+		constexpr float ReferenceWidth = 525.0f;
+		const bool bCompactScale = (EffectiveCornerWidth < 500.0f);
+		const float FontScale = bCompactScale
+			? FMath::Clamp(EffectiveCornerWidth / ReferenceWidth, 0.80f, 1.0f)
+			: 1.0f;
+
+		auto ScalePt = [bCompactScale, FontScale](int32 BasePt, int32 MinPt, int32 MaxPt) -> int32
+		{
+			const int32 RawPt = bCompactScale
+				? FMath::FloorToInt(static_cast<float>(BasePt) * FontScale)
+				: BasePt;
+			return FMath::Clamp(RawPt, MinPt, MaxPt);
+		};
+
+		const int32 HeaderPt = ScalePt(Config.CornerHeaderFontSizePt, 9, 22);
+		const int32 BodyPt = ScalePt(Config.CornerBodyFontSizePt, 10, 24);
+		const int32 SubPt = ScalePt(Config.CornerSubFontSizePt, 9, 22);
+		const int32 PillPt = ScalePt(Config.CornerPillFontSizePt, 8, 20);
+
+		if (HeaderPt != CachedHeaderPt || BodyPt != CachedBodyPt || SubPt != CachedSubPt || PillPt != CachedPillPt)
+		{
+			CachedHeaderPt = HeaderPt;
+			CachedBodyPt = BodyPt;
+			CachedSubPt = SubPt;
+			CachedPillPt = PillPt;
+
+			if (HeaderTextBlock.IsValid())
+			{
+				HeaderTextBlock->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", HeaderPt));
+			}
+			if (DirectiveTextBlock.IsValid())
+			{
+				DirectiveTextBlock->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", BodyPt));
+			}
+			if (ScripTextBlock.IsValid())
+			{
+				ScripTextBlock->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", SubPt));
+			}
+			const FSlateFontInfo ScaledPillFont = FCoreStyle::GetDefaultFontStyle("Bold", PillPt);
+			for (int32 Idx = 0; Idx < 3; ++Idx)
+			{
+				if (UpgradePillBlocks[Idx].IsValid())
+				{
+					UpgradePillBlocks[Idx]->SetFont(ScaledPillFont);
+				}
+			}
+			if (FeedbackTextBlock.IsValid())
+			{
+				FeedbackTextBlock->SetFont(ScaledPillFont);
+			}
+		}
+
+		SetWrapWidth(EffectiveCornerWidth - HorizontalPadTotalPx);
 	}
 
 	void SetWrapWidth(float InWrapWidth)
 	{
-		const float SafeWrap = FMath::Max(160.0f, InWrapWidth);
+		const float SafeWrap = FMath::Max(180.0f, InWrapWidth);
 		if (!FMath::IsNearlyEqual(CachedWrapWidth, SafeWrap, 0.5f))
 		{
 			CachedWrapWidth = SafeWrap;
@@ -226,6 +299,19 @@ public:
 				FeedbackTextBlock->SetWrapTextAt(SafeWrap);
 			}
 		}
+	}
+
+	float GetHeaderBottomLocalY() const
+	{
+		const float HeaderH = (HeaderTextBlock.IsValid() && HeaderTextBlock->GetDesiredSize().Y > 4.0f)
+			? HeaderTextBlock->GetDesiredSize().Y
+			: 19.0f;
+		return PadTopPx + HeaderH;
+	}
+
+	float GetDividerLocalY() const
+	{
+		return GetHeaderBottomLocalY() + 3.0f;
 	}
 
 	void ApplyViewModel(const FTopLeftIndentureViewModel& VM)
@@ -289,14 +375,16 @@ public:
 			LayerId + 2,
 			AllottedGeometry,
 			FVector2D(0.0f, 0.0f),
-			FVector2D(3.0f, Size.Y),
+			FVector2D(4.0f, Size.Y),
 			TareTitheHudPaint::WithAlpha(AccentColor, 0.95f));
+
+		const float DividerY = GetDividerLocalY();
 		TareTitheHudPaint::DrawSolidBox(
 			OutDrawElements,
 			LayerId + 1,
 			AllottedGeometry,
-			FVector2D(10.0f, 24.0f),
-			FVector2D(FMath::Max(0.0f, Size.X - 20.0f), 1.0f),
+			FVector2D(PadLeftPx - 2.0f, DividerY),
+			FVector2D(FMath::Max(0.0f, Size.X - (HorizontalPadTotalPx - 4.0f)), 1.0f),
 			FLinearColor(0.20f, 0.26f, 0.32f, 0.45f));
 
 		return SCompoundWidget::OnPaint(
@@ -312,7 +400,11 @@ public:
 private:
 	FHudPresentationConfig Config;
 	FLinearColor AccentColor = FLinearColor(0.05f, 0.86f, 1.00f, 1.0f);
-	float CachedWrapWidth = 280.0f;
+	float CachedWrapWidth = 494.0f;
+	int32 CachedHeaderPt = -1;
+	int32 CachedBodyPt = -1;
+	int32 CachedSubPt = -1;
+	int32 CachedPillPt = -1;
 
 	TSharedPtr<STextBlock> HeaderTextBlock;
 	TSharedPtr<STextBlock> DirectiveTextBlock;
@@ -322,11 +414,17 @@ private:
 };
 
 // ============================================================================
-// 2. TOP-RIGHT DIRECTOR OVERLOOK PANEL
+// 2. TOP-RIGHT DIRECTOR OVERLOOK PANEL (+50% EXPANDED, PROPORTIONAL TYPOGRAPHY)
 // ============================================================================
 class STopRightDirectorPanel : public SCompoundWidget
 {
 public:
+	static constexpr float PadLeftPx = 13.0f;
+	static constexpr float PadTopPx = 10.0f;
+	static constexpr float PadRightPx = 15.0f;
+	static constexpr float PadBottomPx = 9.0f;
+	static constexpr float HorizontalPadTotalPx = PadLeftPx + PadRightPx;
+
 	SLATE_BEGIN_ARGS(STopRightDirectorPanel)
 	{
 		_Visibility = EVisibility::HitTestInvisible;
@@ -337,12 +435,12 @@ public:
 	{
 		SetVisibility(EVisibility::HitTestInvisible);
 
-		const FSlateFontInfo HeaderFont = FCoreStyle::GetDefaultFontStyle("Bold", 9);
-		const FSlateFontInfo BadgeFont = FCoreStyle::GetDefaultFontStyle("Bold", 8);
-		const FSlateFontInfo IntercomFont = FCoreStyle::GetDefaultFontStyle("Bold", 10);
+		const FSlateFontInfo HeaderFont = FCoreStyle::GetDefaultFontStyle("Bold", 13);
+		const FSlateFontInfo BadgeFont = FCoreStyle::GetDefaultFontStyle("Bold", 11);
+		const FSlateFontInfo IntercomFont = FCoreStyle::GetDefaultFontStyle("Bold", 14);
 
 		ChildSlot
-		.Padding(FMargin(10.0f, 9.0f, 12.0f, 9.0f))
+		.Padding(FMargin(PadLeftPx, PadTopPx, PadRightPx, PadBottomPx))
 		[
 			SNew(SVerticalBox)
 			.Visibility(EVisibility::HitTestInvisible)
@@ -363,32 +461,34 @@ public:
 					.Font(HeaderFont)
 					.ColorAndOpacity(FLinearColor(0.05f, 0.88f, 1.00f, 1.0f))
 					.ShadowOffset(FVector2D(1.0f, 1.0f))
-					.ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.85f))
+					.ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.88f))
 				]
 
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
 				.VAlign(VAlign_Center)
-				.Padding(6.0f, 0.0f, 0.0f, 0.0f)
+				.Padding(8.0f, 0.0f, 0.0f, 0.0f)
 				[
 					SAssignNew(BadgeTextBlock, STextBlock)
 					.Visibility(EVisibility::HitTestInvisible)
 					.Font(BadgeFont)
 					.ColorAndOpacity(FLinearColor(0.45f, 0.84f, 1.00f, 0.95f))
+					.ShadowOffset(FVector2D(1.0f, 1.0f))
+					.ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.82f))
 				]
 			]
 
 			+ SVerticalBox::Slot()
 			.AutoHeight()
-			.Padding(0.0f, 2.0f, 0.0f, 2.0f)
+			.Padding(0.0f, 3.0f, 0.0f, 2.0f)
 			[
 				SAssignNew(IntercomBodyBlock, STextBlock)
 				.Visibility(EVisibility::HitTestInvisible)
 				.Font(IntercomFont)
 				.AutoWrapText(true)
-				.WrapTextAt(280.0f)
+				.WrapTextAt(494.0f)
 				.ShadowOffset(FVector2D(1.0f, 1.0f))
-				.ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.85f))
+				.ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.88f))
 			]
 		];
 	}
@@ -396,11 +496,55 @@ public:
 	void SetConfig(const FHudPresentationConfig& InCfg)
 	{
 		Config = InCfg;
+		CachedHeaderPt = -1;
+	}
+
+	void UpdateResponsiveTypography(float EffectiveCornerWidth)
+	{
+		constexpr float ReferenceWidth = 525.0f;
+		const bool bCompactScale = (EffectiveCornerWidth < 500.0f);
+		const float FontScale = bCompactScale
+			? FMath::Clamp(EffectiveCornerWidth / ReferenceWidth, 0.80f, 1.0f)
+			: 1.0f;
+
+		auto ScalePt = [bCompactScale, FontScale](int32 BasePt, int32 MinPt, int32 MaxPt) -> int32
+		{
+			const int32 RawPt = bCompactScale
+				? FMath::FloorToInt(static_cast<float>(BasePt) * FontScale)
+				: BasePt;
+			return FMath::Clamp(RawPt, MinPt, MaxPt);
+		};
+
+		const int32 HeaderPt = ScalePt(Config.CornerHeaderFontSizePt, 9, 22);
+		const int32 BodyPt = ScalePt(Config.CornerBodyFontSizePt, 10, 24);
+		const int32 BadgePt = ScalePt(Config.CornerPillFontSizePt, 8, 20);
+
+		if (HeaderPt != CachedHeaderPt || BodyPt != CachedBodyPt || BadgePt != CachedBadgePt)
+		{
+			CachedHeaderPt = HeaderPt;
+			CachedBodyPt = BodyPt;
+			CachedBadgePt = BadgePt;
+
+			if (HeaderTextBlock.IsValid())
+			{
+				HeaderTextBlock->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", HeaderPt));
+			}
+			if (BadgeTextBlock.IsValid())
+			{
+				BadgeTextBlock->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", BadgePt));
+			}
+			if (IntercomBodyBlock.IsValid())
+			{
+				IntercomBodyBlock->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", BodyPt));
+			}
+		}
+
+		SetWrapWidth(EffectiveCornerWidth - HorizontalPadTotalPx);
 	}
 
 	void SetWrapWidth(float InWrapWidth)
 	{
-		const float SafeWrap = FMath::Max(160.0f, InWrapWidth);
+		const float SafeWrap = FMath::Max(180.0f, InWrapWidth);
 		if (!FMath::IsNearlyEqual(CachedWrapWidth, SafeWrap, 0.5f))
 		{
 			CachedWrapWidth = SafeWrap;
@@ -409,6 +553,22 @@ public:
 				IntercomBodyBlock->SetWrapTextAt(SafeWrap);
 			}
 		}
+	}
+
+	float GetHeaderBottomLocalY() const
+	{
+		const float HeaderH = (HeaderTextBlock.IsValid() && HeaderTextBlock->GetDesiredSize().Y > 4.0f)
+			? HeaderTextBlock->GetDesiredSize().Y
+			: 19.0f;
+		const float BadgeH = (BadgeTextBlock.IsValid() && BadgeTextBlock->GetDesiredSize().Y > 4.0f)
+			? BadgeTextBlock->GetDesiredSize().Y
+			: 0.0f;
+		return PadTopPx + FMath::Max(HeaderH, BadgeH);
+	}
+
+	float GetDividerLocalY() const
+	{
+		return GetHeaderBottomLocalY() + 3.0f;
 	}
 
 	void ApplyViewModel(const FTopRightDirectorViewModel& VM)
@@ -450,15 +610,17 @@ public:
 			OutDrawElements,
 			LayerId + 2,
 			AllottedGeometry,
-			FVector2D(FMath::Max(0.0f, Size.X - 3.0f), 0.0f),
-			FVector2D(3.0f, Size.Y),
+			FVector2D(FMath::Max(0.0f, Size.X - 4.0f), 0.0f),
+			FVector2D(4.0f, Size.Y),
 			TareTitheHudPaint::WithAlpha(AccentColor, 0.95f));
+
+		const float DividerY = GetDividerLocalY();
 		TareTitheHudPaint::DrawSolidBox(
 			OutDrawElements,
 			LayerId + 1,
 			AllottedGeometry,
-			FVector2D(10.0f, 24.0f),
-			FVector2D(FMath::Max(0.0f, Size.X - 20.0f), 1.0f),
+			FVector2D(PadLeftPx - 2.0f, DividerY),
+			FVector2D(FMath::Max(0.0f, Size.X - (HorizontalPadTotalPx - 4.0f)), 1.0f),
 			FLinearColor(0.20f, 0.26f, 0.32f, 0.45f));
 
 		return SCompoundWidget::OnPaint(
@@ -474,7 +636,10 @@ public:
 private:
 	FHudPresentationConfig Config;
 	FLinearColor AccentColor = FLinearColor(0.05f, 0.86f, 1.00f, 1.0f);
-	float CachedWrapWidth = 280.0f;
+	float CachedWrapWidth = 494.0f;
+	int32 CachedHeaderPt = -1;
+	int32 CachedBodyPt = -1;
+	int32 CachedBadgePt = -1;
 
 	TSharedPtr<STextBlock> HeaderTextBlock;
 	TSharedPtr<STextBlock> BadgeTextBlock;
@@ -498,8 +663,10 @@ public:
 		SetVisibility(EVisibility::Collapsed);
 
 		PrimaryHazardFont = FCoreStyle::GetDefaultFontStyle("Bold", 12);
+		PrimaryTutorialFont = FCoreStyle::GetDefaultFontStyle("Bold", 13);
 		PrimaryStampFont = FCoreStyle::GetDefaultFontStyle("Bold", 15);
 		SecondaryFont = FCoreStyle::GetDefaultFontStyle("Bold", 9);
+		SecondaryTutorialFont = FCoreStyle::GetDefaultFontStyle("Bold", 10);
 
 		ChildSlot
 		.Padding(FMargin(18.0f, 8.0f, 18.0f, 8.0f))
@@ -557,12 +724,15 @@ public:
 
 		if (PrimaryTextBlock.IsValid())
 		{
-			PrimaryTextBlock->SetFont(VM.bIsTerminalStamp ? PrimaryStampFont : PrimaryHazardFont);
+			PrimaryTextBlock->SetFont(VM.bIsTerminalStamp
+				? PrimaryStampFont
+				: (VM.bIsTutorialHint ? PrimaryTutorialFont : PrimaryHazardFont));
 			PrimaryTextBlock->SetText(VM.PrimaryBannerText);
 		}
 
 		if (SecondaryTextBlock.IsValid())
 		{
+			SecondaryTextBlock->SetFont(VM.bIsTutorialHint ? SecondaryTutorialFont : SecondaryFont);
 			if (!VM.SecondarySubText.IsEmpty())
 			{
 				SecondaryTextBlock->SetText(VM.SecondarySubText);
@@ -586,12 +756,12 @@ public:
 			return;
 		}
 
-		// Decision 1: P1 / P2 rising-edge 3-pulse (1.05s) envelope -> steady 0.62f bg / 0.95f text at 0.00 ms idle cost.
+		// P1 / P2 rising-edge 3-pulse (1.05s) -> steady 0.62f bg; P3 tutorial 2-pulse (0.80s) -> steady 0.76f bg at 0.00 ms idle cost.
 		if (VM.TriggerGeneration != LastTriggerGeneration)
 		{
 			LastTriggerGeneration = VM.TriggerGeneration;
 			PulseElapsedSeconds = 0.0f;
-			CurrentBgOpacity = 0.90f;
+			CurrentBgOpacity = VM.bIsTutorialHint ? 0.84f : 0.90f;
 			CurrentTextOpacity = 1.0f;
 			CurrentBorderOpacity = 1.0f;
 
@@ -702,13 +872,16 @@ private:
 		}
 
 		PulseElapsedSeconds += FMath::Max(0.0f, InDeltaTime);
-		const float TotalEnvelopeSeconds = FMath::Max(0.25f, Config.AlertPulseEnvelopeSeconds);
+		const bool bTutorial = CurrentVM.bIsTutorialHint;
+		const float TotalEnvelopeSeconds = bTutorial
+			? FMath::Max(0.20f, Config.TutorialPulseEnvelopeSeconds)
+			: FMath::Max(0.25f, Config.AlertPulseEnvelopeSeconds);
 
 		if (PulseElapsedSeconds >= TotalEnvelopeSeconds)
 		{
-			CurrentBgOpacity = Config.AlertPostPulseBackgroundOpacity;
-			CurrentTextOpacity = Config.AlertPostPulseTextOpacity;
-			CurrentBorderOpacity = 0.85f;
+			CurrentBgOpacity = bTutorial ? Config.TutorialPostPulseBackgroundOpacity : Config.AlertPostPulseBackgroundOpacity;
+			CurrentTextOpacity = bTutorial ? 0.98f : Config.AlertPostPulseTextOpacity;
+			CurrentBorderOpacity = bTutorial ? 0.90f : 0.85f;
 			ApplyCurrentTextColors();
 			Invalidate(EInvalidateWidgetReason::Paint);
 			ActivePulseTimerHandle.Reset();
@@ -717,12 +890,21 @@ private:
 		}
 
 		const float NormT = PulseElapsedSeconds / TotalEnvelopeSeconds;
-		const float PulseCount = static_cast<float>(FMath::Max(1, Config.AlertPulseCount));
+		const float PulseCount = static_cast<float>(FMath::Max(1, bTutorial ? Config.TutorialPulseCount : Config.AlertPulseCount));
 		const float PulseWave = 0.5f + 0.5f * FMath::Cos(NormT * PulseCount * 2.0f * UE_PI);
 
-		CurrentBgOpacity = FMath::Lerp(0.32f, 0.90f, PulseWave);
-		CurrentTextOpacity = FMath::Lerp(0.68f, 1.00f, PulseWave);
-		CurrentBorderOpacity = FMath::Lerp(0.42f, 1.00f, PulseWave);
+		if (bTutorial)
+		{
+			CurrentBgOpacity = FMath::Lerp(0.58f, 0.84f, PulseWave);
+			CurrentTextOpacity = FMath::Lerp(0.82f, 1.00f, PulseWave);
+			CurrentBorderOpacity = FMath::Lerp(0.62f, 1.00f, PulseWave);
+		}
+		else
+		{
+			CurrentBgOpacity = FMath::Lerp(0.32f, 0.90f, PulseWave);
+			CurrentTextOpacity = FMath::Lerp(0.68f, 1.00f, PulseWave);
+			CurrentBorderOpacity = FMath::Lerp(0.42f, 1.00f, PulseWave);
+		}
 		ApplyCurrentTextColors();
 		Invalidate(EInvalidateWidgetReason::Paint);
 		return EActiveTimerReturnType::Continue;
@@ -739,8 +921,10 @@ private:
 
 	TWeakPtr<FActiveTimerHandle> ActivePulseTimerHandle;
 	FSlateFontInfo PrimaryHazardFont;
+	FSlateFontInfo PrimaryTutorialFont;
 	FSlateFontInfo PrimaryStampFont;
 	FSlateFontInfo SecondaryFont;
+	FSlateFontInfo SecondaryTutorialFont;
 	TSharedPtr<STextBlock> PrimaryTextBlock;
 	TSharedPtr<STextBlock> SecondaryTextBlock;
 };
@@ -1290,17 +1474,15 @@ void STareTitheHudOverlay::RefreshResponsiveMetrics()
 {
 	const float LocalW = FMath::Max(320.0f, EffectiveLocalViewportSize.X);
 	const float Margin = FMath::Clamp(ActiveConfig.CornerPanelMarginPx, 6.0f, 40.0f);
-	const float MaxCornerFrac = FMath::Clamp(ActiveConfig.CornerPanelMaxViewportWidthFraction, 0.14f, 0.28f);
+	const float MaxCornerFrac = FMath::Clamp(ActiveConfig.CornerPanelMaxViewportWidthFraction, 0.14f, 0.38f);
 
-	// Correction B: FMath::Clamp(FMath::Min(HudConfig.CornerPanelWidthPx, LocalViewportSize.X * 0.20f), 250.0f, HudConfig.CornerPanelWidthPx)
-	// with safety ceiling if docked pane is narrower than 1250 local units.
+	// Phase 12-FIX2: +50% corner expansion (525 px target, clamped to LocalW * 0.34f -> ~522.2 px at 125% DPI, 435.2 px at 720p).
 	const float SafeMinFloor = FMath::Min(250.0f, LocalW * MaxCornerFrac);
 	CachedEffectiveCornerWidth = FMath::Clamp(
 		FMath::Min(ActiveConfig.CornerPanelWidthPx, LocalW * MaxCornerFrac),
 		SafeMinFloor,
 		ActiveConfig.CornerPanelWidthPx);
 
-	const float WrapW = FMath::Max(160.0f, CachedEffectiveCornerWidth - 24.0f);
 	if (TopLeftWidthBox.IsValid())
 	{
 		TopLeftWidthBox->SetWidthOverride(CachedEffectiveCornerWidth);
@@ -1311,11 +1493,11 @@ void STareTitheHudOverlay::RefreshResponsiveMetrics()
 	}
 	if (TopLeftPanel.IsValid())
 	{
-		TopLeftPanel->SetWrapWidth(WrapW);
+		TopLeftPanel->UpdateResponsiveTypography(CachedEffectiveCornerWidth);
 	}
 	if (TopRightPanel.IsValid())
 	{
-		TopRightPanel->SetWrapWidth(WrapW);
+		TopRightPanel->UpdateResponsiveTypography(CachedEffectiveCornerWidth);
 	}
 	if (TopLeftOverlaySlot != nullptr)
 	{
@@ -1339,7 +1521,7 @@ void STareTitheHudOverlay::RefreshResponsiveMetrics()
 
 	if (CenterBannerWidthBox.IsValid())
 	{
-		CenterBannerWidthBox->SetMaxDesiredWidth(FMath::Clamp(LocalW * 0.50f, 320.0f, 640.0f));
+		CenterBannerWidthBox->SetMaxDesiredWidth(FMath::Clamp(LocalW * 0.58f, 360.0f, 740.0f));
 	}
 
 	RefreshCenterBannerOffset();
@@ -1400,7 +1582,7 @@ void STareTitheHudOverlay::RefreshReticleClampedOffset()
 	const float TopRightLeftX = LocalSize.X - Margin - CachedEffectiveCornerWidth;
 	const float TopRightBottomY = Margin + ((TopRightPanel.IsValid() && TopRightPanel->GetDesiredSize().Y > 10.0f)
 		? TopRightPanel->GetDesiredSize().Y
-		: 86.0f);
+		: 118.0f);
 
 	if (CardPos.X + SafeW > TopRightLeftX - 8.0f && CardPos.Y < TopRightBottomY + 8.0f)
 	{
@@ -1423,8 +1605,9 @@ void STareTitheHudOverlay::RefreshReticleClampedOffset()
 	if (CenterAlertBanner.IsValid() && CenterAlertBanner->GetVisibility() != EVisibility::Collapsed)
 	{
 		const FVector2D BannerDesired = CenterAlertBanner->GetDesiredSize();
-		const float BannerW = FMath::Clamp((BannerDesired.X > 20.0f) ? BannerDesired.X : 340.0f, 300.0f, LocalSize.X * 0.50f);
-		const float BannerH = (BannerDesired.Y > 15.0f) ? BannerDesired.Y : 50.0f;
+		const float MaxBannerCapW = FMath::Clamp(LocalSize.X * 0.58f, 360.0f, 740.0f);
+		const float BannerW = FMath::Clamp((BannerDesired.X > 20.0f) ? BannerDesired.X : 420.0f, 300.0f, MaxBannerCapW);
+		const float BannerH = (BannerDesired.Y > 15.0f) ? BannerDesired.Y : 54.0f;
 		const float BannerLeftX = 0.5f * (LocalSize.X - BannerW);
 		const float BannerRightX = BannerLeftX + BannerW;
 		const float BannerTopY = CenterBannerOverlaySlot ? CenterBannerOverlaySlot->GetPadding().Top : (0.595f * LocalSize.Y);
@@ -1535,6 +1718,19 @@ int32 STareTitheHudOverlay::OnPaint(
 		LastResolvedLayout.ReticleCardMin,
 		LastResolvedLayout.ReticleCardMax);
 
+	if (TopLeftPanel.IsValid())
+	{
+		LastResolvedLayout.TopLeftDesiredWidth = TopLeftPanel->GetDesiredSize().X;
+		LastResolvedLayout.TopLeftHeaderBottomLocalY = TopLeftPanel->GetHeaderBottomLocalY();
+		LastResolvedLayout.TopLeftDividerLocalY = TopLeftPanel->GetDividerLocalY();
+	}
+	if (TopRightPanel.IsValid())
+	{
+		LastResolvedLayout.TopRightDesiredWidth = TopRightPanel->GetDesiredSize().X;
+		LastResolvedLayout.TopRightHeaderBottomLocalY = TopRightPanel->GetHeaderBottomLocalY();
+		LastResolvedLayout.TopRightDividerLocalY = TopRightPanel->GetDividerLocalY();
+	}
+
 	return OutLayerId;
 }
 
@@ -1589,16 +1785,27 @@ void STareTitheHudOverlay::UpdateTopRightPanel(const FTopRightDirectorViewModel&
 	if (TopRightPanel.IsValid())
 	{
 		TopRightPanel->ApplyViewModel(ViewModel);
+		if (TopRightPanel->GetDesiredSize().Y < 10.0f)
+		{
+			TopRightPanel->SlatePrepass(1.0f);
+		}
 		RefreshReticleClampedOffset();
 	}
 }
 
 void STareTitheHudOverlay::UpdateCenterAlertBanner(const FCenterAlertViewModel& ViewModel)
 {
+	const uint64 PrevGen = LastObservedBannerGeneration;
+	LastObservedBannerGeneration = ViewModel.TriggerGeneration;
 	bIsCenterBannerTerminalStamp = ViewModel.bIsTerminalStamp;
 	if (CenterAlertBanner.IsValid())
 	{
 		CenterAlertBanner->ApplyViewModel(ViewModel);
+		if (CenterAlertBanner->GetVisibility() != EVisibility::Collapsed &&
+			(ViewModel.TriggerGeneration != PrevGen || CenterAlertBanner->GetDesiredSize().X < 20.0f))
+		{
+			CenterAlertBanner->SlatePrepass(1.0f);
+		}
 	}
 	RefreshCenterBannerOffset();
 	RefreshReticleClampedOffset();
@@ -1610,6 +1817,10 @@ void STareTitheHudOverlay::UpdateReticleCard(const FReticleReadoutViewModel& Vie
 	if (ReticleReadoutCard.IsValid())
 	{
 		ReticleReadoutCard->ApplyViewModel(ViewModel);
+		if (ReticleReadoutCard->GetVisibility() != EVisibility::Collapsed && ReticleReadoutCard->GetDesiredSize().X < 20.0f)
+		{
+			ReticleReadoutCard->SlatePrepass(1.0f);
+		}
 	}
 	RefreshReticleClampedOffset();
 }
@@ -1619,6 +1830,10 @@ void STareTitheHudOverlay::UpdateBottomCrtConsole(const FBottomCrtConsoleViewMod
 	if (BottomCrtConsole.IsValid())
 	{
 		BottomCrtConsole->ApplyViewModel(ViewModel);
+		if (BottomCrtConsole->GetDesiredSize().Y < 10.0f)
+		{
+			BottomCrtConsole->SlatePrepass(1.0f);
+		}
 		RefreshCenterBannerOffset();
 		RefreshReticleClampedOffset();
 	}

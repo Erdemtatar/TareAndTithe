@@ -22,7 +22,8 @@ enum class EHudCenterAlertState : uint8
 	P1_VeinInDrop,
 	P1_ClampShearCritical,
 	P2_DirectorsCutReady,
-	P2_QuotaMetReady
+	P2_QuotaMetReady,
+	P3_TutorialHint
 };
 
 struct FTopLeftIndentureViewModel
@@ -58,6 +59,7 @@ struct FCenterAlertViewModel
 	EHudCenterAlertState AlertState = EHudCenterAlertState::None;
 	uint64 TriggerGeneration = 0;
 	bool bIsTerminalStamp = false;
+	bool bIsTutorialHint = false;
 	FText PrimaryBannerText;
 	FText SecondarySubText;
 	FLinearColor AccentColor = FLinearColor(1.00f, 0.22f, 0.16f, 1.0f);
@@ -111,6 +113,12 @@ struct FHudResolvedLayoutTelemetry
 	FVector2D ReticleCardMax = FVector2D::ZeroVector;
 	FVector2D BottomConsoleMin = FVector2D::ZeroVector;
 	FVector2D BottomConsoleMax = FVector2D::ZeroVector;
+	float TopLeftDesiredWidth = 0.0f;
+	float TopRightDesiredWidth = 0.0f;
+	float TopLeftHeaderBottomLocalY = 0.0f;
+	float TopLeftDividerLocalY = 0.0f;
+	float TopRightHeaderBottomLocalY = 0.0f;
+	float TopRightDividerLocalY = 0.0f;
 	bool bCenterBannerArranged = false;
 	bool bReticleCardArranged = false;
 };

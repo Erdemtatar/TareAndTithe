@@ -46,8 +46,10 @@ DECLARE_DELEGATE_RetVal(bool, FToggleQuotaDiverterDelegate);
 DECLARE_DELEGATE_RetVal(float, FQueryStationFloatDelegate);
 DECLARE_DELEGATE_RetVal(FVector, FQueryStationVectorDelegate);
 
+DECLARE_MULTICAST_DELEGATE(FOnCareerResetSignature);
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnShiftPhaseChangedSignature, EShiftPhase /*NewPhase*/);
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnPresentationAssetChangedSignature, const UTareTithePresentationDataAsset* /*PresentationAsset*/);
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnSliceCommittedSummarySignature, const FSliceResultSummary& /*SliceSummary*/);
 DECLARE_MULTICAST_DELEGATE_ThreeParams(
 	FOnActiveContractLoadedSignature,
 	const UMonolithContractDataAsset* /*Contract*/,
@@ -88,6 +90,8 @@ public:
 
 	// Progression & Configuration
 	void SetPresentationAsset(const UTareTithePresentationDataAsset* InPresentationAsset);
+
+	UFUNCTION(BlueprintPure, Category = "Shift")
 	const UTareTithePresentationDataAsset* GetActivePresentationAsset() const { return ActivePresentationAsset; }
 	void SetShiftProgressionAsset(const UShiftProgressionDataAsset* InProgressionAsset);
 	const UShiftProgressionDataAsset* GetActiveShiftProgression() const { return ActiveProgressionAsset; }
@@ -171,6 +175,12 @@ public:
 	void RequestManualContractReset();
 
 	UFUNCTION(BlueprintCallable, Category = "Shift")
+	bool ExecuteCareerResetToShiftOne();
+
+	UFUNCTION(BlueprintCallable, Category = "Shift|Diagnostics")
+	bool AdvanceToShiftForVerification(int32 TargetShiftNumber, int32 StartContractIndex = 0);
+
+	UFUNCTION(BlueprintCallable, Category = "Shift")
 	void TriggerContractFault(EContractFaultReason FaultReason);
 
 	void TriggerContractFaultAtLocation(EContractFaultReason FaultReason, const FVector& FaultWorldLocation);
@@ -185,6 +195,8 @@ public:
 	FOnShiftPhaseChangedSignature OnShiftPhaseChanged;
 	FOnPresentationAssetChangedSignature OnPresentationAssetChanged;
 	FOnActiveContractLoadedSignature OnActiveContractLoaded;
+	FOnSliceCommittedSummarySignature OnSliceCommittedSummary;
+	FOnCareerResetSignature OnCareerReset;
 	FOnTelemetryStreamSignature OnTelemetryStream;
 	FOnTelemetryImpulseSignature OnTelemetryImpulse;
 

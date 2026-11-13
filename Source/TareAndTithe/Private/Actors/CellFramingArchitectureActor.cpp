@@ -70,6 +70,10 @@ ACellFramingArchitectureActor::ACellFramingArchitectureActor()
 	OuterFlangedPipesISM->SetupAttachment(FramingRoot);
 	ApplyZeroCostFramingFlags(OuterFlangedPipesISM);
 
+	OuterTieGussetsISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("OuterTieGussetsISM"));
+	OuterTieGussetsISM->SetupAttachment(FramingRoot);
+	ApplyZeroCostFramingFlags(OuterTieGussetsISM);
+
 	OuterStructuralRibsISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("OuterStructuralRibsISM"));
 	OuterStructuralRibsISM->SetupAttachment(FramingRoot);
 	ApplyZeroCostFramingFlags(OuterStructuralRibsISM);
@@ -79,14 +83,16 @@ int32 ACellFramingArchitectureActor::GetTotalFramingInstanceCount() const
 {
 	const int32 ColCount = IsValid(OuterHeavyColumnsISM) ? OuterHeavyColumnsISM->GetInstanceCount() : 0;
 	const int32 PipeCount = IsValid(OuterFlangedPipesISM) ? OuterFlangedPipesISM->GetInstanceCount() : 0;
+	const int32 GussetCount = IsValid(OuterTieGussetsISM) ? OuterTieGussetsISM->GetInstanceCount() : 0;
 	const int32 RibCount = IsValid(OuterStructuralRibsISM) ? OuterStructuralRibsISM->GetInstanceCount() : 0;
-	return ColCount + PipeCount + RibCount;
+	return ColCount + PipeCount + GussetCount + RibCount;
 }
 
 void ACellFramingArchitectureActor::ConfigureFraming(const UTareTithePresentationDataAsset* InPresentationData)
 {
 	ApplyZeroCostFramingFlags(OuterHeavyColumnsISM);
 	ApplyZeroCostFramingFlags(OuterFlangedPipesISM);
+	ApplyZeroCostFramingFlags(OuterTieGussetsISM);
 	ApplyZeroCostFramingFlags(OuterStructuralRibsISM);
 
 	if (IsValid(OuterHeavyColumnsISM))
@@ -96,6 +102,10 @@ void ACellFramingArchitectureActor::ConfigureFraming(const UTareTithePresentatio
 	if (IsValid(OuterFlangedPipesISM))
 	{
 		OuterFlangedPipesISM->ClearInstances();
+	}
+	if (IsValid(OuterTieGussetsISM))
+	{
+		OuterTieGussetsISM->ClearInstances();
 	}
 	if (IsValid(OuterStructuralRibsISM))
 	{
@@ -113,9 +123,10 @@ void ACellFramingArchitectureActor::ConfigureFraming(const UTareTithePresentatio
 		return;
 	}
 
-	// Resolve ISM-compiled PBR material (MI_Station_ClampSpringHousing / M_DarkGunmetal_Master both have MATUSAGE_INSTANCED_STATIC_MESHES=True).
+	// Resolve ISM-compiled Rodin PBR materials (MI_Station_ClampSpringHousing for columns, MI_Station_TareChute for dark cast-iron pipes & gussets).
 	UStaticMesh* ColumnMesh = BasicCubeMesh.Get();
-	UMaterialInterface* PbrIsmBaseMat = nullptr;
+	UMaterialInterface* ColumnBaseMat = nullptr;
+	UMaterialInterface* PipeBaseMat = nullptr;
 	if (IsValid(InPresentationData))
 	{
 		if (IsValid(InPresentationData->ClampSpringHousingMeshSlot.Mesh))
@@ -125,41 +136,65 @@ void ACellFramingArchitectureActor::ConfigureFraming(const UTareTithePresentatio
 		if (InPresentationData->ClampSpringHousingMeshSlot.MaterialOverrides.Num() > 0 &&
 			IsValid(InPresentationData->ClampSpringHousingMeshSlot.MaterialOverrides[0]))
 		{
-			PbrIsmBaseMat = InPresentationData->ClampSpringHousingMeshSlot.MaterialOverrides[0];
+			ColumnBaseMat = InPresentationData->ClampSpringHousingMeshSlot.MaterialOverrides[0];
 		}
 		else if (IsValid(InPresentationData->DarkGunmetalMaterial))
 		{
-			PbrIsmBaseMat = InPresentationData->DarkGunmetalMaterial.Get();
+			ColumnBaseMat = InPresentationData->DarkGunmetalMaterial.Get();
 		}
-	}
-	if (!IsValid(PbrIsmBaseMat))
-	{
-		PbrIsmBaseMat = FallbackFlattenMaterial.Get();
-	}
 
-	if (IsValid(PbrIsmBaseMat))
-	{
-		OuterColumnsAndPipesMID = UMaterialInstanceDynamic::Create(PbrIsmBaseMat, this);
-		if (IsValid(OuterColumnsAndPipesMID))
+		if (InPresentationData->TareChuteMeshSlot.MaterialOverrides.Num() > 0 &&
+			IsValid(InPresentationData->TareChuteMeshSlot.MaterialOverrides[0]))
 		{
-			const float MS = Cfg.OuterMetalAlbedoScale;
-			OuterColumnsAndPipesMID->SetVectorParameterValue(TEXT("AlbedoTint"), FLinearColor(0.54f * MS, 0.62f * MS, 0.74f * MS, 1.0f));
-			OuterColumnsAndPipesMID->SetVectorParameterValue(TEXT("ConductorMinF0"), FLinearColor(0.22f * MS, 0.26f * MS, 0.31f * MS, 1.0f));
-			OuterColumnsAndPipesMID->SetScalarParameterValue(TEXT("AOStrength"), 0.35f);
-			OuterColumnsAndPipesMID->SetScalarParameterValue(TEXT("RoughnessMin"), Cfg.OuterMetalRoughnessMin);
-			OuterColumnsAndPipesMID->SetScalarParameterValue(TEXT("RoughnessMax"), Cfg.OuterMetalRoughnessMax);
-			OuterColumnsAndPipesMID->SetScalarParameterValue(TEXT("MetallicScale"), 1.0f);
-			OuterColumnsAndPipesMID->SetScalarParameterValue(TEXT("MetallicMin"), Cfg.OuterMetalMetallic * 0.85f);
-			OuterColumnsAndPipesMID->SetScalarParameterValue(TEXT("MetallicMax"), Cfg.OuterMetalMetallic);
-			OuterColumnsAndPipesMID->SetScalarParameterValue(TEXT("SpecularScale"), 0.75f * Cfg.OuterMetalSpecularScale);
-			OuterColumnsAndPipesMID->SetScalarParameterValue(TEXT("NormalStrength"), 1.05f);
-			OuterColumnsAndPipesMID->SetVectorParameterValue(TEXT("BaseColorConst"), FLinearColor(0.16f * MS, 0.19f * MS, 0.23f * MS, 1.0f));
-			OuterColumnsAndPipesMID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.52f);
-			OuterColumnsAndPipesMID->SetScalarParameterValue(TEXT("MetallicConst"), Cfg.OuterMetalMetallic);
+			PipeBaseMat = InPresentationData->TareChuteMeshSlot.MaterialOverrides[0];
+		}
+	}
+	if (!IsValid(ColumnBaseMat))
+	{
+		ColumnBaseMat = FallbackFlattenMaterial.Get();
+	}
+	if (!IsValid(PipeBaseMat))
+	{
+		PipeBaseMat = ColumnBaseMat;
+	}
+
+	auto ApplyDarkOiledCastIronParams = [&Cfg](UMaterialInstanceDynamic* TargetMID)
+	{
+		if (!IsValid(TargetMID))
+		{
+			return;
+		}
+		const float MS = Cfg.OuterMetalAlbedoScale;
+		const float F0S = Cfg.OuterMetalConductorMinF0Scale;
+		// Phase 12-FIX2: Preserve 100% of Rodin cast-iron grain (ConductorMinF0 <= 0.02) while oiled Fresnel F0 catches grazing steel highlights.
+		TargetMID->SetVectorParameterValue(TEXT("AlbedoTint"), FLinearColor(0.90f * MS, 1.00f * MS, 1.12f * MS, 1.0f));
+		TargetMID->SetVectorParameterValue(TEXT("ConductorMinF0"), FLinearColor(0.85f * F0S, 1.00f * F0S, 1.18f * F0S, 1.0f));
+		TargetMID->SetScalarParameterValue(TEXT("AOStrength"), Cfg.OuterMetalAOStrength);
+		TargetMID->SetScalarParameterValue(TEXT("RoughnessMin"), Cfg.OuterMetalRoughnessMin);
+		TargetMID->SetScalarParameterValue(TEXT("RoughnessMax"), Cfg.OuterMetalRoughnessMax);
+		TargetMID->SetScalarParameterValue(TEXT("RoughnessContrastExp"), 1.00f);
+		TargetMID->SetScalarParameterValue(TEXT("MetallicScale"), 1.00f);
+		TargetMID->SetScalarParameterValue(TEXT("MetallicMin"), FMath::Clamp(Cfg.OuterMetalMetallic * 0.85f, 0.15f, Cfg.OuterMetalMetallic));
+		TargetMID->SetScalarParameterValue(TEXT("MetallicMax"), Cfg.OuterMetalMetallic);
+		TargetMID->SetScalarParameterValue(TEXT("SpecularScale"), Cfg.OuterMetalSpecularScale);
+		TargetMID->SetScalarParameterValue(TEXT("NormalStrength"), Cfg.OuterMetalNormalStrength);
+		TargetMID->SetVectorParameterValue(TEXT("BaseColorConst"), FLinearColor(0.055f * MS, 0.064f * MS, 0.075f * MS, 1.0f));
+		TargetMID->SetScalarParameterValue(TEXT("RoughnessConst"), Cfg.OuterMetalRoughnessMax);
+		TargetMID->SetScalarParameterValue(TEXT("MetallicConst"), Cfg.OuterMetalMetallic);
+	};
+
+	if (IsValid(ColumnBaseMat))
+	{
+		OuterColumnsMID = UMaterialInstanceDynamic::Create(ColumnBaseMat, this);
+		ApplyDarkOiledCastIronParams(OuterColumnsMID);
+		if (IsValid(OuterColumnsMID))
+		{
+			OuterColumnsMID->SetScalarParameterValue(TEXT("RoughnessMin"), FMath::Max(0.56f, Cfg.OuterMetalRoughnessMin));
+			OuterColumnsMID->SetScalarParameterValue(TEXT("RoughnessMax"), FMath::Max(0.70f, Cfg.OuterMetalRoughnessMax));
 		}
 
-		// Dark matte structural tie-gusset & upper HUD soffit material ensuring V in [0.01, 0.16] stays calm (mean <= 12 sRGB) behind Top-Left/Right HUD cards.
-		OuterDarkSoffitMID = UMaterialInstanceDynamic::Create(PbrIsmBaseMat, this);
+		// Dark matte upper HUD soffit material ensuring V in [0.00, 0.16] stays calm (mean <= 12 sRGB) behind Top-Left/Right HUD cards.
+		OuterDarkSoffitMID = UMaterialInstanceDynamic::Create(ColumnBaseMat, this);
 		if (IsValid(OuterDarkSoffitMID))
 		{
 			OuterDarkSoffitMID->SetVectorParameterValue(TEXT("AlbedoTint"), FLinearColor(0.016f, 0.020f, 0.026f, 1.0f));
@@ -175,6 +210,12 @@ void ACellFramingArchitectureActor::ConfigureFraming(const UTareTithePresentatio
 			OuterDarkSoffitMID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.85f);
 			OuterDarkSoffitMID->SetScalarParameterValue(TEXT("SpecularConst"), 0.05f);
 		}
+	}
+
+	if (IsValid(PipeBaseMat))
+	{
+		OuterPipesMID = UMaterialInstanceDynamic::Create(PipeBaseMat, this);
+		ApplyDarkOiledCastIronParams(OuterPipesMID);
 	}
 
 	auto AddSizedWorldInstance = [](
@@ -200,13 +241,13 @@ void ACellFramingArchitectureActor::ConfigureFraming(const UTareTithePresentatio
 		TargetISM->AddInstance(FTransform(Quat, PivotTranslation, Scale), true);
 	};
 
-	// 1. Midground Heavy Chamfered Stanchion Columns (SM_ClampSpringHousing, Z in [-95, +255] cm).
+	// 1. Midground Heavy Chamfered Stanchion Columns (SM_ClampSpringHousing, 2 x 5 = 10 instances).
 	if (IsValid(OuterHeavyColumnsISM) && IsValid(ColumnMesh))
 	{
 		OuterHeavyColumnsISM->SetStaticMesh(ColumnMesh);
-		if (IsValid(OuterColumnsAndPipesMID))
+		if (IsValid(OuterColumnsMID))
 		{
-			OuterHeavyColumnsISM->SetMaterial(0, OuterColumnsAndPipesMID);
+			OuterHeavyColumnsISM->SetMaterial(0, OuterColumnsMID);
 		}
 
 		const double ColX = static_cast<double>(Cfg.MidgroundColumnWorldX);
@@ -219,7 +260,6 @@ void ACellFramingArchitectureActor::ConfigureFraming(const UTareTithePresentatio
 
 		for (const double SideSign : { -1.0, 1.0 })
 		{
-			// Angle heavy chamfered stanchions 35 deg inward so front/bevel faces catch cross-axis RimSpotLeft/Right (N.L > 0.55) + CellFillPoint.
 			const FRotator InwardColRot(0.0f, static_cast<float>(SideSign * 35.0), 0.0f);
 			for (int32 ModIdx = 0; ModIdx < ModuleCount; ++ModIdx)
 			{
@@ -234,13 +274,13 @@ void ACellFramingArchitectureActor::ConfigureFraming(const UTareTithePresentatio
 		}
 	}
 
-	// 2. Foreground & Companion Cylindrical Conduit Risers + Bolted Flange Collars (BasicCylinderMesh, Z <= +218..236 cm).
+	// 2. Modular Dark Cast-Iron Cylindrical Conduit Courses + Bolted Flange Collars (BasicCylinderMesh, 22 + 18 = 40 instances).
 	if (IsValid(OuterFlangedPipesISM) && IsValid(BasicCylinderMesh))
 	{
 		OuterFlangedPipesISM->SetStaticMesh(BasicCylinderMesh);
-		if (IsValid(OuterColumnsAndPipesMID))
+		if (IsValid(OuterPipesMID))
 		{
-			OuterFlangedPipesISM->SetMaterial(0, OuterColumnsAndPipesMID);
+			OuterFlangedPipesISM->SetMaterial(0, OuterPipesMID);
 		}
 
 		const double ForeX = static_cast<double>(Cfg.ForegroundPipeWorldX);
@@ -253,43 +293,101 @@ void ACellFramingArchitectureActor::ConfigureFraming(const UTareTithePresentatio
 		const double CompDiam = 2.0 * static_cast<double>(Cfg.CompanionPipeRadiusCm);
 		const double CompFlangeDiam = CompDiam * 1.38;
 
+		constexpr double ForeCourseBreaks[7] = { -95.0, -42.0, 12.0, 66.0, 120.0, 174.0, 218.0 };
+		constexpr double CompCourseBreaks[6] = { -95.0, -18.0, 42.0, 102.0, 162.0, 216.0 };
+
 		for (const double SideSign : { -1.0, 1.0 })
 		{
-			// Foreground heavy vertical riser (Z in [-95, +218] cm -> stops cleanly below Top-Left/Top-Right HUD V < 0.16 zone).
-			AddSizedWorldInstance(
-				OuterFlangedPipesISM,
-				BasicCylinderMesh,
-				FVector(ForeX, SideSign * ForeAbsY, 61.5),
-				FVector(ForeDiam, ForeDiam, 313.0));
+			const double SideYawBias = (SideSign > 0.0) ? 68.75 : 0.0;
 
-			for (const double FlangeZ : { -42.0, 12.0, 66.0, 120.0, 174.0 })
+			// Foreground heavy vertical riser segmented into 6 square-UV cast-iron courses + 5 bolted flange collars (Z in [-95, +218] cm).
+			for (int32 CourseIdx = 0; CourseIdx < 6; ++CourseIdx)
 			{
+				const double Z0 = ForeCourseBreaks[CourseIdx];
+				const double Z1 = ForeCourseBreaks[CourseIdx + 1];
+				const FRotator CourseRot(0.0f, static_cast<float>((CourseIdx * 137.5) + SideYawBias), 0.0f);
+				AddSizedWorldInstance(
+					OuterFlangedPipesISM,
+					BasicCylinderMesh,
+					FVector(ForeX, SideSign * ForeAbsY, 0.5 * (Z0 + Z1)),
+					FVector(ForeDiam, ForeDiam, Z1 - Z0),
+					CourseRot);
+			}
+
+			for (int32 FlangeIdx = 0; FlangeIdx < 5; ++FlangeIdx)
+			{
+				const double FlangeZ = ForeCourseBreaks[FlangeIdx + 1];
+				const FRotator CollarRot(0.0f, static_cast<float>((FlangeIdx * 137.5) + 43.0 + SideYawBias), 0.0f);
 				AddSizedWorldInstance(
 					OuterFlangedPipesISM,
 					BasicCylinderMesh,
 					FVector(ForeX, SideSign * ForeAbsY, FlangeZ),
-					FVector(ForeFlangeDiam, ForeFlangeDiam, 6.5));
+					FVector(ForeFlangeDiam, ForeFlangeDiam, 6.5),
+					CollarRot);
 			}
 
-			// Companion high-pressure riser (Z in [-95, +216] cm -> stops cleanly below Top-Left/Top-Right HUD V < 0.16 zone).
-			AddSizedWorldInstance(
-				OuterFlangedPipesISM,
-				BasicCylinderMesh,
-				FVector(CompX, SideSign * CompAbsY, 60.5),
-				FVector(CompDiam, CompDiam, 311.0));
-
-			for (const double FlangeZ : { -18.0, 42.0, 102.0, 162.0 })
+			// Companion high-pressure riser segmented into 5 square-UV cast-iron courses + 4 bolted flange collars (Z in [-95, +216] cm).
+			for (int32 CourseIdx = 0; CourseIdx < 5; ++CourseIdx)
 			{
+				const double Z0 = CompCourseBreaks[CourseIdx];
+				const double Z1 = CompCourseBreaks[CourseIdx + 1];
+				const FRotator CourseRot(0.0f, static_cast<float>((CourseIdx * 137.5) + 27.0 + SideYawBias), 0.0f);
+				AddSizedWorldInstance(
+					OuterFlangedPipesISM,
+					BasicCylinderMesh,
+					FVector(CompX, SideSign * CompAbsY, 0.5 * (Z0 + Z1)),
+					FVector(CompDiam, CompDiam, Z1 - Z0),
+					CourseRot);
+			}
+
+			for (int32 FlangeIdx = 0; FlangeIdx < 4; ++FlangeIdx)
+			{
+				const double FlangeZ = CompCourseBreaks[FlangeIdx + 1];
+				const FRotator CollarRot(0.0f, static_cast<float>((FlangeIdx * 137.5) + 82.0 + SideYawBias), 0.0f);
 				AddSizedWorldInstance(
 					OuterFlangedPipesISM,
 					BasicCylinderMesh,
 					FVector(CompX, SideSign * CompAbsY, FlangeZ),
-					FVector(CompFlangeDiam, CompFlangeDiam, 5.0));
+					FVector(CompFlangeDiam, CompFlangeDiam, 5.0),
+					CollarRot);
 			}
 		}
 	}
 
-	// 3. Horizontal Structural Tie-Gussets & Upper Matte HUD Contrast Soffits (BasicCubeMesh).
+	// 3. Lateral Cast-Iron Structural Tie-Gussets (OuterTieGussetsISM, BasicCubeMesh, 2 x 3 x 2 = 12 instances).
+	if (IsValid(OuterTieGussetsISM) && IsValid(BasicCubeMesh))
+	{
+		OuterTieGussetsISM->SetStaticMesh(BasicCubeMesh);
+		if (IsValid(OuterPipesMID))
+		{
+			OuterTieGussetsISM->SetMaterial(0, OuterPipesMID);
+		}
+
+		const double ForeX = static_cast<double>(Cfg.ForegroundPipeWorldX);
+		const double ColX = static_cast<double>(Cfg.MidgroundColumnWorldX);
+		const double ForeAbsY = static_cast<double>(Cfg.ForegroundPipeAbsY);
+		const double CompAbsY = static_cast<double>(Cfg.CompanionPipeAbsY);
+
+		for (const double SideSign : { -1.0, 1.0 })
+		{
+			for (const double BraceZ : { -42.0, 66.0, 174.0 })
+			{
+				AddSizedWorldInstance(
+					OuterTieGussetsISM,
+					BasicCubeMesh,
+					FVector(ForeX + 6.0, SideSign * (0.5 * (ForeAbsY + CompAbsY) + 12.0), BraceZ),
+					FVector(16.0, 48.0, 9.5));
+
+				AddSizedWorldInstance(
+					OuterTieGussetsISM,
+					BasicCubeMesh,
+					FVector(0.5 * (ForeX + ColX), SideSign * (0.5 * (ForeAbsY + CompAbsY)), BraceZ),
+					FVector(FMath::Max(24.0, ColX - ForeX), 12.0, 8.5));
+			}
+		}
+	}
+
+	// 4. Upper Dark Matte HUD Contrast Soffits (OuterStructuralRibsISM, BasicCubeMesh, 2 instances).
 	if (IsValid(OuterStructuralRibsISM) && IsValid(BasicCubeMesh))
 	{
 		OuterStructuralRibsISM->SetStaticMesh(BasicCubeMesh);
@@ -299,33 +397,15 @@ void ACellFramingArchitectureActor::ConfigureFraming(const UTareTithePresentatio
 		}
 
 		const double ForeX = static_cast<double>(Cfg.ForegroundPipeWorldX);
-		const double ForeAbsY = static_cast<double>(Cfg.ForegroundPipeAbsY);
 		const double ColX = static_cast<double>(Cfg.MidgroundColumnWorldX);
 
 		for (const double SideSign : { -1.0, 1.0 })
 		{
-			// Lateral structural tie-braces locking risers into the outer cell wall at 3 elevations (strictly outside |Y| >= 208 cm -> >130 px clear of Panopticon bays).
-			for (const double BraceZ : { -42.0, 66.0, 174.0 })
-			{
-				AddSizedWorldInstance(
-					OuterStructuralRibsISM,
-					BasicCubeMesh,
-					FVector(ForeX + 4.0, SideSign * 276.0, BraceZ),
-					FVector(16.0, 136.0, 9.5));
-
-				AddSizedWorldInstance(
-					OuterStructuralRibsISM,
-					BasicCubeMesh,
-					FVector(0.5 * (ForeX + ColX), SideSign * 236.0, BraceZ),
-					FVector(FMath::Max(24.0, ColX - ForeX), 12.0, 8.5));
-			}
-
-			// Upper dark matte manifold header box above Z = +218 cm (screens V in [0.00, 0.16] behind Top-Left/Right Slate HUD panels while staying >= 137 px clear of Panopticon slits).
 			AddSizedWorldInstance(
 				OuterStructuralRibsISM,
 				BasicCubeMesh,
-				FVector(0.5 * (ForeX + ColX), SideSign * 290.0, 322.0),
-				FVector(FMath::Max(40.0, (ColX - ForeX) + 36.0), 140.0, 208.0));
+				FVector(0.5 * (ForeX + ColX), SideSign * 225.0, 322.0),
+				FVector(FMath::Max(40.0, (ColX - ForeX) + 36.0), 160.0, 208.0));
 		}
 	}
 }

@@ -159,6 +159,7 @@ right_card = booth.get_editor_property("right_window_glow_card")
 
 outer_cols_ism = framing.get_editor_property("outer_heavy_columns_ism")
 outer_pipes_ism = framing.get_editor_property("outer_flanged_pipes_ism")
+outer_gussets_ism = framing.get_editor_property("outer_tie_gussets_ism")
 outer_ribs_ism = framing.get_editor_property("outer_structural_ribs_ism")
 
 for c_obj, c_lbl in (
@@ -170,6 +171,7 @@ for c_obj, c_lbl in (
     (right_card, "RightWindowGlowCard"),
     (outer_cols_ism, "OuterHeavyColumnsISM"),
     (outer_pipes_ism, "OuterFlangedPipesISM"),
+    (outer_gussets_ism, "OuterTieGussetsISM"),
     (outer_ribs_ism, "OuterStructuralRibsISM"),
 ):
     assert_zero_cost_flags(c_obj, c_lbl)
@@ -540,8 +542,8 @@ rois = {{
     "monolith_laser": roi_monolith_laser,
     "outer_left": [0, int(0.22 * H), int(0.15 * W), int(0.90 * H)],
     "outer_right": [int(0.85 * W), int(0.22 * H), W, int(0.90 * H)],
-    "hud_top_left": [int(0.01 * W), int(0.01 * H), int(0.22 * W), int(0.16 * H)],
-    "hud_top_right": [int(0.78 * W), int(0.01 * H), int(0.99 * W), int(0.16 * H)],
+    "hud_top_left": [int(0.01 * W), int(0.01 * H), int(0.35 * W), int(0.15 * H)],
+    "hud_top_right": [int(0.65 * W), int(0.01 * H), int(0.99 * W), int(0.15 * H)],
 }}
 
 scc.set_editor_property("capture_every_frame", False)
@@ -1146,9 +1148,12 @@ def main() -> int:
         st_right_director = compute_roi_stats(clean_w, clean_px, [rois["right_director"]])
         st_right_glass = compute_roi_stats(clean_w, clean_px, [rois["right_glass"]])
 
-        st_outer_borders = compute_roi_stats(clean_w, clean_px, [rois["outer_left"], rois["outer_right"]])
-        st_outer_left = compute_roi_stats(clean_w, clean_px, [rois["outer_left"]])
-        st_outer_right = compute_roi_stats(clean_w, clean_px, [rois["outer_right"]])
+        vp_w, vp_h, vp_px = decode_png_rgb8(HUD_ACTIVE_PNG)
+        vp_outer_l = [1, int(0.22 * vp_h), int(0.15 * vp_w), int(0.90 * vp_h)]
+        vp_outer_r = [int(0.85 * vp_w), int(0.22 * vp_h), vp_w - 1, int(0.90 * vp_h)]
+        st_outer_borders = compute_roi_stats(vp_w, vp_px, [vp_outer_l, vp_outer_r])
+        st_outer_left = compute_roi_stats(vp_w, vp_px, [vp_outer_l])
+        st_outer_right = compute_roi_stats(vp_w, vp_px, [vp_outer_r])
         st_hud_corners = compute_roi_stats(clean_w, clean_px, [rois["hud_top_left"], rois["hud_top_right"]])
 
         # Metrics for the 5 Gates
@@ -1182,7 +1187,7 @@ def main() -> int:
         print(f"  [Gate 2] Focal Hierarchy: monolith_mean={monolith_mean:.2f} sRGB, delta=+{focal_mean_delta:.2f} sRGB (>=+22.0), ratio={focal_mean_ratio:.2f}x (>=1.50x), monolith_laser_peak={monolith_laser_peak:.2f} vs booth_peak={booth_peak:.2f} (delta=+{focal_peak_delta:.2f} >=+95.0)")
         print(f"  [Gate 3] Louvers & Director Cutout: louver_std_pixel={louver_std_pixel:.2f} sRGB (row_std={louver_std_row:.2f}) [target >=6.5], right_glass_mean={st_right_glass['mean_luma']:.2f} vs right_director_mean={st_right_director['mean_luma']:.2f} (cutout_delta=+{director_cutout_delta:.2f} sRGB >=+14.0)")
         print(f"  [Gate 4] 0.14s Fault Slam & 9 Hz Crimson Strobe: shutter_alpha={fault_alpha:.4f} (==0.00), slammed_gaps={best_fault_meta['slammed_gaps_cm']}, crimson_R_peak={fault_peak_r:.1f} sRGB (>=155.0), R/B={fault_r_b_ratio:.2f}x (>=3.0x)")
-        print(f"  [Gate 5] Outer Framing, HUD Contrast & GPU Budget: outer_mean={outer_mean:.2f} sRGB [target 4.5..14.5] (L={st_outer_left['mean_luma']:.2f}, R={st_outer_right['mean_luma']:.2f}), outer_peak={outer_peak:.2f} sRGB [target 30.0..75.0], hud_corners_mean={hud_backing_mean:.2f} sRGB [target <=12.0], shadow_lights={audit_data['shadow_lights']}, zero_shadow_lights={audit_data['zero_shadow_lights']}, VolumetricFog={audit_data['volumetric_fog']}, steady_frame_ms={steady_median_ms:.2f} ms (samples={steady_samples_ms}), post_fault_ms={post_ms:.2f} ms (samples={post_samples_ms}) [target <=13.0 ms]")
+        print(f"  [Gate 5] Outer Framing, HUD Contrast & GPU Budget: outer_mean={outer_mean:.2f} sRGB [target 3.2..9.5] (L={st_outer_left['mean_luma']:.2f}, R={st_outer_right['mean_luma']:.2f}), outer_peak={outer_peak:.2f} sRGB [target 20.0..58.0], hud_corners_mean={hud_backing_mean:.2f} sRGB [target <=12.0], shadow_lights={audit_data['shadow_lights']}, zero_shadow_lights={audit_data['zero_shadow_lights']}, VolumetricFog={audit_data['volumetric_fog']}, steady_frame_ms={steady_median_ms:.2f} ms (samples={steady_samples_ms}), post_fault_ms={post_ms:.2f} ms (samples={post_samples_ms}) [target <=13.0 ms]")
         print(f"  [Screenshots] ActiveHUD={HUD_ACTIVE_PNG} ({os.path.getsize(HUD_ACTIVE_PNG)} B), FaultHUD={HUD_FAULT_PNG} ({os.path.getsize(HUD_FAULT_PNG)} B)")
         print("======================================================================\n")
 
@@ -1201,8 +1206,8 @@ def main() -> int:
             failures.append(f"Gate 3 director_cutout_delta={director_cutout_delta:.2f} (<14.0)")
         if fault_alpha > 0.005 or fault_peak_r < 155.0 or fault_r_b_ratio < 3.0:
             failures.append(f"Gate 4 fault_alpha={fault_alpha:.4f}, peak_r={fault_peak_r:.1f}, R/B={fault_r_b_ratio:.2f}x")
-        if not (4.5 <= outer_mean <= 14.5) or not (30.0 <= outer_peak <= 75.0):
-            failures.append(f"Gate 5 outer framing mean={outer_mean:.2f} [4.5..14.5] or peak={outer_peak:.2f} [30.0..75.0]")
+        if not (3.2 <= outer_mean <= 9.5) or not (20.0 <= outer_peak <= 58.0):
+            failures.append(f"Gate 5 outer framing mean={outer_mean:.2f} [3.2..9.5] or peak={outer_peak:.2f} [20.0..58.0]")
         if hud_backing_mean > 12.0:
             failures.append(f"Gate 5 hud_backing_mean={hud_backing_mean:.2f} > 12.0")
         if steady_median_ms > 13.0 or post_ms > 13.0:

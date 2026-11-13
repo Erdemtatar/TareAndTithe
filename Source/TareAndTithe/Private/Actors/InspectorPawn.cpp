@@ -354,6 +354,7 @@ void AInspectorPawn::BeginPlay()
 	{
 		InspectorHudBridgeComponent->BindPawnTelemetrySources(
 			LaserPlaneAimComponent,
+			LaserCapacitorComponent,
 			AudioTelemetryBridgeComponent,
 			OnReticleProjectionUpdated);
 	}
@@ -1584,6 +1585,66 @@ void AInspectorPawn::HandleCapacitorTelemetryImpulse(
 	OnTelemetryImpulse.Broadcast(ImpulseId, NormalizedMagnitude, WorldLocation);
 }
 
+namespace
+{
+	void ApplySpawnHazardSafeRestingAim(
+		ULaserPlaneAimComponent* AimComp,
+		UWorld* World,
+		const UMonolithContractDataAsset* ExplicitContract = nullptr)
+	{
+		if (!IsValid(AimComp) || !IsValid(World))
+		{
+			return;
+		}
+
+		const UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>();
+		const UMonolithContractDataAsset* Contract = IsValid(ExplicitContract)
+			? ExplicitContract
+			: (IsValid(ShiftSubsystem) ? ShiftSubsystem->GetActiveContract() : nullptr);
+		if (!IsValid(Contract) || Contract->HiddenVeins.Num() == 0)
+		{
+			return;
+		}
+
+		bool bMidpointRisksVeinHazard = false;
+		for (const FVolatileVeinDefinition& Vein : Contract->HiddenVeins)
+		{
+			const double MinVeinLocalZ = FMath::Min(Vein.LocalStartCm.Z, Vein.LocalEndCm.Z);
+			const double SafeClearanceCm = static_cast<double>(FMath::Max(2.0f, Vein.RadiusCm + Vein.WarningRangeCm));
+			if (MinVeinLocalZ <= SafeClearanceCm)
+			{
+				bMidpointRisksVeinHazard = true;
+				break;
+			}
+		}
+
+		if (!bMidpointRisksVeinHazard)
+		{
+			return;
+		}
+
+		UObject* TargetObj = IsValid(ShiftSubsystem) ? ShiftSubsystem->GetRegisteredSliceableTargetObject() : nullptr;
+		if (!IsValid(TargetObj) || !TargetObj->Implements<USliceableTargetInterface>())
+		{
+			return;
+		}
+
+		const FBox TargetBounds = ISliceableTargetInterface::Execute_GetTargetWorldBounds(TargetObj);
+		if (!TargetBounds.IsValid)
+		{
+			return;
+		}
+
+		// Refinement B: Park initial resting laser plane 5.0 cm cleanly below the monolith bottom flange when a lower/mid vein is present
+		// so neutral spawn never trips P1_VeinInDrop or P1_IsotopeHazard before the operator moves the mouse.
+		const FVector FrameAnchor = AimComp->GetFrameAnchorWorld();
+		const FVector FrameForward = AimComp->GetFrameForwardUnit();
+		const double SafeRestingWorldZ = TargetBounds.Min.Z - 5.0;
+		const FVector RayOrigin = FrameAnchor - (FrameForward * 100.0) + FVector(0.0, 0.0, SafeRestingWorldZ - FrameAnchor.Z);
+		AimComp->SetAimFromWorldRay(RayOrigin, FrameForward);
+	}
+}
+
 void AInspectorPawn::HandleShiftPhaseChanged(EShiftPhase NewPhase)
 {
 	CachedShiftPhase = NewPhase;
@@ -1598,7 +1659,9 @@ void AInspectorPawn::HandleShiftPhaseChanged(EShiftPhase NewPhase)
 	{
 		if (bActiveInspection)
 		{
+			LaserPlaneAimComponent->ResetAimAndOrientation();
 			RefreshAimTargetAndFrameFromShift();
+			ApplySpawnHazardSafeRestingAim(LaserPlaneAimComponent, GetWorld());
 		}
 		LaserPlaneAimComponent->SetAimingEnabled(bActiveInspection);
 	}
@@ -1618,7 +1681,7 @@ void AInspectorPawn::HandleShiftPhaseChanged(EShiftPhase NewPhase)
 }
 
 void AInspectorPawn::HandleActiveContractLoaded(
-	const UMonolithContractDataAsset* /*Contract*/,
+	const UMonolithContractDataAsset* Contract,
 	const UShiftProgressionDataAsset* ShiftConfig,
 	int32 /*ContractIndex*/)
 {
@@ -1642,7 +1705,7 @@ void AInspectorPawn::HandleActiveContractLoaded(
 
 	if (IsValid(LaserPlaneAimComponent))
 	{
-		LaserPlaneAimComponent->SetAimingEnabled(bActiveInspectionPhase);
+		LaserPlaneAimComponent->SetAimingEnabled(false);
 		LaserPlaneAimComponent->ResetAimAndOrientation();
 	}
 
@@ -1664,9 +1727,14 @@ void AInspectorPawn::HandleActiveContractLoaded(
 	}
 
 	RefreshAimTargetAndFrameFromShift();
-	if (IsValid(LaserPlaneAimComponent) && bActiveInspectionPhase)
+	if (IsValid(LaserPlaneAimComponent))
 	{
-		LaserPlaneAimComponent->ForceRefreshPreview();
+		ApplySpawnHazardSafeRestingAim(LaserPlaneAimComponent, GetWorld(), Contract);
+		LaserPlaneAimComponent->SetAimingEnabled(bActiveInspectionPhase);
+		if (bActiveInspectionPhase)
+		{
+			LaserPlaneAimComponent->ForceRefreshPreview();
+		}
 	}
 	UpdateCameraParallaxFromAim();
 	UpdateLegacyReticleVisibility();

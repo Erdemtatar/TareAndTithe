@@ -2,6 +2,7 @@
 
 #include "Components/InspectorHudBridgeComponent.h"
 #include "Components/AudioTelemetryBridgeComponent.h"
+#include "Components/LaserCapacitorComponent.h"
 #include "Components/LaserPlaneAimComponent.h"
 #include "Data/MonolithContractDataAsset.h"
 #include "Data/ShiftProgressionDataAsset.h"
@@ -10,6 +11,7 @@
 #include "Engine/World.h"
 #include "HAL/FileManager.h"
 #include "Misc/Paths.h"
+#include "TimerManager.h"
 #include "UI/STareTitheHudOverlay.h"
 #include "UnrealClient.h"
 
@@ -40,6 +42,15 @@ void UInspectorHudBridgeComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
+	bActiveTutorialHint = false;
+	ActiveTutorialStageIndex = -1;
+	for (int32 Idx = 0; Idx < 3; ++Idx)
+	{
+		bShift1TutorialStageSeen[Idx] = false;
+	}
+	LastPushedCenterHeadline.Reset();
+	LastPushedCenterSubText.Reset();
+
 	ResetTransientTelemetryAndHysteresis();
 
 	UWorld* World = GetWorld();
@@ -55,6 +66,8 @@ void UInspectorHudBridgeComponent::BeginPlay()
 		ShiftSubsystem->OnShiftPhaseChanged.AddUObject(this, &UInspectorHudBridgeComponent::HandleShiftPhaseChanged);
 		ShiftSubsystem->OnActiveContractLoaded.AddUObject(this, &UInspectorHudBridgeComponent::HandleActiveContractLoaded);
 		ShiftSubsystem->OnPresentationAssetChanged.AddUObject(this, &UInspectorHudBridgeComponent::ApplyPresentationData);
+		ShiftSubsystem->OnSliceCommittedSummary.AddUObject(this, &UInspectorHudBridgeComponent::HandleSliceCommittedResult);
+		ShiftSubsystem->OnCareerReset.AddUObject(this, &UInspectorHudBridgeComponent::HandleCareerReset);
 
 		ApplyPresentationData(ShiftSubsystem->GetActivePresentationAsset());
 		CachedShiftPhase = ShiftSubsystem->GetCurrentPhase();
@@ -62,6 +75,7 @@ void UInspectorHudBridgeComponent::BeginPlay()
 		CachedTotalContracts = FMath::Max(1, ShiftSubsystem->GetTotalContractCount());
 		CachedSnapshot = ShiftSubsystem->GetCurrentSnapshot();
 		bCachedReticleVisible = (CachedShiftPhase == EShiftPhase::ActiveInspection);
+		TryArmShift1TutorialForCurrentContract();
 	}
 
 	MountOverlayIfNeeded();
@@ -72,6 +86,8 @@ void UInspectorHudBridgeComponent::EndPlay(const EEndPlayReason::Type EndPlayRea
 {
 	if (UWorld* World = GetWorld())
 	{
+		World->GetTimerManager().ClearTimer(TutorialAutoDismissTimerHandle);
+
 		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
 		{
 			ShiftSubsystem->OnNativeContractSnapshotUpdated.RemoveAll(this);
@@ -79,6 +95,8 @@ void UInspectorHudBridgeComponent::EndPlay(const EEndPlayReason::Type EndPlayRea
 			ShiftSubsystem->OnShiftPhaseChanged.RemoveAll(this);
 			ShiftSubsystem->OnActiveContractLoaded.RemoveAll(this);
 			ShiftSubsystem->OnPresentationAssetChanged.RemoveAll(this);
+			ShiftSubsystem->OnSliceCommittedSummary.RemoveAll(this);
+			ShiftSubsystem->OnCareerReset.RemoveAll(this);
 		}
 	}
 
@@ -86,6 +104,11 @@ void UInspectorHudBridgeComponent::EndPlay(const EEndPlayReason::Type EndPlayRea
 	{
 		BoundLaserAimComp->OnPreviewUpdated.RemoveAll(this);
 		BoundLaserAimComp = nullptr;
+	}
+	if (IsValid(BoundLaserCapacitorComp))
+	{
+		BoundLaserCapacitorComp->OnSliceCommittedResult.RemoveAll(this);
+		BoundLaserCapacitorComp = nullptr;
 	}
 	if (IsValid(BoundAudioBridgeComp))
 	{
@@ -106,6 +129,7 @@ void UInspectorHudBridgeComponent::EndPlay(const EEndPlayReason::Type EndPlayRea
 
 void UInspectorHudBridgeComponent::BindPawnTelemetrySources(
 	ULaserPlaneAimComponent* InLaserAimComp,
+	ULaserCapacitorComponent* InLaserCapacitorComp,
 	UAudioTelemetryBridgeComponent* InAudioBridgeComp,
 	FOnInspectorReticleProjectionUpdatedSignature& InReticleProjectionDelegate)
 {
@@ -118,6 +142,16 @@ void UInspectorHudBridgeComponent::BindPawnTelemetrySources(
 	{
 		BoundLaserAimComp->OnPreviewUpdated.AddUObject(this, &UInspectorHudBridgeComponent::HandlePreviewUpdated);
 		CachedPreview = BoundLaserAimComp->GetLastPreviewTelemetry();
+	}
+
+	if (IsValid(BoundLaserCapacitorComp))
+	{
+		BoundLaserCapacitorComp->OnSliceCommittedResult.RemoveAll(this);
+	}
+	BoundLaserCapacitorComp = InLaserCapacitorComp;
+	if (IsValid(BoundLaserCapacitorComp))
+	{
+		BoundLaserCapacitorComp->OnSliceCommittedResult.AddUObject(this, &UInspectorHudBridgeComponent::HandleSliceCommittedResult);
 	}
 
 	if (IsValid(BoundAudioBridgeComp))
@@ -273,12 +307,132 @@ void UInspectorHudBridgeComponent::ResetTransientTelemetryAndHysteresis()
 	bLatchedQuotaMetReady = false;
 	bHasLatchedTerminalVerdict = false;
 	LatchedFaultReason = EContractFaultReason::None;
-	ActiveCenterAlertState = EHudCenterAlertState::None;
+	if (!(bActiveTutorialHint && ActiveCenterAlertState == EHudCenterAlertState::P3_TutorialHint))
+	{
+		ActiveCenterAlertState = EHudCenterAlertState::None;
+	}
 	LastVeinInDropAutoClearTimeSec = -10.0;
+}
+
+void UInspectorHudBridgeComponent::TryArmShift1TutorialForCurrentContract()
+{
+	if (!ActiveHudConfig.bEnableShift1MicroTutorial)
+	{
+		DismissActiveTutorialHint(false);
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!IsValid(World) || !World->IsGameWorld())
+	{
+		return;
+	}
+
+	const UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>();
+	const EShiftPhase EffectivePhase = IsValid(ShiftSubsystem) ? ShiftSubsystem->GetCurrentPhase() : CachedShiftPhase;
+	if (EffectivePhase != EShiftPhase::ActiveInspection)
+	{
+		return;
+	}
+
+	const int32 ShiftNum = IsValid(ShiftSubsystem)
+		? ShiftSubsystem->GetCurrentShiftNumber()
+		: FMath::Max(1, CachedSnapshot.CurrentShiftNumber);
+	const int32 ContractIdx = IsValid(ShiftSubsystem)
+		? ShiftSubsystem->GetCurrentContractIndex()
+		: CachedContractIndex;
+
+	if (ShiftNum != 1 || ContractIdx < 0 || ContractIdx >= 3)
+	{
+		DismissActiveTutorialHint(false);
+		return;
+	}
+
+	if (bActiveTutorialHint && ActiveTutorialStageIndex == ContractIdx)
+	{
+		return;
+	}
+
+	// Once-per-contract guard: fault retries on the same contract never re-spam the tutorial hint.
+	if (bShift1TutorialStageSeen[ContractIdx])
+	{
+		return;
+	}
+
+	World->GetTimerManager().ClearTimer(TutorialAutoDismissTimerHandle);
+
+	bShift1TutorialStageSeen[ContractIdx] = true;
+	bActiveTutorialHint = true;
+	ActiveTutorialStageIndex = ContractIdx;
+
+	float DurationSec = ActiveHudConfig.Shift1Stage1DurationSeconds;
+	if (ContractIdx == 1)
+	{
+		DurationSec = ActiveHudConfig.Shift1Stage2DurationSeconds;
+	}
+	else if (ContractIdx == 2)
+	{
+		DurationSec = ActiveHudConfig.Shift1Stage3DurationSeconds;
+	}
+	DurationSec = FMath::Clamp(DurationSec, 1.0f, 15.0f);
+
+	World->GetTimerManager().SetTimer(
+		TutorialAutoDismissTimerHandle,
+		this,
+		&UInspectorHudBridgeComponent::HandleTutorialAutoDismissTimerElapsed,
+		DurationSec,
+		false);
+}
+
+void UInspectorHudBridgeComponent::DismissActiveTutorialHint(bool bRefreshBanner)
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(TutorialAutoDismissTimerHandle);
+	}
+
+	const bool bWasActive = bActiveTutorialHint;
+	bActiveTutorialHint = false;
+	ActiveTutorialStageIndex = -1;
+
+	if (bWasActive && bRefreshBanner)
+	{
+		PushCenterAlertBanner();
+	}
+}
+
+void UInspectorHudBridgeComponent::HandleTutorialAutoDismissTimerElapsed()
+{
+	DismissActiveTutorialHint(true);
+}
+
+void UInspectorHudBridgeComponent::HandleCareerReset()
+{
+	DismissActiveTutorialHint(false);
+	for (int32 Idx = 0; Idx < 3; ++Idx)
+	{
+		bShift1TutorialStageSeen[Idx] = false;
+	}
+}
+
+void UInspectorHudBridgeComponent::HandleSliceCommittedResult(const FSliceResultSummary& Summary)
+{
+	// Refinement A: Dismiss Stage 1 & Stage 2 strictly on ECommitSliceOutcome::Success (never on MissedTarget air misfires).
+	if (Summary.Outcome != ECommitSliceOutcome::Success)
+	{
+		return;
+	}
+
+	if (bActiveTutorialHint && (ActiveTutorialStageIndex == 0 || ActiveTutorialStageIndex == 1))
+	{
+		DismissActiveTutorialHint(true);
+	}
 }
 
 void UInspectorHudBridgeComponent::HandleShiftVerdict(EShiftVerdictType Verdict, EContractFaultReason FaultReason)
 {
+	DismissActiveTutorialHint(false);
+
 	LatchedVerdict = Verdict;
 	LatchedFaultReason = FaultReason;
 	bHasLatchedTerminalVerdict = true;
@@ -309,6 +463,12 @@ void UInspectorHudBridgeComponent::HandleContractSnapshotUpdated(const FContract
 		}
 	}
 
+	// Stage 3 instant dismissal the frame the operator toggles [SPACE] to route into the right Tare shaft.
+	if (bActiveTutorialHint && ActiveTutorialStageIndex == 2 && Snapshot.ActiveDiverterRoute == EDiverterRoute::TareChute)
+	{
+		DismissActiveTutorialHint(false);
+	}
+
 	// Allow immediate re-arm if operator manually toggles diverter back to TitheScale while hovering a vein drop
 	if (PreviousRoute != Snapshot.ActiveDiverterRoute && Snapshot.ActiveDiverterRoute == EDiverterRoute::TitheScale)
 	{
@@ -325,15 +485,28 @@ void UInspectorHudBridgeComponent::HandleShiftPhaseChanged(EShiftPhase NewPhase)
 
 	if (NewPhase == EShiftPhase::ContractIntro)
 	{
+		DismissActiveTutorialHint(false);
 		ResetTransientTelemetryAndHysteresis();
 	}
 	else if (NewPhase == EShiftPhase::ActiveInspection)
 	{
 		bHasLatchedTerminalVerdict = false;
 		LatchedFaultReason = EContractFaultReason::None;
+		if (UWorld* World = GetWorld())
+		{
+			if (const UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
+			{
+				CachedContractIndex = ShiftSubsystem->GetCurrentContractIndex();
+				CachedTotalContracts = FMath::Max(1, ShiftSubsystem->GetTotalContractCount());
+				CachedSnapshot = ShiftSubsystem->GetCurrentSnapshot();
+			}
+		}
+		// Refinement B: Arm Shift-01 tutorial strictly when aiming input unlocks in ActiveInspection.
+		TryArmShift1TutorialForCurrentContract();
 	}
 	else if (NewPhase == EShiftPhase::FaultResetDelay)
 	{
+		DismissActiveTutorialHint(false);
 		bLatchedIsotopeHazard = false;
 		bLatchedVeinInDrop = false;
 		bLatchedClampCritical = false;
@@ -352,6 +525,7 @@ void UInspectorHudBridgeComponent::HandleShiftPhaseChanged(EShiftPhase NewPhase)
 	}
 	else
 	{
+		DismissActiveTutorialHint(false);
 		bLatchedIsotopeHazard = false;
 		bLatchedVeinInDrop = false;
 		bLatchedClampCritical = false;
@@ -367,6 +541,11 @@ void UInspectorHudBridgeComponent::HandleActiveContractLoaded(
 	const UShiftProgressionDataAsset* ShiftConfig,
 	int32 ContractIndex)
 {
+	if (ActiveTutorialStageIndex != ContractIndex)
+	{
+		DismissActiveTutorialHint(false);
+	}
+
 	ResetTransientTelemetryAndHysteresis();
 
 	CachedContractIndex = ContractIndex;
@@ -390,12 +569,25 @@ void UInspectorHudBridgeComponent::HandleActiveContractLoaded(
 		CachedSnapshot.ContractDirectiveText = Contract->ContractDirectiveText;
 	}
 
+	TryArmShift1TutorialForCurrentContract();
 	PushAllPanels();
 }
 
 void UInspectorHudBridgeComponent::HandlePreviewUpdated(const FSlicePreviewTelemetry& PreviewTelemetry)
 {
 	CachedPreview = PreviewTelemetry;
+
+	if (bActiveTutorialHint && ActiveTutorialStageIndex == 1 && IsValid(BoundLaserAimComp))
+	{
+		const FVector PlaneNormal = BoundLaserAimComp->GetCurrentPlaneNormalWorld().GetSafeNormal();
+		const double AbsDotUp = FMath::Clamp(FMath::Abs(FVector::DotProduct(PlaneNormal, FVector::UpVector)), 0.0, 1.0);
+		const float TiltDegrees = FMath::RadiansToDegrees(static_cast<float>(FMath::Acos(AbsDotUp)));
+		if (TiltDegrees >= ActiveHudConfig.Shift1Stage2DismissTiltDegrees)
+		{
+			DismissActiveTutorialHint(false);
+		}
+	}
+
 	PushReticleCard();
 	PushCenterAlertBanner();
 }
@@ -603,6 +795,7 @@ void UInspectorHudBridgeComponent::PushCenterAlertBanner()
 	if (CachedShiftPhase == EShiftPhase::FaultResetDelay ||
 		(bHasLatchedTerminalVerdict && LatchedVerdict == EShiftVerdictType::ContractFaultReset))
 	{
+		DismissActiveTutorialHint(false);
 		NextState = EHudCenterAlertState::P0_FaultStamp;
 		VM.bIsTerminalStamp = true;
 		VM.PrimaryBannerText = FormatFaultStampHeadline(LatchedFaultReason);
@@ -612,6 +805,7 @@ void UInspectorHudBridgeComponent::PushCenterAlertBanner()
 	else if (CachedShiftPhase == EShiftPhase::BondCleared ||
 		(bHasLatchedTerminalVerdict && LatchedVerdict == EShiftVerdictType::BondCleared))
 	{
+		DismissActiveTutorialHint(false);
 		NextState = EHudCenterAlertState::P0_BondCleared;
 		VM.bIsTerminalStamp = true;
 		VM.PrimaryBannerText = LOCTEXT("BondClearedStamp", "3-SHIFT INDENTURE BOND CLEARED - #409 RELEASED");
@@ -621,6 +815,7 @@ void UInspectorHudBridgeComponent::PushCenterAlertBanner()
 	else if (CachedShiftPhase == EShiftPhase::ShiftCompleted ||
 		(bHasLatchedTerminalVerdict && LatchedVerdict == EShiftVerdictType::ShiftCompleted))
 	{
+		DismissActiveTutorialHint(false);
 		NextState = EHudCenterAlertState::P0_ShiftSummary;
 		VM.bIsTerminalStamp = true;
 		const int32 CurShift = FMath::Max(1, CachedSnapshot.CurrentShiftNumber);
@@ -635,6 +830,7 @@ void UInspectorHudBridgeComponent::PushCenterAlertBanner()
 		(bHasLatchedTerminalVerdict &&
 			(LatchedVerdict == EShiftVerdictType::ContractPassed || LatchedVerdict == EShiftVerdictType::DirectorsCutPassed)))
 	{
+		DismissActiveTutorialHint(false);
 		NextState = EHudCenterAlertState::P0_PassStamp;
 		VM.bIsTerminalStamp = true;
 		const bool bDirCut = (LatchedVerdict == EShiftVerdictType::DirectorsCutPassed) || CachedSnapshot.bLastStampWasDirectorsCut;
@@ -752,6 +948,29 @@ void UInspectorHudBridgeComponent::PushCenterAlertBanner()
 			VM.SecondarySubText = LOCTEXT("QuotaMetReadySub", "VALID TITHE PAYLOAD SETTLED ON SCALE");
 			VM.AccentColor = FLinearColor(0.10f, 0.98f, 0.44f, 1.0f);
 		}
+		else if (bActiveTutorialHint && ActiveTutorialStageIndex >= 0 && ActiveTutorialStageIndex < 3)
+		{
+			// PRIORITY P3: SHIFT-01 3-STAGE PROGRESSIVE ONBOARDING HINT (P0 > P1 > P2 > P3)
+			NextState = EHudCenterAlertState::P3_TutorialHint;
+			VM.bIsTutorialHint = true;
+			VM.AccentColor = ActiveHudConfig.TutorialIceCyanTint;
+
+			if (ActiveTutorialStageIndex == 0)
+			{
+				VM.PrimaryBannerText = LOCTEXT("Shift1TutStage1Headline", "MOVE MOUSE TO AIM \u2014 HOLD [LMB] TO SLICE");
+				VM.SecondarySubText = LOCTEXT("Shift1TutStage1Sub", "LAND CUTS ON SCALE TO FILL QUOTA, THEN PRESS [E] TO STAMP");
+			}
+			else if (ActiveTutorialStageIndex == 1)
+			{
+				VM.PrimaryBannerText = LOCTEXT("Shift1TutStage2Headline", "ASYMMETRIC LOAD \u2014 [SCROLL] ROLL | HOLD [RMB] BEVEL");
+				VM.SecondarySubText = LOCTEXT("Shift1TutStage2Sub", "HOLD [SHIFT] FOR FAST ROTATION \u2014 BALANCE OVERHANG TORQUE");
+			}
+			else
+			{
+				VM.PrimaryBannerText = LOCTEXT("Shift1TutStage3Headline", "VOLATILE VEIN \u2014 PRESS [SPACE] TO ROUTE TARE SCRAP");
+				VM.SecondarySubText = LOCTEXT("Shift1TutStage3Sub", "DIVERT CONTAMINATED CUTS INTO THE RIGHT TARE SHAFT");
+			}
+		}
 	}
 
 	if (NextState != EHudCenterAlertState::None && NextState != ActiveCenterAlertState)
@@ -759,6 +978,17 @@ void UInspectorHudBridgeComponent::PushCenterAlertBanner()
 		++AlertTriggerGeneration;
 	}
 	ActiveCenterAlertState = NextState;
+
+	if (NextState == EHudCenterAlertState::None)
+	{
+		LastPushedCenterHeadline.Reset();
+		LastPushedCenterSubText.Reset();
+	}
+	else
+	{
+		LastPushedCenterHeadline = VM.PrimaryBannerText.ToString();
+		LastPushedCenterSubText = VM.SecondarySubText.ToString();
+	}
 
 	VM.AlertState = NextState;
 	VM.TriggerGeneration = AlertTriggerGeneration;
@@ -1156,6 +1386,8 @@ FString UInspectorHudBridgeComponent::AlertStateToDiagnosticString(EHudCenterAle
 		return TEXT("P2_DirectorsCutReady");
 	case EHudCenterAlertState::P2_QuotaMetReady:
 		return TEXT("P2_QuotaMetReady");
+	case EHudCenterAlertState::P3_TutorialHint:
+		return TEXT("P3_TutorialHint");
 	default:
 		return TEXT("Unknown");
 	}
@@ -1176,6 +1408,34 @@ bool UInspectorHudBridgeComponent::RequestCompositedViewportScreenshot(const FSt
 
 	// Decision 2: Capture both the HWRT 3D cell and post-tonemap pure C++ Slate HUD in one composited frame.
 	FScreenshotRequest::RequestScreenshot(AbsoluteFilePath, /*bShowUI=*/true, /*bAddFilenameSuffix=*/false);
+	if (UWorld* World = GetWorld())
+	{
+		if (UGameViewportClient* ViewportClient = World->GetGameViewport())
+		{
+			if (FViewport* Viewport = ViewportClient->Viewport)
+			{
+				Viewport->Invalidate();
+			}
+		}
+	}
+	return true;
+}
+
+bool UInspectorHudBridgeComponent::RequestCleanLitViewportScreenshot(const FString& AbsoluteFilePath)
+{
+	if (AbsoluteFilePath.IsEmpty())
+	{
+		return false;
+	}
+
+	const FString DirectoryPath = FPaths::GetPath(AbsoluteFilePath);
+	if (!DirectoryPath.IsEmpty())
+	{
+		IFileManager::Get().MakeDirectory(*DirectoryPath, true);
+	}
+
+	// Capture pure 3D GameViewport RenderTarget (bShowUI=false) with full Lumen reflections & TSR and zero Slate/window chrome.
+	FScreenshotRequest::RequestScreenshot(AbsoluteFilePath, /*bShowUI=*/false, /*bAddFilenameSuffix=*/false);
 	if (UWorld* World = GetWorld())
 	{
 		if (UGameViewportClient* ViewportClient = World->GetGameViewport())
@@ -1272,6 +1532,61 @@ float UInspectorHudBridgeComponent::GetCenterAlertBgOpacity() const
 float UInspectorHudBridgeComponent::GetCenterAlertTextOpacity() const
 {
 	return OverlayWidget.IsValid() ? OverlayWidget->GetCenterAlertCurrentTextOpacity() : 0.0f;
+}
+
+float UInspectorHudBridgeComponent::GetTopLeftContentDesiredWidth() const
+{
+	return OverlayWidget.IsValid() ? OverlayWidget->GetResolvedLayoutTelemetry().TopLeftDesiredWidth : 0.0f;
+}
+
+float UInspectorHudBridgeComponent::GetTopRightContentDesiredWidth() const
+{
+	return OverlayWidget.IsValid() ? OverlayWidget->GetResolvedLayoutTelemetry().TopRightDesiredWidth : 0.0f;
+}
+
+float UInspectorHudBridgeComponent::GetTopLeftHeaderBottomLocalY() const
+{
+	return OverlayWidget.IsValid() ? OverlayWidget->GetResolvedLayoutTelemetry().TopLeftHeaderBottomLocalY : 0.0f;
+}
+
+float UInspectorHudBridgeComponent::GetTopLeftDividerLocalY() const
+{
+	return OverlayWidget.IsValid() ? OverlayWidget->GetResolvedLayoutTelemetry().TopLeftDividerLocalY : 0.0f;
+}
+
+float UInspectorHudBridgeComponent::GetTopRightHeaderBottomLocalY() const
+{
+	return OverlayWidget.IsValid() ? OverlayWidget->GetResolvedLayoutTelemetry().TopRightHeaderBottomLocalY : 0.0f;
+}
+
+float UInspectorHudBridgeComponent::GetTopRightDividerLocalY() const
+{
+	return OverlayWidget.IsValid() ? OverlayWidget->GetResolvedLayoutTelemetry().TopRightDividerLocalY : 0.0f;
+}
+
+void UInspectorHudBridgeComponent::InjectRollWheelForTest(float WheelSteps, bool bFastSnap)
+{
+	if (IsValid(BoundLaserAimComp))
+	{
+		BoundLaserAimComp->AddScrollWheelInput(WheelSteps, bFastSnap);
+	}
+}
+
+void UInspectorHudBridgeComponent::OverrideCornerWidthForTest(float TestCornerWidthPx, bool bEnableOverride)
+{
+	FHudPresentationConfig EffectiveCfg = IsValid(PresentationData)
+		? PresentationData->HudConfig
+		: FHudPresentationConfig();
+	if (bEnableOverride)
+	{
+		EffectiveCfg.CornerPanelWidthPx = FMath::Clamp(TestCornerWidthPx, 220.0f, 680.0f);
+	}
+	ActiveHudConfig = EffectiveCfg;
+	if (OverlayWidget.IsValid())
+	{
+		OverlayWidget->ApplyHudConfig(ActiveHudConfig);
+		PushAllPanels();
+	}
 }
 
 #undef LOCTEXT_NAMESPACE

@@ -6,6 +6,7 @@
 #include "Components/ActorComponent.h"
 #include "Core/TareTitheTypes.h"
 #include "Data/TareTithePresentationDataAsset.h"
+#include "Engine/TimerHandle.h"
 #include "Subsystems/InspectionShiftSubsystem.h"
 #include "UI/HudViewModels.h"
 #include "InspectorHudBridgeComponent.generated.h"
@@ -14,6 +15,7 @@ class FViewport;
 class STareTitheHudOverlay;
 class UAudioTelemetryBridgeComponent;
 class UGameViewportClient;
+class ULaserCapacitorComponent;
 class ULaserPlaneAimComponent;
 class UMonolithContractDataAsset;
 class UShiftProgressionDataAsset;
@@ -37,6 +39,7 @@ public:
 
 	void BindPawnTelemetrySources(
 		ULaserPlaneAimComponent* InLaserAimComp,
+		ULaserCapacitorComponent* InLaserCapacitorComp,
 		UAudioTelemetryBridgeComponent* InAudioBridgeComp,
 		FOnInspectorReticleProjectionUpdatedSignature& InReticleProjectionDelegate);
 
@@ -48,6 +51,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "InspectorHud|Diagnostics")
 	bool RequestCompositedViewportScreenshot(const FString& AbsoluteFilePath);
+
+	UFUNCTION(BlueprintCallable, Category = "InspectorHud|Diagnostics")
+	bool RequestCleanLitViewportScreenshot(const FString& AbsoluteFilePath);
 
 	UFUNCTION(BlueprintPure, Category = "InspectorHud|Diagnostics")
 	bool IsOverlayMounted() const { return bIsMountedToViewport && OverlayWidget.IsValid(); }
@@ -109,6 +115,36 @@ public:
 	UFUNCTION(BlueprintPure, Category = "InspectorHud|Diagnostics")
 	float GetCenterAlertTextOpacity() const;
 
+	UFUNCTION(BlueprintPure, Category = "InspectorHud|Diagnostics")
+	FString GetActiveCenterAlertHeadline() const { return LastPushedCenterHeadline; }
+
+	UFUNCTION(BlueprintPure, Category = "InspectorHud|Diagnostics")
+	FString GetActiveCenterAlertSubText() const { return LastPushedCenterSubText; }
+
+	UFUNCTION(BlueprintPure, Category = "InspectorHud|Diagnostics")
+	float GetTopLeftContentDesiredWidth() const;
+
+	UFUNCTION(BlueprintPure, Category = "InspectorHud|Diagnostics")
+	float GetTopRightContentDesiredWidth() const;
+
+	UFUNCTION(BlueprintPure, Category = "InspectorHud|Diagnostics")
+	float GetTopLeftHeaderBottomLocalY() const;
+
+	UFUNCTION(BlueprintPure, Category = "InspectorHud|Diagnostics")
+	float GetTopLeftDividerLocalY() const;
+
+	UFUNCTION(BlueprintPure, Category = "InspectorHud|Diagnostics")
+	float GetTopRightHeaderBottomLocalY() const;
+
+	UFUNCTION(BlueprintPure, Category = "InspectorHud|Diagnostics")
+	float GetTopRightDividerLocalY() const;
+
+	UFUNCTION(BlueprintCallable, Category = "InspectorHud|Diagnostics")
+	void InjectRollWheelForTest(float WheelSteps, bool bFastSnap = false);
+
+	UFUNCTION(BlueprintCallable, Category = "InspectorHud|Diagnostics")
+	void OverrideCornerWidthForTest(float TestCornerWidthPx, bool bEnableOverride);
+
 private:
 	void MountOverlayIfNeeded();
 	void UnmountOverlayDeterministic();
@@ -116,6 +152,12 @@ private:
 	void HandleViewportResized(FViewport* Viewport, uint32 UnusedResizeCode);
 
 	void ResetTransientTelemetryAndHysteresis();
+	void TryArmShift1TutorialForCurrentContract();
+	void DismissActiveTutorialHint(bool bRefreshBanner);
+	void HandleTutorialAutoDismissTimerElapsed();
+	void HandleCareerReset();
+	void HandleSliceCommittedResult(const FSliceResultSummary& Summary);
+
 	void PushAllPanels();
 	void PushTopLeftPanel();
 	void PushTopRightPanel();
@@ -147,6 +189,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<ULaserPlaneAimComponent> BoundLaserAimComp;
+
+	UPROPERTY(Transient)
+	TObjectPtr<ULaserCapacitorComponent> BoundLaserCapacitorComp;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UAudioTelemetryBridgeComponent> BoundAudioBridgeComp;
@@ -184,6 +229,14 @@ private:
 	bool bLatchedClampCritical = false;
 	bool bLatchedDirectorsCutReady = false;
 	bool bLatchedQuotaMetReady = false;
+
+	// Phase 12-FIX2 Shift-01 3-Stage Progressive Micro-Tutorial State (Tier-1 Event + Timer)
+	FTimerHandle TutorialAutoDismissTimerHandle;
+	FString LastPushedCenterHeadline;
+	FString LastPushedCenterSubText;
+	int32 ActiveTutorialStageIndex = -1;
+	bool bActiveTutorialHint = false;
+	bool bShift1TutorialStageSeen[3] = { false, false, false };
 
 	static int32 GActiveMountedOverlayCount;
 };

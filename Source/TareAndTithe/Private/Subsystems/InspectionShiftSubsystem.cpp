@@ -378,6 +378,8 @@ void UInspectionShiftSubsystem::NotifySliceCommittedSummary(const FSliceResultSu
 		return;
 	}
 
+	OnSliceCommittedSummary.Broadcast(SliceSummary);
+
 	if (SliceSummary.Outcome == ECommitSliceOutcome::DetonatedVein)
 	{
 		TriggerContractFaultAtLocation(EContractFaultReason::VolatileDetonation, SliceSummary.WorldCutCentroid);
@@ -703,16 +705,31 @@ void UInspectionShiftSubsystem::RequestManualContractReset()
 	}
 	else if (CurrentPhase == EShiftPhase::ShiftCompleted || CurrentPhase == EShiftPhase::BondCleared)
 	{
-		CurrentShiftNumber = 1;
-		ScripBalance = 0;
-		LastStampScripAwarded = 0;
-		bLastStampWasDirectorsCut = false;
-		ClampHydraulicsLevel = 0;
-		TareHopperLevel = 0;
-		VeinScannerDamperLevel = 0;
-		ClearTransientRequisitionFeedback();
-		StartShiftFromContract(0);
+		ExecuteCareerResetToShiftOne();
 	}
+}
+
+bool UInspectionShiftSubsystem::ExecuteCareerResetToShiftOne()
+{
+	CurrentShiftNumber = 1;
+	ScripBalance = 0;
+	LastStampScripAwarded = 0;
+	bLastStampWasDirectorsCut = false;
+	ClampHydraulicsLevel = 0;
+	TareHopperLevel = 0;
+	VeinScannerDamperLevel = 0;
+	ClearTransientRequisitionFeedback();
+	OnCareerReset.Broadcast();
+	return StartShiftFromContract(0);
+}
+
+bool UInspectionShiftSubsystem::AdvanceToShiftForVerification(int32 TargetShiftNumber, int32 StartContractIndex)
+{
+	CurrentShiftNumber = FMath::Max(1, TargetShiftNumber);
+	LastStampScripAwarded = 0;
+	bLastStampWasDirectorsCut = false;
+	ClearTransientRequisitionFeedback();
+	return StartShiftFromContract(StartContractIndex);
 }
 
 void UInspectionShiftSubsystem::TriggerContractFault(EContractFaultReason FaultReason)
