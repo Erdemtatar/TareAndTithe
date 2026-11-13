@@ -4,7 +4,9 @@
 #include "Actors/SeveredChunkActor.h"
 #include "Components/ClampTorqueSolverComponent.h"
 #include "Components/DynamicMeshComponent.h"
+#include "Components/MoltenThermalLightComponent.h"
 #include "Components/MonolithSliceComponent.h"
+#include "Components/PointLightComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/VeinScannerComponent.h"
@@ -76,6 +78,20 @@ AMonolithRigActor::AMonolithRigActor()
 	MonolithSliceComponent = CreateDefaultSubobject<UMonolithSliceComponent>(TEXT("MonolithSliceComponent"));
 	VeinScannerComponent = CreateDefaultSubobject<UVeinScannerComponent>(TEXT("VeinScannerComponent"));
 	ClampTorqueSolverComponent = CreateDefaultSubobject<UClampTorqueSolverComponent>(TEXT("ClampTorqueSolverComponent"));
+
+	const FMoltenBounceLightConfig DefaultMoltenCfg;
+	MoltenCutBounceLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("MoltenCutBounceLight"));
+	MoltenCutBounceLight->SetupAttachment(TiltingMountComponent);
+	MoltenCutBounceLight->PrimaryComponentTick.bCanEverTick = false;
+	MoltenCutBounceLight->SetRelativeLocation(DefaultMoltenCfg.CutLightLocalOffset);
+	MoltenCutBounceLight->SetIntensity(0.0f);
+	MoltenCutBounceLight->SetAttenuationRadius(DefaultMoltenCfg.CutAttenuationRadiusCm);
+	MoltenCutBounceLight->SetLightColor(DefaultMoltenCfg.BounceColor);
+	MoltenCutBounceLight->SetVolumetricScatteringIntensity(0.0f);
+	MoltenCutBounceLight->SetCastShadows(false);
+	MoltenCutBounceLight->SetVisibility(false, false);
+
+	MoltenThermalLightComponent = CreateDefaultSubobject<UMoltenThermalLightComponent>(TEXT("MoltenThermalLightComponent"));
 }
 
 void AMonolithRigActor::BeginPlay()
@@ -83,6 +99,17 @@ void AMonolithRigActor::BeginPlay()
 	Super::BeginPlay();
 
 	EnsureGreyboxMaterialsInitialized();
+
+	if (IsValid(MoltenThermalLightComponent))
+	{
+		const FMoltenBounceLightConfig DefaultMoltenCfg;
+		MoltenThermalLightComponent->InitializeTargetLight(MoltenCutBounceLight);
+		MoltenThermalLightComponent->ConfigureLightParameters(
+			DefaultMoltenCfg.BounceColor,
+			DefaultMoltenCfg.CutAttenuationRadiusCm,
+			DefaultMoltenCfg.FlashDecayDurationSeconds,
+			DefaultMoltenCfg.SteadyInterpSpeed);
+	}
 
 	if (IsValid(MonolithSliceComponent))
 	{
@@ -249,6 +276,27 @@ FSliceResultSummary AMonolithRigActor::CommitSlicePlane_Implementation(
 		ClampTorqueSolverComponent->UpdateRemainderLoad(Summary.NewRemainderMassKg, MountLocalCoMCm);
 	}
 
+	if (Summary.Outcome == ECommitSliceOutcome::Success && IsValid(MoltenThermalLightComponent))
+	{
+		const FMoltenBounceLightConfig MoltenCfg = IsValid(PresentationData)
+			? PresentationData->MoltenBounceConfig
+			: FMoltenBounceLightConfig();
+		if (IsValid(MoltenCutBounceLight) && IsValid(MonolithSliceComponent))
+		{
+			const FBox RemWorldBounds = MonolithSliceComponent->GetRemainderWorldBounds();
+			if (RemWorldBounds.IsValid && IsValid(TiltingMountComponent))
+			{
+				const FVector MountLocalBottom = TiltingMountComponent->GetComponentTransform().InverseTransformPosition(
+					FVector(RemWorldBounds.GetCenter().X, RemWorldBounds.GetCenter().Y, RemWorldBounds.Min.Z));
+				MoltenCutBounceLight->SetRelativeLocation(MountLocalBottom + MoltenCfg.CutLightLocalOffset);
+			}
+		}
+		const float NewSteady = (Summary.NewRemainderMassKg > KINDA_SMALL_NUMBER)
+			? MoltenCfg.CutSteadyRemainderIntensity
+			: 0.0f;
+		MoltenThermalLightComponent->TriggerThermalFlash(MoltenCfg.CutFlashPeakIntensity, NewSteady);
+	}
+
 	if (UWorld* World = GetWorld())
 	{
 		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
@@ -304,6 +352,10 @@ bool AMonolithRigActor::LoadContractOnRig(
 
 	ClampTorqueSolverComponent->SetNeutralPivotTransform(ClampPivotRoot->GetComponentTransform());
 	ClampTorqueSolverComponent->ResetClampState();
+	if (IsValid(MoltenThermalLightComponent))
+	{
+		MoltenThermalLightComponent->ResetThermalImmediate();
+	}
 
 	if (!MonolithSliceComponent->InitializeMonolithFromContract(Contract, ShiftConfig))
 	{
@@ -359,6 +411,22 @@ void AMonolithRigActor::ApplyPresentationData(const UTareTithePresentationDataAs
 	else if (IsValid(ClampSpringHousingVisual))
 	{
 		ClampSpringHousingVisual->SetVisibility(false, false);
+	}
+
+	const FMoltenBounceLightConfig MoltenCfg = IsValid(PresentationData)
+		? PresentationData->MoltenBounceConfig
+		: FMoltenBounceLightConfig();
+	if (IsValid(MoltenCutBounceLight))
+	{
+		MoltenCutBounceLight->SetRelativeLocation(MoltenCfg.CutLightLocalOffset);
+	}
+	if (IsValid(MoltenThermalLightComponent))
+	{
+		MoltenThermalLightComponent->ConfigureLightParameters(
+			MoltenCfg.BounceColor,
+			MoltenCfg.CutAttenuationRadiusCm,
+			MoltenCfg.FlashDecayDurationSeconds,
+			MoltenCfg.SteadyInterpSpeed);
 	}
 
 	if (IsValid(CachedLoadedContract))
@@ -668,6 +736,15 @@ void AMonolithRigActor::HandleSliverVaporized(float VaporizedMassKg, const FVect
 	const float NormalizedMagnitude = FMath::Clamp(VaporizedMassKg / RefMass, 0.1f, 1.0f);
 	OnTelemetryImpulse.Broadcast(ETelemetryImpulseId::SliverVaporized, NormalizedMagnitude, WorldLocation);
 
+	if (IsValid(MoltenThermalLightComponent))
+	{
+		const FMoltenBounceLightConfig MoltenCfg = IsValid(PresentationData)
+			? PresentationData->MoltenBounceConfig
+			: FMoltenBounceLightConfig();
+		const float VaporFlash = MoltenCfg.CutFlashPeakIntensity * FMath::Lerp(0.45f, 1.0f, NormalizedMagnitude);
+		MoltenThermalLightComponent->TriggerThermalFlash(VaporFlash, MoltenThermalLightComponent->GetTargetSteadyIntensity());
+	}
+
 	if (UWorld* World = GetWorld())
 	{
 		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
@@ -679,6 +756,11 @@ void AMonolithRigActor::HandleSliverVaporized(float VaporizedMassKg, const FVect
 
 void AMonolithRigActor::HandleClampStructuralSnap()
 {
+	if (IsValid(MoltenThermalLightComponent))
+	{
+		MoltenThermalLightComponent->SetSteadyEmberIntensity(0.0f);
+	}
+
 	// Detach and drop snapped remainder under bounded convex Chaos freefall without overlap generation during the fault reset window.
 	if (IsValid(RemainderMeshComponent))
 	{

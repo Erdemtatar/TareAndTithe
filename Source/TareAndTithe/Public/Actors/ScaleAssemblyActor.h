@@ -13,7 +13,9 @@ class UBoxComponent;
 class UDiverterGateComponent;
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
+class UMoltenThermalLightComponent;
 class UMonolithContractDataAsset;
+class UPointLightComponent;
 class UScaleWeighingComponent;
 class USceneComponent;
 class UShiftProgressionDataAsset;
@@ -116,6 +118,12 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly")
 	TObjectPtr<UDiverterGateComponent> DiverterGateComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly|Lighting")
+	TObjectPtr<UPointLightComponent> ScaleWellEmberLight;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly|Lighting")
+	TObjectPtr<UMoltenThermalLightComponent> ScaleWellThermalLightComponent;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly|Readout")
 	TObjectPtr<USceneComponent> ReadoutConsolePivot;
 
@@ -183,7 +191,7 @@ protected:
 	FLinearColor ConsoleBezelLinearColor = FLinearColor(0.005f, 0.006f, 0.008f, 1.0f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Colors")
-	FLinearColor DarkGunmetalLinearColor = FLinearColor(0.022f, 0.025f, 0.030f, 1.0f);
+	FLinearColor DarkGunmetalLinearColor = FLinearColor(0.17f, 0.19f, 0.22f, 1.0f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ScaleAssembly|Colors")
 	FColor ReadoutHeaderCyanColor = FColor(0, 230, 255, 255);

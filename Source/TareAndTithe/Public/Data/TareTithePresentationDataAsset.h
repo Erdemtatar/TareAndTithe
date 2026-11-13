@@ -14,6 +14,7 @@ class USoundAttenuation;
 class USoundBase;
 class UStaticMesh;
 class UStaticMeshComponent;
+class UTextureCube;
 
 USTRUCT(BlueprintType)
 struct TAREANDTITHE_API FMeshPresentationSlot
@@ -36,6 +37,204 @@ struct TAREANDTITHE_API FMeshPresentationSlot
 	 *   and guarantees NoCollision on the visual component.
 	 */
 	bool ApplyToVisualComponent(UStaticMeshComponent* TargetVisualComp) const;
+};
+
+USTRUCT(BlueprintType)
+struct TAREANDTITHE_API FCellDirectionalSpotConfig
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting")
+	FVector Location = FVector(175.0, -25.0, 335.0);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting")
+	FVector TargetLocation = FVector(260.0, 0.0, 120.0);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting", meta = (ClampMin = "0.0", ClampMax = "50000.0"))
+	float Intensity = 12200.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting", meta = (ClampMin = "100.0", ClampMax = "2500.0"))
+	float AttenuationRadius = 1080.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting", meta = (ClampMin = "1.0", ClampMax = "80.0"))
+	float InnerConeAngle = 26.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting", meta = (ClampMin = "5.0", ClampMax = "89.0"))
+	float OuterConeAngle = 58.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting")
+	FLinearColor LightColor = FLinearColor(0.95f, 0.96f, 1.00f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting")
+	bool bCastShadows = false;
+};
+
+USTRUCT(BlueprintType)
+struct TAREANDTITHE_API FCellLightingRigConfig
+{
+	GENERATED_BODY()
+
+	FCellLightingRigConfig();
+
+	/** Sole VSM shadow-casting key spotlight aimed down the monolith and scale drop column. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting")
+	FCellDirectionalSpotConfig KeySpot;
+
+	/** Unshadowed front-side fill point light for underside bevel readability. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting")
+	FVector FillPointLocation = FVector(95.0, 40.0, 215.0);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting", meta = (ClampMin = "0.0", ClampMax = "20000.0"))
+	float FillPointIntensity = 3600.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting", meta = (ClampMin = "100.0", ClampMax = "2500.0"))
+	float FillPointRadius = 880.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting")
+	FLinearColor FillPointColor = FLinearColor(0.84f, 0.90f, 1.00f, 1.0f);
+
+	/** Cool ~7600K left grazing rim spotlight raking across station metal chamfers (bCastShadows = false). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting")
+	FCellDirectionalSpotConfig RimSpotLeft;
+
+	/** Cool ~7800K right grazing rim spotlight raking across station metal chamfers (bCastShadows = false). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting")
+	FCellDirectionalSpotConfig RimSpotRight;
+
+	/** Unshadowed ~6800K midground architectural wash lifting the rear wall & under-booth stanchions above #000000. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting")
+	FCellDirectionalSpotConfig MidgroundWashSpot;
+};
+
+USTRUCT(BlueprintType)
+struct TAREANDTITHE_API FCellAtmosphereConfig
+{
+	GENERATED_BODY()
+
+	/** Cook-safe cubemap inside /Game/Presentation/ for SLS_SpecifiedCubemap inside the sealed inspection cell. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Atmosphere")
+	TObjectPtr<UTextureCube> AmbientSkyCubemap = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Atmosphere", meta = (ClampMin = "0.0", ClampMax = "3.0"))
+	float SkyLightIntensity = 0.44f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Atmosphere")
+	FLinearColor SkyTintColor = FLinearColor(0.68f, 0.80f, 0.98f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Atmosphere")
+	FLinearColor LowerHemisphereColor = FLinearColor(0.028f, 0.036f, 0.050f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Atmosphere")
+	bool bEnableDepthFog = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Atmosphere", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float FogDensity = 0.16f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Atmosphere", meta = (ClampMin = "0.01", ClampMax = "2.0"))
+	float FogHeightFalloff = 0.32f;
+
+	/** Starts behind the X=260 monolith/console plane (~294 cm from camera) so HUD & hero station have zero fog veil. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Atmosphere", meta = (ClampMin = "0.0", ClampMax = "1500.0"))
+	float FogStartDistanceCm = 305.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Atmosphere", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float FogMaxOpacity = 0.55f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Atmosphere")
+	FLinearColor FogInscatteringColor = FLinearColor(0.036f, 0.050f, 0.072f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Atmosphere", meta = (ClampMin = "-200.0", ClampMax = "400.0"))
+	float FogActorZCm = 90.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Atmosphere")
+	bool bSpawnMidgroundArchitectureRelief = true;
+};
+
+USTRUCT(BlueprintType)
+struct TAREANDTITHE_API FMoltenBounceLightConfig
+{
+	GENERATED_BODY()
+
+	/** Warm ~2200K molten slag bounce color shared by cut-cap and scale-well non-shadow lights. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|MoltenBounce")
+	FLinearColor BounceColor = FLinearColor(1.00f, 0.36f, 0.07f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|MoltenBounce", meta = (ClampMin = "0.0", ClampMax = "25000.0"))
+	float CutFlashPeakIntensity = 5600.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|MoltenBounce", meta = (ClampMin = "0.0", ClampMax = "10000.0"))
+	float CutSteadyRemainderIntensity = 1350.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|MoltenBounce", meta = (ClampMin = "40.0", ClampMax = "800.0"))
+	float CutAttenuationRadiusCm = 265.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|MoltenBounce")
+	FVector CutLightLocalOffset = FVector(-22.0, 0.0, -24.0);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|MoltenBounce", meta = (ClampMin = "0.0", ClampMax = "15000.0"))
+	float ScaleWellFlashIntensity = 2800.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|MoltenBounce", meta = (ClampMin = "0.0", ClampMax = "8000.0"))
+	float ScaleWellMaxSteadyIntensity = 1150.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|MoltenBounce", meta = (ClampMin = "40.0", ClampMax = "500.0"))
+	float ScaleWellAttenuationRadiusCm = 165.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|MoltenBounce")
+	FVector ScaleWellLocalOffset = FVector(0.0, 0.0, 24.0);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|MoltenBounce", meta = (ClampMin = "0.10", ClampMax = "4.0"))
+	float FlashDecayDurationSeconds = 0.85f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|MoltenBounce", meta = (ClampMin = "0.5", ClampMax = "30.0"))
+	float SteadyInterpSpeed = 6.0f;
+};
+
+USTRUCT(BlueprintType)
+struct TAREANDTITHE_API FCameraPostProcessPolishConfig
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|PostProcess", meta = (ClampMin = "0.05", ClampMax = "10.0"))
+	float LockedEV100MinMax = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|PostProcess", meta = (ClampMin = "-5.0", ClampMax = "5.0"))
+	float ExposureCompensationBias = 0.48f;
+
+	/** Neutral 1.0f bypasses bilateral local-exposure contrast compression to prevent halation around UnlitText HUD glyphs. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|PostProcess", meta = (ClampMin = "0.5", ClampMax = "1.0"))
+	float LocalExposureHighlightContrast = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|PostProcess", meta = (ClampMin = "0.5", ClampMax = "1.0"))
+	float LocalExposureShadowContrast = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|PostProcess", meta = (ClampMin = "0.0", ClampMax = "2.0"))
+	float BloomIntensity = 0.42f;
+
+	/** Mathematical HUD firewall: >= 1.65f excludes all UnlitText FColor <= 1.0 while blooming HDR molten cuts & sparks. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|PostProcess", meta = (ClampMin = "1.15", ClampMax = "5.0"))
+	float BloomThreshold = 1.65f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|PostProcess", meta = (ClampMin = "0.5", ClampMax = "1.0"))
+	float FilmSlope = 0.90f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|PostProcess", meta = (ClampMin = "0.3", ClampMax = "0.8"))
+	float FilmToe = 0.53f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|PostProcess", meta = (ClampMin = "0.1", ClampMax = "0.8"))
+	float FilmShoulder = 0.28f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|PostProcess", meta = (ClampMin = "0.8", ClampMax = "1.4"))
+	float ColorContrast = 1.05f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|PostProcess", meta = (ClampMin = "0.5", ClampMax = "1.4"))
+	float ColorSaturation = 0.96f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|PostProcess", meta = (ClampMin = "0.0", ClampMax = "0.6"))
+	float VignetteIntensity = 0.28f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|PostProcess", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float TonemapperSharpen = 0.35f;
 };
 
 UCLASS(BlueprintType)
@@ -81,6 +280,25 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials")
 	TObjectPtr<UMaterialInterface> CellFloorMaterial = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials")
+	TObjectPtr<UMaterialInterface> DarkGunmetalMaterial = nullptr;
+
+	// ============================================================================
+	// Phase 10 Industrial Cell Lighting, Atmosphere & Post-Process Polish
+	// ============================================================================
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LightingAndAtmosphere")
+	FCellLightingRigConfig LightingRigConfig;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LightingAndAtmosphere")
+	FCellAtmosphereConfig AtmosphereConfig;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LightingAndAtmosphere")
+	FMoltenBounceLightConfig MoltenBounceConfig;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LightingAndAtmosphere")
+	FCameraPostProcessPolishConfig CameraPostProcessConfig;
 
 	// ============================================================================
 	// Station Mesh Slots

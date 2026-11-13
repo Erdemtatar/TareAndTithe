@@ -14,8 +14,10 @@ class UClampTorqueSolverComponent;
 class UDynamicMeshComponent;
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
+class UMoltenThermalLightComponent;
 class UMonolithContractDataAsset;
 class UMonolithSliceComponent;
+class UPointLightComponent;
 class USceneComponent;
 class UShiftProgressionDataAsset;
 class UStaticMesh;
@@ -89,6 +91,12 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rig")
 	TObjectPtr<UClampTorqueSolverComponent> ClampTorqueSolverComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rig|Lighting")
+	TObjectPtr<UPointLightComponent> MoltenCutBounceLight;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rig|Lighting")
+	TObjectPtr<UMoltenThermalLightComponent> MoltenThermalLightComponent;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rig|Materials", meta = (DisplayName = "Outer Shell Override Material (M_SlagOuter_Master)"))
 	TObjectPtr<UMaterialInterface> OuterShellOverrideMaterial;

@@ -53,17 +53,20 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell", meta = (ClampMax = "-150.0"))
 	float RearCellWallXCm = -200.0f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell", meta = (ClampMin = "415.0", ClampMax = "520.0"))
+	float MinMidgroundReliefXCm = 415.0f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell|Lighting", meta = (ClampMin = "100.0", ClampMax = "25000.0"))
-	float KeySpotLightIntensity = 10500.0f;
+	float KeySpotLightIntensity = 12200.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell|Lighting", meta = (ClampMin = "50.0", ClampMax = "15000.0"))
-	float FillPointLightIntensity = 4450.0f;
+	float FillPointLightIntensity = 3600.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell|Lighting")
-	FVector RimPointLightLocation = FVector(335.0, 0.0, 250.0);
+	FVector RimPointLightLocation = FVector(338.0, -190.0, 248.0);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell|Lighting", meta = (ClampMin = "50.0", ClampMax = "15000.0"))
-	float RimPointLightIntensity = 5200.0f;
+	float RimPointLightIntensity = 9400.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Scalability", meta = (ClampMin = "0", ClampMax = "3"))
 	int32 BaselineScalabilityLevel = 2;

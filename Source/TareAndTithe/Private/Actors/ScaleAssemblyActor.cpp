@@ -3,6 +3,8 @@
 #include "Actors/ScaleAssemblyActor.h"
 #include "Components/BoxComponent.h"
 #include "Components/DiverterGateComponent.h"
+#include "Components/MoltenThermalLightComponent.h"
+#include "Components/PointLightComponent.h"
 #include "Components/ScaleWeighingComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -203,6 +205,20 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 	ScaleWeighingComponent = CreateDefaultSubobject<UScaleWeighingComponent>(TEXT("ScaleWeighingComponent"));
 	DiverterGateComponent = CreateDefaultSubobject<UDiverterGateComponent>(TEXT("DiverterGateComponent"));
 
+	const FMoltenBounceLightConfig DefaultMoltenCfg;
+	ScaleWellEmberLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("ScaleWellEmberLight"));
+	ScaleWellEmberLight->SetupAttachment(PanMotionRoot);
+	ScaleWellEmberLight->PrimaryComponentTick.bCanEverTick = false;
+	ScaleWellEmberLight->SetRelativeLocation(DefaultMoltenCfg.ScaleWellLocalOffset);
+	ScaleWellEmberLight->SetIntensity(0.0f);
+	ScaleWellEmberLight->SetAttenuationRadius(DefaultMoltenCfg.ScaleWellAttenuationRadiusCm);
+	ScaleWellEmberLight->SetLightColor(DefaultMoltenCfg.BounceColor);
+	ScaleWellEmberLight->SetVolumetricScatteringIntensity(0.0f);
+	ScaleWellEmberLight->SetCastShadows(false);
+	ScaleWellEmberLight->SetVisibility(false, false);
+
+	ScaleWellThermalLightComponent = CreateDefaultSubobject<UMoltenThermalLightComponent>(TEXT("ScaleWellThermalLightComponent"));
+
 	// Front-apron console bezel mounted strictly below PanRimFrontBox top (+37.0 cm) and tilted 10 deg upward toward camera.
 	ReadoutConsolePivot = CreateDefaultSubobject<USceneComponent>(TEXT("ReadoutConsolePivot"));
 	ReadoutConsolePivot->SetupAttachment(ScaleRoot);
@@ -309,6 +325,17 @@ void AScaleAssemblyActor::BeginPlay()
 
 	InitializeGreyboxVisualMaterials();
 	EnforcePanTriggerGeometryAndCollision();
+
+	if (IsValid(ScaleWellThermalLightComponent))
+	{
+		const FMoltenBounceLightConfig DefaultMoltenCfg;
+		ScaleWellThermalLightComponent->InitializeTargetLight(ScaleWellEmberLight);
+		ScaleWellThermalLightComponent->ConfigureLightParameters(
+			DefaultMoltenCfg.BounceColor,
+			DefaultMoltenCfg.ScaleWellAttenuationRadiusCm,
+			DefaultMoltenCfg.FlashDecayDurationSeconds,
+			DefaultMoltenCfg.SteadyInterpSpeed);
+	}
 
 	if (IsValid(ScaleWeighingComponent))
 	{
@@ -442,6 +469,10 @@ void AScaleAssemblyActor::ResetReceiverState_Implementation()
 	{
 		DiverterGateComponent->SetRoute(EDiverterRoute::TitheScale, true);
 	}
+	if (IsValid(ScaleWellThermalLightComponent))
+	{
+		ScaleWellThermalLightComponent->ResetThermalImmediate();
+	}
 	RefreshRouteReadout();
 	RefreshStatusBannerReadout();
 }
@@ -457,6 +488,11 @@ bool AScaleAssemblyActor::TryRecoverPayloadOnReceiver_Implementation(AActor* Pay
 
 void AScaleAssemblyActor::ConfigureForContract(const UMonolithContractDataAsset* Contract, EDiverterRoute InitialRoute)
 {
+	if (IsValid(ScaleWellThermalLightComponent))
+	{
+		ScaleWellThermalLightComponent->ResetThermalImmediate();
+	}
+
 	if (IsValid(ScaleWeighingComponent))
 	{
 		ScaleWeighingComponent->ConfigureForContract(Contract);
@@ -524,7 +560,34 @@ void AScaleAssemblyActor::ApplyPresentationData(const UTareTithePresentationData
 
 	if (!IsValid(InPresentationData))
 	{
+		const FMoltenBounceLightConfig DefaultMoltenCfg;
+		if (IsValid(ScaleWellEmberLight))
+		{
+			ScaleWellEmberLight->SetRelativeLocation(DefaultMoltenCfg.ScaleWellLocalOffset);
+		}
+		if (IsValid(ScaleWellThermalLightComponent))
+		{
+			ScaleWellThermalLightComponent->ConfigureLightParameters(
+				DefaultMoltenCfg.BounceColor,
+				DefaultMoltenCfg.ScaleWellAttenuationRadiusCm,
+				DefaultMoltenCfg.FlashDecayDurationSeconds,
+				DefaultMoltenCfg.SteadyInterpSpeed);
+		}
 		return;
+	}
+
+	const FMoltenBounceLightConfig& MoltenCfg = InPresentationData->MoltenBounceConfig;
+	if (IsValid(ScaleWellEmberLight))
+	{
+		ScaleWellEmberLight->SetRelativeLocation(MoltenCfg.ScaleWellLocalOffset);
+	}
+	if (IsValid(ScaleWellThermalLightComponent))
+	{
+		ScaleWellThermalLightComponent->ConfigureLightParameters(
+			MoltenCfg.BounceColor,
+			MoltenCfg.ScaleWellAttenuationRadiusCm,
+			MoltenCfg.FlashDecayDurationSeconds,
+			MoltenCfg.SteadyInterpSpeed);
 	}
 
 	InPresentationData->ScaleBaseMeshSlot.ApplyToVisualComponent(ScaleBaseVisual);
@@ -597,6 +660,18 @@ void AScaleAssemblyActor::HandleContractSnapshotUpdated(const FContractRuntimeSn
 
 	RefreshRouteReadout();
 	RefreshStatusBannerReadout();
+
+	if (IsValid(ScaleWellThermalLightComponent))
+	{
+		const FMoltenBounceLightConfig MoltenCfg = IsValid(PresentationData)
+			? PresentationData->MoltenBounceConfig
+			: FMoltenBounceLightConfig();
+		const float SafeTargetKg = FMath::Max(1.0f, Snapshot.TargetTitheMassKg);
+		const float EmberRatio = (Snapshot.SettledScaleMassKg > 0.01f)
+			? FMath::Clamp(Snapshot.SettledScaleMassKg / SafeTargetKg, 0.15f, 1.0f)
+			: 0.0f;
+		ScaleWellThermalLightComponent->SetSteadyEmberIntensity(MoltenCfg.ScaleWellMaxSteadyIntensity * EmberRatio);
+	}
 }
 
 void AScaleAssemblyActor::HandleShiftVerdict(EShiftVerdictType Verdict, EContractFaultReason FaultReason)
@@ -1046,7 +1121,7 @@ void AScaleAssemblyActor::InitializeGreyboxVisualMaterials()
 		}
 	};
 
-	ApplyTintedGreyboxMaterial(ReadoutBackingPlate, ConsoleBezelLinearColor, 0.96f, 0.02f);
+	ApplyTintedGreyboxMaterial(ReadoutBackingPlate, ConsoleBezelLinearColor, 0.99f, 0.0f);
 	ApplyTintedGreyboxMaterial(ScaleBaseVisual, FLinearColor(0.055f, 0.062f, 0.072f, 1.0f), 0.76f, 0.35f);
 	ApplyTintedGreyboxMaterial(PanPlatformVisual, FLinearColor(0.095f, 0.086f, 0.074f, 1.0f), 0.66f, 0.45f);
 	ApplyTintedGreyboxMaterial(TareChuteVisual, FLinearColor(0.068f, 0.032f, 0.028f, 1.0f), 0.80f, 0.28f);
@@ -1062,20 +1137,29 @@ void AScaleAssemblyActor::ApplyDarkGunmetalMaterial(UStaticMeshComponent* Target
 		return;
 	}
 
-	if (!IsValid(AutoResolvedDarkGunmetalMaterial) &&
-		FPackageName::DoesPackageExist(TEXT("/Game/Presentation/Materials/M_DarkGunmetal_Master")))
+	UMaterialInterface* ResolvedGunmetal =
+		(IsValid(PresentationData) && IsValid(PresentationData->DarkGunmetalMaterial))
+		? PresentationData->DarkGunmetalMaterial.Get()
+		: nullptr;
+
+	if (!IsValid(ResolvedGunmetal))
 	{
-		AutoResolvedDarkGunmetalMaterial = LoadObject<UMaterialInterface>(
-			nullptr,
-			TEXT("/Game/Presentation/Materials/M_DarkGunmetal_Master.M_DarkGunmetal_Master"));
+		if (!IsValid(AutoResolvedDarkGunmetalMaterial) &&
+			FPackageName::DoesPackageExist(TEXT("/Game/Presentation/Materials/M_DarkGunmetal_Master")))
+		{
+			AutoResolvedDarkGunmetalMaterial = LoadObject<UMaterialInterface>(
+				nullptr,
+				TEXT("/Game/Presentation/Materials/M_DarkGunmetal_Master.M_DarkGunmetal_Master"));
+		}
+		ResolvedGunmetal = AutoResolvedDarkGunmetalMaterial.Get();
 	}
 
-	if (IsValid(AutoResolvedDarkGunmetalMaterial))
+	if (IsValid(ResolvedGunmetal))
 	{
 		const int32 NumSlots = FMath::Max(1, TargetMesh->GetNumMaterials());
 		for (int32 SlotIdx = 0; SlotIdx < NumSlots; ++SlotIdx)
 		{
-			TargetMesh->SetMaterial(SlotIdx, AutoResolvedDarkGunmetalMaterial);
+			TargetMesh->SetMaterial(SlotIdx, ResolvedGunmetal);
 		}
 		return;
 	}
@@ -1117,8 +1201,23 @@ void AScaleAssemblyActor::HandleChildTelemetryImpulse(
 	OnTelemetryImpulse.Broadcast(ImpulseId, NormalizedMagnitude, WorldLocation);
 }
 
-void AScaleAssemblyActor::HandleChunkLandedOnScale(AActor* PayloadActor, float /*ChunkMassKg*/, float /*UpdatedPanMassKg*/)
+void AScaleAssemblyActor::HandleChunkLandedOnScale(AActor* PayloadActor, float ChunkMassKg, float UpdatedPanMassKg)
 {
+	if (IsValid(ScaleWellThermalLightComponent))
+	{
+		const FMoltenBounceLightConfig MoltenCfg = IsValid(PresentationData)
+			? PresentationData->MoltenBounceConfig
+			: FMoltenBounceLightConfig();
+		const float SafeTargetKg = FMath::Max(1.0f, CachedSnapshot.TargetTitheMassKg);
+		const float ImpactAlpha = FMath::Clamp(ChunkMassKg / SafeTargetKg, 0.25f, 1.0f);
+		const float EmberRatio = (UpdatedPanMassKg > 0.01f)
+			? FMath::Clamp(UpdatedPanMassKg / SafeTargetKg, 0.15f, 1.0f)
+			: 0.0f;
+		ScaleWellThermalLightComponent->TriggerThermalFlash(
+			MoltenCfg.ScaleWellFlashIntensity * FMath::Lerp(0.55f, 1.0f, ImpactAlpha),
+			MoltenCfg.ScaleWellMaxSteadyIntensity * EmberRatio);
+	}
+
 	if (UWorld* World = GetWorld())
 	{
 		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
@@ -1128,8 +1227,20 @@ void AScaleAssemblyActor::HandleChunkLandedOnScale(AActor* PayloadActor, float /
 	}
 }
 
-void AScaleAssemblyActor::HandleChunkBouncedOffScale(AActor* PayloadActor, float /*ChunkMassKg*/, float /*UpdatedPanMassKg*/)
+void AScaleAssemblyActor::HandleChunkBouncedOffScale(AActor* PayloadActor, float /*ChunkMassKg*/, float UpdatedPanMassKg)
 {
+	if (IsValid(ScaleWellThermalLightComponent))
+	{
+		const FMoltenBounceLightConfig MoltenCfg = IsValid(PresentationData)
+			? PresentationData->MoltenBounceConfig
+			: FMoltenBounceLightConfig();
+		const float SafeTargetKg = FMath::Max(1.0f, CachedSnapshot.TargetTitheMassKg);
+		const float EmberRatio = (UpdatedPanMassKg > 0.01f)
+			? FMath::Clamp(UpdatedPanMassKg / SafeTargetKg, 0.15f, 1.0f)
+			: 0.0f;
+		ScaleWellThermalLightComponent->SetSteadyEmberIntensity(MoltenCfg.ScaleWellMaxSteadyIntensity * EmberRatio);
+	}
+
 	if (UWorld* World = GetWorld())
 	{
 		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())

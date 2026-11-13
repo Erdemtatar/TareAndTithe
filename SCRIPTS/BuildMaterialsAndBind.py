@@ -1,12 +1,17 @@
-from typing import Dict, List, Tuple
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
 import unreal
 
 
 MATERIALS_DIR = "/Game/Presentation/Materials"
+LIGHTING_DIR = "/Game/Presentation/Lighting"
 CONTRACTS_DIR = "/Game/Presentation/Contracts"
 MESHES_DIR = "/Game/Presentation/Meshes"
+PBR_DIR = "/Game/Presentation/Meshes/PBR"
 VFX_DIR = "/Game/Presentation/VFX"
 DA_PRESENTATION_PATH = "/Game/Presentation/DA_Presentation"
+AMBIENT_CUBEMAP_ASSET_NAME = "TC_CellAmbientCubemap"
+AMBIENT_CUBEMAP_DEST_PATH = f"{LIGHTING_DIR}/{AMBIENT_CUBEMAP_ASSET_NAME}"
 
 CONTRACT_DIRECTIVES: List[Tuple[str, str]] = [
     ("DA_Contract_01", "CUT 12.0 KG TO TITHE | STAMP [E]"),
@@ -18,6 +23,138 @@ CONTRACT_DIRECTIVES: List[Tuple[str, str]] = [
 ]
 
 
+@dataclass(frozen=True)
+class StationPBRInstanceSpec:
+    instance_name: str
+    prop_name: str
+    slot_property: str
+    albedo_tint: Tuple[float, float, float]
+    conductor_min_f0: Tuple[float, float, float]
+    roughness_contrast_exp: float
+    roughness_min: float
+    roughness_max: float
+    metallic_scale: float
+    metallic_floor: float
+    ao_strength: float
+    normal_strength: float
+
+
+STATION_PBR_SPECS: List[StationPBRInstanceSpec] = [
+    StationPBRInstanceSpec(
+        instance_name="MI_Station_ClampJaw",
+        prop_name="SM_ClampJaw",
+        slot_property="clamp_jaw_mesh_slot",
+        albedo_tint=(1.04, 1.07, 1.12),
+        conductor_min_f0=(0.18, 0.20, 0.23),
+        roughness_contrast_exp=1.70,
+        roughness_min=0.18,
+        roughness_max=0.52,
+        metallic_scale=1.25,
+        metallic_floor=0.84,
+        ao_strength=0.85,
+        normal_strength=1.40,
+    ),
+    StationPBRInstanceSpec(
+        instance_name="MI_Station_ClampSpringHousing",
+        prop_name="SM_ClampSpringHousing",
+        slot_property="clamp_spring_housing_mesh_slot",
+        albedo_tint=(1.02, 1.05, 1.10),
+        conductor_min_f0=(0.16, 0.18, 0.21),
+        roughness_contrast_exp=1.65,
+        roughness_min=0.22,
+        roughness_max=0.56,
+        metallic_scale=1.20,
+        metallic_floor=0.78,
+        ao_strength=0.85,
+        normal_strength=1.35,
+    ),
+    StationPBRInstanceSpec(
+        instance_name="MI_Station_ScaleBase",
+        prop_name="SM_ScaleBase",
+        slot_property="scale_base_mesh_slot",
+        albedo_tint=(1.02, 1.04, 1.08),
+        conductor_min_f0=(0.15, 0.17, 0.19),
+        roughness_contrast_exp=1.60,
+        roughness_min=0.25,
+        roughness_max=0.60,
+        metallic_scale=1.18,
+        metallic_floor=0.72,
+        ao_strength=0.85,
+        normal_strength=1.35,
+    ),
+    StationPBRInstanceSpec(
+        instance_name="MI_Station_ScalePan",
+        prop_name="SM_ScalePan",
+        slot_property="scale_pan_mesh_slot",
+        albedo_tint=(1.06, 1.04, 1.00),
+        conductor_min_f0=(0.20, 0.19, 0.17),
+        roughness_contrast_exp=1.70,
+        roughness_min=0.19,
+        roughness_max=0.50,
+        metallic_scale=1.25,
+        metallic_floor=0.85,
+        ao_strength=0.82,
+        normal_strength=1.35,
+    ),
+    StationPBRInstanceSpec(
+        instance_name="MI_Station_TareChute",
+        prop_name="SM_TareChute",
+        slot_property="tare_chute_mesh_slot",
+        albedo_tint=(1.02, 1.03, 1.06),
+        conductor_min_f0=(0.16, 0.17, 0.19),
+        roughness_contrast_exp=1.62,
+        roughness_min=0.24,
+        roughness_max=0.58,
+        metallic_scale=1.20,
+        metallic_floor=0.76,
+        ao_strength=0.85,
+        normal_strength=1.35,
+    ),
+    StationPBRInstanceSpec(
+        instance_name="MI_Station_DirectorBoothFrame",
+        prop_name="SM_DirectorBoothFrame",
+        slot_property="director_booth_frame_mesh_slot",
+        albedo_tint=(1.04, 1.07, 1.12),
+        conductor_min_f0=(0.16, 0.18, 0.21),
+        roughness_contrast_exp=1.65,
+        roughness_min=0.23,
+        roughness_max=0.56,
+        metallic_scale=1.20,
+        metallic_floor=0.78,
+        ao_strength=0.85,
+        normal_strength=1.35,
+    ),
+    StationPBRInstanceSpec(
+        instance_name="MI_Station_DirectorShutter",
+        prop_name="SM_DirectorShutter",
+        slot_property="director_shutter_mesh_slot",
+        albedo_tint=(1.05, 1.08, 1.12),
+        conductor_min_f0=(0.18, 0.20, 0.23),
+        roughness_contrast_exp=1.70,
+        roughness_min=0.20,
+        roughness_max=0.50,
+        metallic_scale=1.24,
+        metallic_floor=0.84,
+        ao_strength=0.85,
+        normal_strength=1.35,
+    ),
+    StationPBRInstanceSpec(
+        instance_name="MI_Station_CellFloorGrate",
+        prop_name="SM_CellFloorGrate",
+        slot_property="cell_floor_grate_mesh_slot",
+        albedo_tint=(1.04, 1.07, 1.12),
+        conductor_min_f0=(0.16, 0.18, 0.21),
+        roughness_contrast_exp=1.68,
+        roughness_min=0.22,
+        roughness_max=0.56,
+        metallic_scale=1.22,
+        metallic_floor=0.80,
+        ao_strength=0.85,
+        normal_strength=1.40,
+    ),
+]
+
+
 def log_info(msg: str) -> None:
     unreal.log(f"[BuildMaterialsAndBind] {msg}")
 
@@ -26,9 +163,13 @@ def log_error(msg: str) -> None:
     unreal.log_error(f"[BuildMaterialsAndBind] {msg}")
 
 
+def ensure_directory(dir_path: str) -> None:
+    if not unreal.EditorAssetLibrary.does_directory_exist(dir_path):
+        unreal.EditorAssetLibrary.make_directory(dir_path)
+
+
 def get_or_create_material(asset_name: str) -> unreal.Material:
-    if not unreal.EditorAssetLibrary.does_directory_exist(MATERIALS_DIR):
-        unreal.EditorAssetLibrary.make_directory(MATERIALS_DIR)
+    ensure_directory(MATERIALS_DIR)
 
     asset_path = f"{MATERIALS_DIR}/{asset_name}"
     if unreal.EditorAssetLibrary.does_asset_exist(asset_path):
@@ -47,6 +188,29 @@ def get_or_create_material(asset_name: str) -> unreal.Material:
     return mat
 
 
+def get_or_create_material_instance(asset_name: str, parent_mat: unreal.MaterialInterface) -> unreal.MaterialInstanceConstant:
+    ensure_directory(MATERIALS_DIR)
+
+    asset_path = f"{MATERIALS_DIR}/{asset_name}"
+    if unreal.EditorAssetLibrary.does_asset_exist(asset_path):
+        loaded = unreal.EditorAssetLibrary.load_asset(asset_path)
+        if not isinstance(loaded, unreal.MaterialInstanceConstant):
+            raise RuntimeError(
+                f"Existing asset at {asset_path} is {type(loaded)}, expected unreal.MaterialInstanceConstant"
+            )
+        mic = loaded
+    else:
+        asset_tools = unreal.AssetToolsHelpers.get_asset_tools()
+        factory = unreal.MaterialInstanceConstantFactoryNew()
+        mic = asset_tools.create_asset(asset_name, MATERIALS_DIR, unreal.MaterialInstanceConstant, factory)
+        if mic is None:
+            raise RuntimeError(f"Failed to create MaterialInstanceConstant {asset_path}")
+
+    unreal.MaterialEditingLibrary.set_material_instance_parent(mic, parent_mat)
+    unreal.MaterialEditingLibrary.clear_all_material_instance_parameters(mic)
+    return mic
+
+
 def create_expr(mat: unreal.Material, expr_cls, pos_x: int = 0, pos_y: int = 0):
     expr = unreal.MaterialEditingLibrary.create_material_expression(mat, expr_cls, pos_x, pos_y)
     if expr is None:
@@ -59,7 +223,6 @@ def connect_expr(from_expr, from_pin: str, to_expr, to_pin: str) -> None:
     if not ok:
         out_names = list(unreal.MaterialEditingLibrary.get_material_expression_output_names(from_expr) or [])
         in_names = list(unreal.MaterialEditingLibrary.get_material_expression_input_names(to_expr) or [])
-        # Fallback if single-input expression names its pin "Input" vs ""
         if to_pin == "" and len(in_names) == 1:
             ok = unreal.MaterialEditingLibrary.connect_material_expressions(from_expr, from_pin, to_expr, str(in_names[0]))
         if not ok:
@@ -158,8 +321,9 @@ def make_ridged_vein_mask(
     pos_x: int = -960,
     pos_y: int = 0,
 ):
-    # Signed gradient noise [-1, +1] -> 1 - clamp(|n|, 0, 1) -> sharp ridge seam along zero-crossings
-    signed_noise = make_noise_from_pos3(mat, pos3_expr, scale=scale, out_min=-1.0, out_max=1.0, levels=3, pos_x=pos_x, pos_y=pos_y)
+    signed_noise = make_noise_from_pos3(
+        mat, pos3_expr, scale=scale, out_min=-1.0, out_max=1.0, levels=3, pos_x=pos_x, pos_y=pos_y
+    )
     abs_node = create_expr(mat, unreal.MaterialExpressionAbs, pos_x + 210, pos_y)
     connect_expr(signed_noise, "", abs_node, "")
 
@@ -177,7 +341,26 @@ def make_ridged_vein_mask(
     return ridge_node, pow_node
 
 
-def finalize_and_save_material(mat: unreal.Material, is_opaque_nanite_compatible: bool) -> None:
+def resolve_sampler_type_for_texture(tex: unreal.Texture2D) -> unreal.MaterialSamplerType:
+    comp = tex.get_editor_property("compression_settings")
+    srgb = bool(tex.get_editor_property("srgb"))
+    if comp == unreal.TextureCompressionSettings.TC_NORMALMAP:
+        return unreal.MaterialSamplerType.SAMPLERTYPE_NORMAL
+    if comp == unreal.TextureCompressionSettings.TC_MASKS:
+        return unreal.MaterialSamplerType.SAMPLERTYPE_MASKS
+    if srgb:
+        return unreal.MaterialSamplerType.SAMPLERTYPE_COLOR
+    return unreal.MaterialSamplerType.SAMPLERTYPE_LINEAR_COLOR
+
+
+def finalize_and_save_material(
+    mat: unreal.Material,
+    is_opaque_nanite_compatible: bool,
+    enable_instanced_static_mesh: bool = False,
+) -> None:
+    # Guard 3: Explicitly disable static lighting usage and enforce Nanite/ISM permutations under Substrate.
+    mat.set_editor_property("used_with_static_lighting", False)
+
     unreal.MaterialEditingLibrary.set_base_material_usage(
         mat, unreal.MaterialUsage.MATUSAGE_STATIC_MESH, True
     )
@@ -185,16 +368,27 @@ def finalize_and_save_material(mat: unreal.Material, is_opaque_nanite_compatible
         unreal.MaterialEditingLibrary.set_base_material_usage(
             mat, unreal.MaterialUsage.MATUSAGE_NANITE, True
         )
+    if enable_instanced_static_mesh:
+        unreal.MaterialEditingLibrary.set_base_material_usage(
+            mat, unreal.MaterialUsage.MATUSAGE_INSTANCED_STATIC_MESHES, True
+        )
 
     unreal.MaterialEditingLibrary.layout_material_expressions(mat)
     compile_errors = unreal.MaterialEditingLibrary.recompile_material(mat)
     if compile_errors:
         raise RuntimeError(f"Shader compilation errors in {mat.get_name()}: {list(compile_errors)}")
 
+    stats = unreal.MaterialEditingLibrary.get_statistics(mat)
+    ps_instr = int(getattr(stats, "num_pixel_shader_instructions", 0))
+    if ps_instr <= 0:
+        raise RuntimeError(
+            f"Material {mat.get_name()} compiled with 0 pixel shader instructions (invalid/fallback shader)!"
+        )
+
     if not unreal.EditorAssetLibrary.save_loaded_asset(mat, only_if_is_dirty=False):
         raise RuntimeError(f"Failed saving material asset {mat.get_path_name()}")
 
-    log_info(f"Compiled & saved {mat.get_path_name()}")
+    log_info(f"Compiled & saved {mat.get_path_name()} (PS instructions={ps_instr})")
 
 
 def build_laser_sheet_master() -> unreal.Material:
@@ -224,31 +418,35 @@ def build_molten_cut_cap_master() -> unreal.Material:
     mat.set_editor_property("two_sided", False)
     mat.set_editor_property("has_pixel_animation", True)
 
-    crust_base = make_const_color3(mat, 0.025, 0.018, 0.016, -320, -260)
-    rough_const = make_const_scalar(mat, 0.68, -320, -120)
-    metal_const = make_const_scalar(mat, 0.25, -320, -20)
+    crust_base = make_const_color3(mat, 0.032, 0.020, 0.016, -320, -260)
+    rough_const = make_const_scalar(mat, 0.64, -320, -120)
+    metal_const = make_const_scalar(mat, 0.30, -320, -20)
 
     connect_prop(crust_base, "", unreal.MaterialProperty.MP_BASE_COLOR)
     connect_prop(rough_const, "", unreal.MaterialProperty.MP_ROUGHNESS)
     connect_prop(metal_const, "", unreal.MaterialProperty.MP_METALLIC)
 
+    # Rich magma fissure contrast exceeding BloomThreshold=1.65 cleanly on hot cores while keeping dark slag crust seams
     noise_alpha = make_local_noise_01(mat, 0.16, -1080, 200)
-    ember_low = make_const_color3(mat, 0.85, 0.07, 0.01, -600, 80)
-    ember_high = make_const_color3(mat, 3.4, 0.72, 0.04, -600, 220)
+    core_pow = create_expr(mat, unreal.MaterialExpressionPower, -680, 200)
+    core_pow.set_editor_property("const_exponent", 1.35)
+    connect_expr(noise_alpha, "", core_pow, "Base")
+
+    ember_low = make_const_color3(mat, 1.15, 0.12, 0.012, -600, 60)
+    ember_high = make_const_color3(mat, 4.85, 1.18, 0.085, -600, 240)
 
     ember_lerp = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, -340, 160)
     connect_expr(ember_low, "", ember_lerp, "A")
     connect_expr(ember_high, "", ember_lerp, "B")
-    connect_expr(noise_alpha, "", ember_lerp, "Alpha")
+    connect_expr(core_pow, "", ember_lerp, "Alpha")
 
-    # Subtle breathing pulse in [0.90, 1.10]: 1.0 + 0.10 * sin(Time / Period * 2pi)
     time_node = create_expr(mat, unreal.MaterialExpressionTime, -860, 420)
     sine_node = create_expr(mat, unreal.MaterialExpressionSine, -680, 420)
     sine_node.set_editor_property("period", 3.2)
     connect_expr(time_node, "", sine_node, "")
 
     breath_amp = create_expr(mat, unreal.MaterialExpressionMultiply, -500, 420)
-    breath_amp.set_editor_property("const_b", 0.10)
+    breath_amp.set_editor_property("const_b", 0.09)
     connect_expr(sine_node, "", breath_amp, "A")
 
     breath_factor = create_expr(mat, unreal.MaterialExpressionAdd, -340, 420)
@@ -266,20 +464,13 @@ def build_molten_cut_cap_master() -> unreal.Material:
 
 
 def build_slag_outer_master() -> unreal.Material:
-    """
-    Phase 9.4 Seamless UV0 Crimson-Oxide Ore Shader:
-    Uses ONLY baked mesh TexCoord[0] (UV0) — NEVER LocalPosition — so severed chunks
-    re-centering their pivot on cut NEVER jump, slide, or pop procedural veins.
-    """
     mat = get_or_create_material("M_SlagOuter_Master")
     mat.set_editor_property("blend_mode", unreal.BlendMode.BLEND_OPAQUE)
     mat.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_DEFAULT_LIT)
     mat.set_editor_property("two_sided", False)
 
-    # 1) Baked UV0 scaled into 100-cm box-projected space (1 unit = 1 cm on monolith faces)
     tex_uv_cm, uv_pos3 = make_uv0_pos3(mat, tiling_uv=100.0, z_slice=11.3, pos_x=-2100, pos_y=0)
 
-    # 2) Organic domain warp in UV0 space so crimson-iron veins meander naturally across -X/+X/+-Y faces
     warp_offset_b = make_const_color3(mat, 37.0, 91.0, 19.0, -1840, 220)
     uv_pos3_b = create_expr(mat, unreal.MaterialExpressionAdd, -1640, 180)
     connect_expr(uv_pos3, "", uv_pos3_b, "A")
@@ -300,7 +491,6 @@ def build_slag_outer_master() -> unreal.Material:
     connect_expr(uv_pos3, "", warped_pos3, "A")
     connect_expr(warp_vec3, "", warped_pos3, "B")
 
-    # 3) Horizontal sedimentary strata along V (G channel of UV0) + fine basalt mineral grain
     v_coord = create_expr(mat, unreal.MaterialExpressionComponentMask, -1640, -340)
     v_coord.set_editor_property("r", False)
     v_coord.set_editor_property("g", True)
@@ -339,14 +529,13 @@ def build_slag_outer_master() -> unreal.Material:
     rock_clamp.set_editor_property("max_default", 1.0)
     connect_expr(rock_blend, "", rock_clamp, "")
 
-    basalt_dark = make_const_color3(mat, 0.030, 0.033, 0.040, -560, -480)
-    basalt_strata = make_const_color3(mat, 0.048, 0.052, 0.062, -560, -380)
+    basalt_dark = make_const_color3(mat, 0.042, 0.046, 0.056, -560, -480)
+    basalt_strata = make_const_color3(mat, 0.072, 0.078, 0.092, -560, -380)
     basalt_albedo = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, -180, -380)
     connect_expr(basalt_dark, "", basalt_albedo, "A")
     connect_expr(basalt_strata, "", basalt_albedo, "B")
     connect_expr(rock_clamp, "", basalt_albedo, "Alpha")
 
-    # 4) Primary + tributary sharp oxidized crimson-iron ore veins
     primary_ridge, primary_vein = make_ridged_vein_mask(
         mat, warped_pos3, scale=0.078, sharpness_exp=6.5, pos_x=-660, pos_y=40
     )
@@ -372,34 +561,32 @@ def build_slag_outer_master() -> unreal.Material:
     vein_mask.set_editor_property("max_default", 1.0)
     connect_expr(combined_vein, "", vein_mask, "")
 
-    crimson_oxide = make_const_color3(mat, 0.46, 0.045, 0.015, 380, -160)
+    crimson_oxide = make_const_color3(mat, 0.48, 0.052, 0.018, 380, -160)
     final_base_color = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, 760, -180)
     connect_expr(basalt_albedo, "", final_base_color, "A")
     connect_expr(crimson_oxide, "", final_base_color, "B")
     connect_expr(vein_mask, "", final_base_color, "Alpha")
     connect_prop(final_base_color, "", unreal.MaterialProperty.MP_BASE_COLOR)
 
-    # 5) Subtle deep-red mineral seam glow (0.22, 0.018, 0.004) strictly along inner vein fissure core
     seam_core = create_expr(mat, unreal.MaterialExpressionPower, 380, 420)
     seam_core.set_editor_property("const_exponent", 11.5)
     connect_expr(primary_ridge, "", seam_core, "Base")
 
-    seam_glow_color = make_const_color3(mat, 0.22, 0.018, 0.004, 380, 560)
+    seam_glow_color = make_const_color3(mat, 0.24, 0.020, 0.005, 380, 560)
     seam_emissive = create_expr(mat, unreal.MaterialExpressionMultiply, 700, 480)
     connect_expr(seam_glow_color, "", seam_emissive, "A")
     connect_expr(seam_core, "", seam_emissive, "B")
     connect_prop(seam_emissive, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
 
-    # 6) Basalt vs metallic-oxide roughness & metallic contrast
     rough_lerp = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, 760, 40)
-    rough_lerp.set_editor_property("const_a", 0.82)
-    rough_lerp.set_editor_property("const_b", 0.40)
+    rough_lerp.set_editor_property("const_a", 0.72)
+    rough_lerp.set_editor_property("const_b", 0.32)
     connect_expr(vein_mask, "", rough_lerp, "Alpha")
     connect_prop(rough_lerp, "", unreal.MaterialProperty.MP_ROUGHNESS)
 
     metal_lerp = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, 760, 200)
-    metal_lerp.set_editor_property("const_a", 0.22)
-    metal_lerp.set_editor_property("const_b", 0.64)
+    metal_lerp.set_editor_property("const_a", 0.28)
+    metal_lerp.set_editor_property("const_b", 0.72)
     connect_expr(vein_mask, "", metal_lerp, "Alpha")
     connect_prop(metal_lerp, "", unreal.MaterialProperty.MP_METALLIC)
 
@@ -409,39 +596,71 @@ def build_slag_outer_master() -> unreal.Material:
 
 def build_dark_gunmetal_master() -> unreal.Material:
     """
-    Dark industrial gunmetal PBR material (Nanite-compatible, UV0-driven) for
-    SM_DiverterFlapper and chute splash guards so they never render pale flat grey.
+    Phase 10 Calibrated Dark Industrial Gunmetal PBR Master:
+    Fixes conductor F0 from dielectric-soot 0.02 to physical blued steel [0.15, 0.26]
+    with directional brushed roughness [0.22, 0.44] and micro-normal grain;
+    pre-compiles Nanite + InstancedStaticMesh permutations for under-booth stanchions.
     """
     mat = get_or_create_material("M_DarkGunmetal_Master")
     mat.set_editor_property("blend_mode", unreal.BlendMode.BLEND_OPAQUE)
     mat.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_DEFAULT_LIT)
     mat.set_editor_property("two_sided", False)
 
-    _, uv_pos3 = make_uv0_pos3(mat, tiling_uv=40.0, z_slice=3.7, pos_x=-1100, pos_y=0)
-    grain = make_noise_from_pos3(mat, uv_pos3, scale=0.35, out_min=0.0, out_max=1.0, levels=2, pos_x=-760, pos_y=0)
-    grain_clamped = create_expr(mat, unreal.MaterialExpressionClamp, -540, 0)
+    brushed_uv = create_expr(mat, unreal.MaterialExpressionTextureCoordinate, -1380, -120)
+    brushed_uv.set_editor_property("coordinate_index", 0)
+    brushed_uv.set_editor_property("u_tiling", 18.0)
+    brushed_uv.set_editor_property("v_tiling", 130.0)
+    z_slice_a = make_const_scalar(mat, 3.7, -1380, -10)
+    brushed_pos3 = create_expr(mat, unreal.MaterialExpressionAppendVector, -1140, -80)
+    connect_expr(brushed_uv, "", brushed_pos3, "A")
+    connect_expr(z_slice_a, "", brushed_pos3, "B")
+
+    _, fine_pos3 = make_uv0_pos3(mat, tiling_uv=48.0, z_slice=9.1, pos_x=-1380, pos_y=160)
+
+    streak_noise = make_noise_from_pos3(mat, brushed_pos3, scale=0.35, out_min=0.0, out_max=1.0, levels=2, pos_x=-900, pos_y=-80)
+    fine_noise = make_noise_from_pos3(mat, fine_pos3, scale=0.45, out_min=0.0, out_max=1.0, levels=2, pos_x=-900, pos_y=120)
+
+    grain_mix = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, -680, 0)
+    grain_mix.set_editor_property("const_alpha", 0.38)
+    connect_expr(streak_noise, "", grain_mix, "A")
+    connect_expr(fine_noise, "", grain_mix, "B")
+
+    grain_clamped = create_expr(mat, unreal.MaterialExpressionClamp, -500, 0)
     grain_clamped.set_editor_property("min_default", 0.0)
     grain_clamped.set_editor_property("max_default", 1.0)
-    connect_expr(grain, "", grain_clamped, "")
+    connect_expr(grain_mix, "", grain_clamped, "")
 
-    steel_dark = make_const_color3(mat, 0.018, 0.021, 0.026, -540, -220)
-    steel_mid = make_const_color3(mat, 0.036, 0.041, 0.049, -540, -100)
-    albedo_lerp = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, -240, -140)
+    # Physical blued-steel conductor F0 in [0.15, 0.26] so grazing 7600-7800K rim lights reflect cleanly
+    steel_dark = make_const_color3(mat, 0.148, 0.168, 0.198, -500, -240)
+    steel_mid = make_const_color3(mat, 0.235, 0.265, 0.305, -500, -120)
+    albedo_lerp = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, -220, -160)
     connect_expr(steel_dark, "", albedo_lerp, "A")
     connect_expr(steel_mid, "", albedo_lerp, "B")
     connect_expr(grain_clamped, "", albedo_lerp, "Alpha")
     connect_prop(albedo_lerp, "", unreal.MaterialProperty.MP_BASE_COLOR)
 
-    rough_lerp = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, -240, 60)
-    rough_lerp.set_editor_property("const_a", 0.38)
-    rough_lerp.set_editor_property("const_b", 0.54)
+    rough_lerp = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, -220, 40)
+    rough_lerp.set_editor_property("const_a", 0.22)
+    rough_lerp.set_editor_property("const_b", 0.44)
     connect_expr(grain_clamped, "", rough_lerp, "Alpha")
     connect_prop(rough_lerp, "", unreal.MaterialProperty.MP_ROUGHNESS)
 
-    metal_const = make_const_scalar(mat, 0.85, -240, 200)
+    metal_const = make_const_scalar(mat, 0.88, -220, 180)
     connect_prop(metal_const, "", unreal.MaterialProperty.MP_METALLIC)
 
-    finalize_and_save_material(mat, is_opaque_nanite_compatible=True)
+    # Subtle tangent micro-normal from brushed noise so specular highlights break naturally across flat faces
+    norm_nx = make_noise_from_pos3(mat, brushed_pos3, scale=0.55, out_min=-0.07, out_max=0.07, levels=2, pos_x=-700, pos_y=300)
+    norm_ny = make_noise_from_pos3(mat, fine_pos3, scale=0.55, out_min=-0.07, out_max=0.07, levels=2, pos_x=-700, pos_y=430)
+    norm_xy = create_expr(mat, unreal.MaterialExpressionAppendVector, -440, 350)
+    connect_expr(norm_nx, "", norm_xy, "A")
+    connect_expr(norm_ny, "", norm_xy, "B")
+    norm_z = make_const_scalar(mat, 1.0, -440, 470)
+    norm_xyz = create_expr(mat, unreal.MaterialExpressionAppendVector, -220, 370)
+    connect_expr(norm_xy, "", norm_xyz, "A")
+    connect_expr(norm_z, "", norm_xyz, "B")
+    connect_prop(norm_xyz, "", unreal.MaterialProperty.MP_NORMAL)
+
+    finalize_and_save_material(mat, is_opaque_nanite_compatible=True, enable_instanced_static_mesh=True)
     return mat
 
 
@@ -451,22 +670,52 @@ def build_cell_wall_master() -> unreal.Material:
     mat.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_DEFAULT_LIT)
     mat.set_editor_property("two_sided", False)
 
-    noise_alpha = make_local_noise_01(mat, 0.035, -980, 0)
-    color_a = make_const_color3(mat, 0.070, 0.076, 0.088, -520, -180)
-    color_b = make_const_color3(mat, 0.115, 0.122, 0.138, -520, -40)
+    noise_alpha = make_local_noise_01(mat, 0.032, -1100, -60)
+    fine_uv, fine_pos3 = make_uv0_pos3(mat, tiling_uv=12.0, z_slice=4.2, pos_x=-1100, pos_y=220)
+    seam_u_mask = create_expr(mat, unreal.MaterialExpressionComponentMask, -840, 220)
+    seam_u_mask.set_editor_property("r", True)
+    seam_u_mask.set_editor_property("g", False)
+    seam_u_mask.set_editor_property("b", False)
+    seam_u_mask.set_editor_property("a", False)
+    connect_expr(fine_uv, "", seam_u_mask, "")
 
-    base_lerp = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, -240, -100)
+    seam_sine = create_expr(mat, unreal.MaterialExpressionSine, -660, 220)
+    seam_sine.set_editor_property("period", 1.0)
+    connect_expr(seam_u_mask, "", seam_sine, "")
+
+    color_a = make_const_color3(mat, 0.072, 0.080, 0.094, -560, -220)
+    color_b = make_const_color3(mat, 0.128, 0.138, 0.158, -560, -80)
+
+    base_lerp = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, -240, -140)
     connect_expr(color_a, "", base_lerp, "A")
     connect_expr(color_b, "", base_lerp, "B")
     connect_expr(noise_alpha, "", base_lerp, "Alpha")
     connect_prop(base_lerp, "", unreal.MaterialProperty.MP_BASE_COLOR)
 
-    rough_const = make_const_scalar(mat, 0.90, -240, 120)
-    metal_const = make_const_scalar(mat, 0.08, -240, 240)
-    connect_prop(rough_const, "", unreal.MaterialProperty.MP_ROUGHNESS)
+    rough_lerp = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, -240, 60)
+    rough_lerp.set_editor_property("const_a", 0.58)
+    rough_lerp.set_editor_property("const_b", 0.84)
+    connect_expr(noise_alpha, "", rough_lerp, "Alpha")
+    connect_prop(rough_lerp, "", unreal.MaterialProperty.MP_ROUGHNESS)
+
+    metal_const = make_const_scalar(mat, 0.18, -240, 200)
     connect_prop(metal_const, "", unreal.MaterialProperty.MP_METALLIC)
 
-    finalize_and_save_material(mat, is_opaque_nanite_compatible=True)
+    # Architectural micro-normal relief so midground wash & molten bounce catch concrete bevel grain
+    wall_nx_raw = create_expr(mat, unreal.MaterialExpressionMultiply, -480, 260)
+    wall_nx_raw.set_editor_property("const_b", 0.06)
+    connect_expr(seam_sine, "", wall_nx_raw, "A")
+    wall_ny = make_noise_from_pos3(mat, fine_pos3, scale=0.65, out_min=-0.06, out_max=0.06, levels=2, pos_x=-560, pos_y=380)
+    wall_xy = create_expr(mat, unreal.MaterialExpressionAppendVector, -320, 320)
+    connect_expr(wall_nx_raw, "", wall_xy, "A")
+    connect_expr(wall_ny, "", wall_xy, "B")
+    wall_z = make_const_scalar(mat, 1.0, -320, 440)
+    wall_norm = create_expr(mat, unreal.MaterialExpressionAppendVector, -140, 340)
+    connect_expr(wall_xy, "", wall_norm, "A")
+    connect_expr(wall_z, "", wall_norm, "B")
+    connect_prop(wall_norm, "", unreal.MaterialProperty.MP_NORMAL)
+
+    finalize_and_save_material(mat, is_opaque_nanite_compatible=True, enable_instanced_static_mesh=True)
     return mat
 
 
@@ -477,8 +726,8 @@ def build_cell_floor_master() -> unreal.Material:
     mat.set_editor_property("two_sided", False)
 
     noise_alpha = make_local_noise_01(mat, 0.06, -980, 0)
-    color_a = make_const_color3(mat, 0.042, 0.046, 0.054, -520, -180)
-    color_b = make_const_color3(mat, 0.078, 0.084, 0.096, -520, -40)
+    color_a = make_const_color3(mat, 0.095, 0.105, 0.122, -520, -180)
+    color_b = make_const_color3(mat, 0.165, 0.180, 0.205, -520, -40)
 
     base_lerp = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, -240, -100)
     connect_expr(color_a, "", base_lerp, "A")
@@ -486,22 +735,323 @@ def build_cell_floor_master() -> unreal.Material:
     connect_expr(noise_alpha, "", base_lerp, "Alpha")
     connect_prop(base_lerp, "", unreal.MaterialProperty.MP_BASE_COLOR)
 
-    rough_const = make_const_scalar(mat, 0.76, -240, 120)
-    metal_const = make_const_scalar(mat, 0.32, -240, 240)
-    connect_prop(rough_const, "", unreal.MaterialProperty.MP_ROUGHNESS)
+    rough_lerp = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, -240, 100)
+    rough_lerp.set_editor_property("const_a", 0.34)
+    rough_lerp.set_editor_property("const_b", 0.66)
+    connect_expr(noise_alpha, "", rough_lerp, "Alpha")
+    connect_prop(rough_lerp, "", unreal.MaterialProperty.MP_ROUGHNESS)
+
+    metal_const = make_const_scalar(mat, 0.62, -240, 240)
     connect_prop(metal_const, "", unreal.MaterialProperty.MP_METALLIC)
 
     finalize_and_save_material(mat, is_opaque_nanite_compatible=True)
     return mat
 
 
-def bind_materials_to_presentation(
+def load_and_verify_rodin_prop_textures(prop_name: str) -> Tuple[unreal.Texture2D, unreal.Texture2D, unreal.Texture2D]:
+    base_tex_dir = f"{PBR_DIR}/{prop_name}/{prop_name}/Textures"
+    diff_path = f"{base_tex_dir}/texture_diffuse"
+    orm_path = f"{base_tex_dir}/texture_metallic-texture_roughness"
+    norm_path = f"{base_tex_dir}/texture_normal"
+
+    diff_tex = unreal.EditorAssetLibrary.load_asset(diff_path)
+    orm_tex = unreal.EditorAssetLibrary.load_asset(orm_path)
+    norm_tex = unreal.EditorAssetLibrary.load_asset(norm_path)
+
+    if not isinstance(diff_tex, unreal.Texture2D):
+        raise RuntimeError(f"Missing or invalid diffuse Texture2D at {diff_path}")
+    if not isinstance(orm_tex, unreal.Texture2D):
+        raise RuntimeError(f"Missing or invalid ORM Texture2D at {orm_path}")
+    if not isinstance(norm_tex, unreal.Texture2D):
+        raise RuntimeError(f"Missing or invalid Normal Texture2D at {norm_path}")
+
+    # Guard 3: Verify glTF 2.0 linear ORM packing invariants (sRGB=False on ORM, TC_NORMALMAP on Normal).
+    if bool(orm_tex.get_editor_property("srgb")):
+        log_info(f"Correcting sRGB=False on linear glTF ORM map {orm_path}")
+        orm_tex.set_editor_property("srgb", False)
+        unreal.EditorAssetLibrary.save_loaded_asset(orm_tex, only_if_is_dirty=False)
+
+    gltf_mi_path = f"{PBR_DIR}/{prop_name}/{prop_name}/Materials/model"
+    if unreal.EditorAssetLibrary.does_asset_exist(gltf_mi_path):
+        gltf_mi = unreal.EditorAssetLibrary.load_asset(gltf_mi_path)
+        if isinstance(gltf_mi, unreal.MaterialInstanceConstant):
+            tex_params = list(gltf_mi.get_editor_property("texture_parameter_values") or [])
+            param_summary = [
+                f"{tp.get_editor_property('parameter_info').get_editor_property('name')}->"
+                f"{None if tp.get_editor_property('parameter_value') is None else tp.get_editor_property('parameter_value').get_name()}"
+                for tp in tex_params
+            ]
+            log_info(
+                f"Verified glTF 2.0 ORM (R=AO, G=Roughness, B=Metallic) source on {prop_name}: "
+                f"sRGB(diff={diff_tex.get_editor_property('srgb')}, orm={orm_tex.get_editor_property('srgb')}), "
+                f"glTF params={param_summary}"
+            )
+
+    return diff_tex, orm_tex, norm_tex
+
+
+def build_station_pbr_master_and_instances() -> Tuple[unreal.Material, Dict[str, unreal.MaterialInstanceConstant]]:
+    """
+    Guard 3: Nanite-compatible Substrate-clean M_StationPBR_Master + 8 MI_Station_* instances
+    unpacking glTF 2.0 ORM (R=AO, G=Roughness, B=Metallic) with roughness contrast curve,
+    conductor F0 floor guard, and crisp normal strength using zero extra VRAM textures.
+    """
+    default_diff, default_orm, default_norm = load_and_verify_rodin_prop_textures("SM_ClampJaw")
+
+    mat = get_or_create_material("M_StationPBR_Master")
+    mat.set_editor_property("blend_mode", unreal.BlendMode.BLEND_OPAQUE)
+    mat.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_DEFAULT_LIT)
+    mat.set_editor_property("two_sided", False)
+
+    # 1. Texture Sample Parameters
+    tex_base = create_expr(mat, unreal.MaterialExpressionTextureSampleParameter2D, -1280, -360)
+    tex_base.set_editor_property("parameter_name", "BaseColorMap")
+    tex_base.set_editor_property("texture", default_diff)
+    tex_base.set_editor_property("sampler_type", resolve_sampler_type_for_texture(default_diff))
+
+    tex_orm = create_expr(mat, unreal.MaterialExpressionTextureSampleParameter2D, -1280, 40)
+    tex_orm.set_editor_property("parameter_name", "ORMMap")
+    tex_orm.set_editor_property("texture", default_orm)
+    tex_orm.set_editor_property("sampler_type", resolve_sampler_type_for_texture(default_orm))
+
+    tex_norm = create_expr(mat, unreal.MaterialExpressionTextureSampleParameter2D, -1280, 460)
+    tex_norm.set_editor_property("parameter_name", "NormalMap")
+    tex_norm.set_editor_property("texture", default_norm)
+    tex_norm.set_editor_property("sampler_type", resolve_sampler_type_for_texture(default_norm))
+
+    # 2. ORM Unpack: R = Ambient Occlusion, G = Roughness, B = Metallic (glTF 2.0 standard)
+    ao_strength = create_expr(mat, unreal.MaterialExpressionScalarParameter, -920, -40)
+    ao_strength.set_editor_property("parameter_name", "AOStrength")
+    ao_strength.set_editor_property("default_value", 0.85)
+
+    ao_lerp = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, -620, -40)
+    ao_lerp.set_editor_property("const_a", 1.0)
+    connect_expr(tex_orm, "R", ao_lerp, "B")
+    connect_expr(ao_strength, "", ao_lerp, "Alpha")
+    connect_prop(ao_lerp, "", unreal.MaterialProperty.MP_AMBIENT_OCCLUSION)
+
+    # Roughness Contrast Remap from ORM.G
+    rough_clamp_in = create_expr(mat, unreal.MaterialExpressionClamp, -980, 110)
+    rough_clamp_in.set_editor_property("min_default", 0.02)
+    rough_clamp_in.set_editor_property("max_default", 1.0)
+    connect_expr(tex_orm, "G", rough_clamp_in, "")
+
+    rough_exp_param = create_expr(mat, unreal.MaterialExpressionScalarParameter, -980, 220)
+    rough_exp_param.set_editor_property("parameter_name", "RoughnessContrastExp")
+    rough_exp_param.set_editor_property("default_value", 1.65)
+
+    rough_pow = create_expr(mat, unreal.MaterialExpressionPower, -760, 140)
+    connect_expr(rough_clamp_in, "", rough_pow, "Base")
+    connect_expr(rough_exp_param, "", rough_pow, "Exp")
+
+    rough_min_param = create_expr(mat, unreal.MaterialExpressionScalarParameter, -760, 260)
+    rough_min_param.set_editor_property("parameter_name", "RoughnessMin")
+    rough_min_param.set_editor_property("default_value", 0.20)
+
+    rough_max_param = create_expr(mat, unreal.MaterialExpressionScalarParameter, -760, 360)
+    rough_max_param.set_editor_property("parameter_name", "RoughnessMax")
+    rough_max_param.set_editor_property("default_value", 0.56)
+
+    rough_remap = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, -500, 180)
+    connect_expr(rough_min_param, "", rough_remap, "A")
+    connect_expr(rough_max_param, "", rough_remap, "B")
+    connect_expr(rough_pow, "", rough_remap, "Alpha")
+
+    rough_final = create_expr(mat, unreal.MaterialExpressionClamp, -280, 180)
+    rough_final.set_editor_property("min_default", 0.08)
+    rough_final.set_editor_property("max_default", 0.95)
+    connect_expr(rough_remap, "", rough_final, "")
+    connect_prop(rough_final, "", unreal.MaterialProperty.MP_ROUGHNESS)
+
+    # Metallic Conductor Remap from ORM.B
+    metal_scale_param = create_expr(mat, unreal.MaterialExpressionScalarParameter, -980, 340)
+    metal_scale_param.set_editor_property("parameter_name", "MetallicScale")
+    metal_scale_param.set_editor_property("default_value", 1.20)
+
+    metal_scaled = create_expr(mat, unreal.MaterialExpressionMultiply, -740, 440)
+    connect_expr(tex_orm, "B", metal_scaled, "A")
+    connect_expr(metal_scale_param, "", metal_scaled, "B")
+
+    metal_floor_param = create_expr(mat, unreal.MaterialExpressionScalarParameter, -740, 540)
+    metal_floor_param.set_editor_property("parameter_name", "MetallicFloor")
+    metal_floor_param.set_editor_property("default_value", 0.76)
+
+    metal_max = create_expr(mat, unreal.MaterialExpressionMax, -520, 460)
+    connect_expr(metal_scaled, "", metal_max, "A")
+    connect_expr(metal_floor_param, "", metal_max, "B")
+
+    metal_final = create_expr(mat, unreal.MaterialExpressionClamp, -320, 460)
+    metal_final.set_editor_property("min_default", 0.0)
+    metal_final.set_editor_property("max_default", 1.0)
+    connect_expr(metal_max, "", metal_final, "")
+    connect_prop(metal_final, "", unreal.MaterialProperty.MP_METALLIC)
+
+    # 3. BaseColor + Physical Conductor F0 Floor Protection
+    albedo_tint_param = create_expr(mat, unreal.MaterialExpressionVectorParameter, -1020, -220)
+    albedo_tint_param.set_editor_property("parameter_name", "AlbedoTint")
+    albedo_tint_param.set_editor_property("default_value", unreal.LinearColor(1.03, 1.06, 1.10, 1.0))
+
+    tinted_rgb = create_expr(mat, unreal.MaterialExpressionMultiply, -760, -320)
+    connect_expr(tex_base, "RGB", tinted_rgb, "A")
+    connect_expr(albedo_tint_param, "", tinted_rgb, "B")
+
+    conductor_f0_param = create_expr(mat, unreal.MaterialExpressionVectorParameter, -760, -180)
+    conductor_f0_param.set_editor_property("parameter_name", "ConductorMinF0")
+    conductor_f0_param.set_editor_property("default_value", unreal.LinearColor(0.16, 0.18, 0.21, 1.0))
+
+    conductor_safe_rgb = create_expr(mat, unreal.MaterialExpressionMax, -520, -260)
+    connect_expr(tinted_rgb, "", conductor_safe_rgb, "A")
+    connect_expr(conductor_f0_param, "", conductor_safe_rgb, "B")
+
+    final_albedo = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, -260, -300)
+    connect_expr(tinted_rgb, "", final_albedo, "A")
+    connect_expr(conductor_safe_rgb, "", final_albedo, "B")
+    connect_expr(metal_final, "", final_albedo, "Alpha")
+    connect_prop(final_albedo, "", unreal.MaterialProperty.MP_BASE_COLOR)
+
+    # 4. Crisp Tangent Normal Scaling
+    norm_xy_mask = create_expr(mat, unreal.MaterialExpressionComponentMask, -980, 620)
+    norm_xy_mask.set_editor_property("r", True)
+    norm_xy_mask.set_editor_property("g", True)
+    norm_xy_mask.set_editor_property("b", False)
+    norm_xy_mask.set_editor_property("a", False)
+    connect_expr(tex_norm, "RGB", norm_xy_mask, "")
+
+    norm_strength_param = create_expr(mat, unreal.MaterialExpressionScalarParameter, -980, 740)
+    norm_strength_param.set_editor_property("parameter_name", "NormalStrength")
+    norm_strength_param.set_editor_property("default_value", 1.35)
+
+    norm_xy_scaled = create_expr(mat, unreal.MaterialExpressionMultiply, -720, 640)
+    connect_expr(norm_xy_mask, "", norm_xy_scaled, "A")
+    connect_expr(norm_strength_param, "", norm_xy_scaled, "B")
+
+    norm_out = create_expr(mat, unreal.MaterialExpressionAppendVector, -460, 660)
+    connect_expr(norm_xy_scaled, "", norm_out, "A")
+    connect_expr(tex_norm, "B", norm_out, "B")
+    connect_prop(norm_out, "", unreal.MaterialProperty.MP_NORMAL)
+
+    finalize_and_save_material(mat, is_opaque_nanite_compatible=True)
+
+    # 5. Build and validate all 8 MI_Station_* MaterialInstanceConstants
+    built_instances: Dict[str, unreal.MaterialInstanceConstant] = {}
+    for spec in STATION_PBR_SPECS:
+        diff_tex, orm_tex, norm_tex = load_and_verify_rodin_prop_textures(spec.prop_name)
+        mic = get_or_create_material_instance(spec.instance_name, mat)
+
+        unreal.MaterialEditingLibrary.set_material_instance_texture_parameter_value(mic, "BaseColorMap", diff_tex)
+        unreal.MaterialEditingLibrary.set_material_instance_texture_parameter_value(mic, "ORMMap", orm_tex)
+        unreal.MaterialEditingLibrary.set_material_instance_texture_parameter_value(mic, "NormalMap", norm_tex)
+
+        unreal.MaterialEditingLibrary.set_material_instance_vector_parameter_value(
+            mic,
+            "AlbedoTint",
+            unreal.LinearColor(spec.albedo_tint[0], spec.albedo_tint[1], spec.albedo_tint[2], 1.0),
+        )
+        unreal.MaterialEditingLibrary.set_material_instance_vector_parameter_value(
+            mic,
+            "ConductorMinF0",
+            unreal.LinearColor(spec.conductor_min_f0[0], spec.conductor_min_f0[1], spec.conductor_min_f0[2], 1.0),
+        )
+        unreal.MaterialEditingLibrary.set_material_instance_scalar_parameter_value(
+            mic, "RoughnessContrastExp", spec.roughness_contrast_exp
+        )
+        unreal.MaterialEditingLibrary.set_material_instance_scalar_parameter_value(
+            mic, "RoughnessMin", spec.roughness_min
+        )
+        unreal.MaterialEditingLibrary.set_material_instance_scalar_parameter_value(
+            mic, "RoughnessMax", spec.roughness_max
+        )
+        unreal.MaterialEditingLibrary.set_material_instance_scalar_parameter_value(
+            mic, "MetallicScale", spec.metallic_scale
+        )
+        unreal.MaterialEditingLibrary.set_material_instance_scalar_parameter_value(
+            mic, "MetallicFloor", spec.metallic_floor
+        )
+        unreal.MaterialEditingLibrary.set_material_instance_scalar_parameter_value(
+            mic, "AOStrength", spec.ao_strength
+        )
+        unreal.MaterialEditingLibrary.set_material_instance_scalar_parameter_value(
+            mic, "NormalStrength", spec.normal_strength
+        )
+
+        unreal.MaterialEditingLibrary.update_material_instance(mic)
+
+        base_mat = mic.get_base_material()
+        if base_mat is None or "WorldGridMaterial" in base_mat.get_name():
+            raise RuntimeError(f"MI {spec.instance_name} resolved to fallback/invalid base material: {base_mat}")
+
+        for req_tex_param in ("BaseColorMap", "ORMMap", "NormalMap"):
+            bound_tex = unreal.MaterialEditingLibrary.get_material_instance_texture_parameter_value(mic, req_tex_param)
+            if bound_tex is None:
+                raise RuntimeError(f"MI {spec.instance_name} failed binding texture parameter {req_tex_param}!")
+
+        if not unreal.EditorAssetLibrary.save_loaded_asset(mic, only_if_is_dirty=False):
+            raise RuntimeError(f"Failed saving MaterialInstanceConstant {mic.get_path_name()}")
+
+        sm_path = f"{MESHES_DIR}/{spec.prop_name}"
+        if unreal.EditorAssetLibrary.does_asset_exist(sm_path):
+            sm_asset = unreal.EditorAssetLibrary.load_asset(sm_path)
+            if isinstance(sm_asset, unreal.StaticMesh):
+                sm_asset.set_material(0, mic)
+                if not unreal.EditorAssetLibrary.save_loaded_asset(sm_asset, only_if_is_dirty=False):
+                    raise RuntimeError(f"Failed saving StaticMesh {sm_path}")
+
+        built_instances[spec.slot_property] = mic
+        log_info(f"Built & verified {mic.get_path_name()} -> {spec.prop_name} ({spec.slot_property})")
+
+    return mat, built_instances
+
+
+def ensure_cook_safe_ambient_cubemap() -> unreal.TextureCube:
+    """
+    Guard 1: Duplicate Engine ambient cubemap directly into /Game/Presentation/Lighting/TC_CellAmbientCubemap
+    so bCookMapsOnly=True + DirectoriesToAlwaysCook=('/Game/Presentation') + DA_Presentation hard reference
+    guarantee 100% deterministic packaged SkyLight reflections and ambient fill.
+    """
+    ensure_directory(LIGHTING_DIR)
+
+    if unreal.EditorAssetLibrary.does_asset_exist(AMBIENT_CUBEMAP_DEST_PATH):
+        existing = unreal.EditorAssetLibrary.load_asset(AMBIENT_CUBEMAP_DEST_PATH)
+        if isinstance(existing, unreal.TextureCube):
+            unreal.EditorAssetLibrary.save_loaded_asset(existing, only_if_is_dirty=False)
+            log_info(f"Verified existing cook-safe ambient cubemap: {AMBIENT_CUBEMAP_DEST_PATH}")
+            return existing
+
+    candidate_sources = [
+        "/Engine/MapTemplates/Sky/DaylightAmbientCubemap",
+        "/Engine/Functions/Engine_MaterialFunctions01/Cubemaps/InteriorCubemap",
+    ]
+    source_path_found: Optional[str] = None
+    for candidate in candidate_sources:
+        if unreal.EditorAssetLibrary.does_asset_exist(candidate):
+            loaded_src = unreal.EditorAssetLibrary.load_asset(candidate)
+            if isinstance(loaded_src, unreal.TextureCube):
+                source_path_found = candidate
+                break
+
+    if source_path_found is None:
+        raise RuntimeError(f"Could not locate any Engine UTextureCube among {candidate_sources}")
+
+    duplicated = unreal.EditorAssetLibrary.duplicate_asset(source_path_found, AMBIENT_CUBEMAP_DEST_PATH)
+    if not isinstance(duplicated, unreal.TextureCube):
+        raise RuntimeError(f"Failed duplicating {source_path_found} -> {AMBIENT_CUBEMAP_DEST_PATH}")
+
+    if not unreal.EditorAssetLibrary.save_loaded_asset(duplicated, only_if_is_dirty=False):
+        raise RuntimeError(f"Failed saving duplicated cubemap {AMBIENT_CUBEMAP_DEST_PATH}")
+
+    log_info(f"Duplicated & saved cook-safe SkyLight cubemap: {source_path_found} -> {AMBIENT_CUBEMAP_DEST_PATH}")
+    return duplicated
+
+
+def bind_materials_and_lighting_to_presentation(
     m_laser: unreal.Material,
     m_slag: unreal.Material,
     m_molten: unreal.Material,
     m_wall: unreal.Material,
     m_floor: unreal.Material,
     m_gunmetal: unreal.Material,
+    station_instances: Dict[str, unreal.MaterialInstanceConstant],
+    ambient_cubemap: unreal.TextureCube,
 ) -> None:
     da_pres = unreal.EditorAssetLibrary.load_asset(DA_PRESENTATION_PATH)
     if da_pres is None:
@@ -534,7 +1084,15 @@ def bind_materials_to_presentation(
     da_pres.set_editor_property("default_molten_cut_cap_material", m_molten)
     da_pres.set_editor_property("cell_wall_material", m_wall)
     da_pres.set_editor_property("cell_floor_material", m_floor)
+    da_pres.set_editor_property("dark_gunmetal_material", m_gunmetal)
 
+    # Bind 8 calibrated MI_Station_* instances to their DA_Presentation mesh slots
+    for slot_prop, mic in station_instances.items():
+        slot_struct = da_pres.get_editor_property(slot_prop)
+        slot_struct.set_editor_property("material_overrides", [mic])
+        da_pres.set_editor_property(slot_prop, slot_struct)
+
+    # Keep SM_DiverterFlapper bound to physical-F0 M_DarkGunmetal_Master
     flapper_slot = da_pres.get_editor_property("diverter_flapper_mesh_slot")
     flapper_slot.set_editor_property("material_overrides", [m_gunmetal])
     da_pres.set_editor_property("diverter_flapper_mesh_slot", flapper_slot)
@@ -545,9 +1103,121 @@ def bind_materials_to_presentation(
         if isinstance(flapper_sm, unreal.StaticMesh):
             flapper_sm.set_material(0, m_gunmetal)
             unreal.EditorAssetLibrary.save_loaded_asset(flapper_sm, only_if_is_dirty=False)
-            log_info(f"Bound M_DarkGunmetal_Master to {flapper_mesh_path} Slot 0")
+            log_info(f"Bound calibrated M_DarkGunmetal_Master to {flapper_mesh_path} Slot 0")
 
-    # Verify & enforce all 4 Niagara VFX slots on DA_Presentation (SliverVaporizedVFX -> NS_LaserSliceSparks)
+    # Configure Phase 10 LightingRigConfig (1 VSM shadow-casting spot + 4 unshadowed fill/rim/wash lights)
+    rig_cfg = unreal.CellLightingRigConfig()
+
+    key_spot = rig_cfg.get_editor_property("key_spot")
+    key_spot.set_editor_property("location", unreal.Vector(175.0, -25.0, 335.0))
+    key_spot.set_editor_property("target_location", unreal.Vector(260.0, 0.0, 120.0))
+    key_spot.set_editor_property("intensity", 12200.0)
+    key_spot.set_editor_property("attenuation_radius", 1080.0)
+    key_spot.set_editor_property("inner_cone_angle", 26.0)
+    key_spot.set_editor_property("outer_cone_angle", 58.0)
+    key_spot.set_editor_property("light_color", unreal.LinearColor(0.95, 0.96, 1.00, 1.0))
+    key_spot.set_editor_property("cast_shadows", True)
+    rig_cfg.set_editor_property("key_spot", key_spot)
+
+    rig_cfg.set_editor_property("fill_point_location", unreal.Vector(95.0, 40.0, 215.0))
+    rig_cfg.set_editor_property("fill_point_intensity", 3600.0)
+    rig_cfg.set_editor_property("fill_point_radius", 880.0)
+    rig_cfg.set_editor_property("fill_point_color", unreal.LinearColor(0.84, 0.90, 1.00, 1.0))
+
+    rim_left = rig_cfg.get_editor_property("rim_spot_left")
+    rim_left.set_editor_property("location", unreal.Vector(338.0, -190.0, 248.0))
+    rim_left.set_editor_property("target_location", unreal.Vector(255.0, -14.0, 112.0))
+    rim_left.set_editor_property("intensity", 9400.0)
+    rim_left.set_editor_property("attenuation_radius", 780.0)
+    rim_left.set_editor_property("inner_cone_angle", 20.0)
+    rim_left.set_editor_property("outer_cone_angle", 52.0)
+    rim_left.set_editor_property("light_color", unreal.LinearColor(0.68, 0.85, 1.00, 1.0))
+    rim_left.set_editor_property("cast_shadows", False)
+    rig_cfg.set_editor_property("rim_spot_left", rim_left)
+
+    rim_right = rig_cfg.get_editor_property("rim_spot_right")
+    rim_right.set_editor_property("location", unreal.Vector(338.0, 195.0, 228.0))
+    rim_right.set_editor_property("target_location", unreal.Vector(255.0, 14.0, 102.0))
+    rim_right.set_editor_property("intensity", 9000.0)
+    rim_right.set_editor_property("attenuation_radius", 780.0)
+    rim_right.set_editor_property("inner_cone_angle", 20.0)
+    rim_right.set_editor_property("outer_cone_angle", 52.0)
+    rim_right.set_editor_property("light_color", unreal.LinearColor(0.65, 0.83, 1.00, 1.0))
+    rim_right.set_editor_property("cast_shadows", False)
+    rig_cfg.set_editor_property("rim_spot_right", rim_right)
+
+    mid_wash = rig_cfg.get_editor_property("midground_wash_spot")
+    mid_wash.set_editor_property("location", unreal.Vector(190.0, 0.0, 352.0))
+    mid_wash.set_editor_property("target_location", unreal.Vector(495.0, 0.0, 96.0))
+    mid_wash.set_editor_property("intensity", 5800.0)
+    mid_wash.set_editor_property("attenuation_radius", 720.0)
+    mid_wash.set_editor_property("inner_cone_angle", 28.0)
+    mid_wash.set_editor_property("outer_cone_angle", 64.0)
+    mid_wash.set_editor_property("light_color", unreal.LinearColor(0.70, 0.84, 1.00, 1.0))
+    mid_wash.set_editor_property("cast_shadows", False)
+    rig_cfg.set_editor_property("midground_wash_spot", mid_wash)
+
+    da_pres.set_editor_property("lighting_rig_config", rig_cfg)
+
+    # Configure Phase 10 AtmosphereConfig (Guard 1 cook-safe cubemap + depth fog behind X=260 + midground relief)
+    atmos_cfg = unreal.CellAtmosphereConfig()
+    atmos_cfg.set_editor_property("ambient_sky_cubemap", ambient_cubemap)
+    atmos_cfg.set_editor_property("sky_light_intensity", 0.44)
+    atmos_cfg.set_editor_property("sky_tint_color", unreal.LinearColor(0.68, 0.80, 0.98, 1.0))
+    atmos_cfg.set_editor_property("lower_hemisphere_color", unreal.LinearColor(0.028, 0.036, 0.050, 1.0))
+    atmos_cfg.set_editor_property("enable_depth_fog", True)
+    atmos_cfg.set_editor_property("fog_density", 0.16)
+    atmos_cfg.set_editor_property("fog_height_falloff", 0.32)
+    atmos_cfg.set_editor_property("fog_start_distance_cm", 305.0)
+    atmos_cfg.set_editor_property("fog_max_opacity", 0.55)
+    atmos_cfg.set_editor_property("fog_inscattering_color", unreal.LinearColor(0.036, 0.050, 0.072, 1.0))
+    atmos_cfg.set_editor_property("fog_actor_z_cm", 90.0)
+    atmos_cfg.set_editor_property("spawn_midground_architecture_relief", True)
+    da_pres.set_editor_property("atmosphere_config", atmos_cfg)
+
+    # Configure Phase 10 MoltenBounceConfig (~2200K zero-shadow thermal bounce on cut cap & scale pan well)
+    molten_cfg = unreal.MoltenBounceLightConfig()
+    molten_cfg.set_editor_property("bounce_color", unreal.LinearColor(1.00, 0.36, 0.07, 1.0))
+    molten_cfg.set_editor_property("cut_flash_peak_intensity", 5600.0)
+    molten_cfg.set_editor_property("cut_steady_remainder_intensity", 1350.0)
+    molten_cfg.set_editor_property("cut_attenuation_radius_cm", 265.0)
+    molten_cfg.set_editor_property("cut_light_local_offset", unreal.Vector(-22.0, 0.0, -24.0))
+    molten_cfg.set_editor_property("scale_well_flash_intensity", 2800.0)
+    molten_cfg.set_editor_property("scale_well_max_steady_intensity", 1150.0)
+    molten_cfg.set_editor_property("scale_well_attenuation_radius_cm", 165.0)
+    molten_cfg.set_editor_property("scale_well_local_offset", unreal.Vector(0.0, 0.0, 24.0))
+    molten_cfg.set_editor_property("flash_decay_duration_seconds", 0.85)
+    molten_cfg.set_editor_property("steady_interp_speed", 6.0)
+    da_pres.set_editor_property("molten_bounce_config", molten_cfg)
+
+    # Configure Phase 10 CameraPostProcessPolishConfig (BloomThreshold=1.65 HUD firewall + LocalExposure=1.0 + ACES)
+    pp_cfg = unreal.CameraPostProcessPolishConfig()
+    pp_cfg.set_editor_property("locked_ev100_min_max", 1.0)
+    pp_cfg.set_editor_property("exposure_compensation_bias", 0.48)
+    pp_cfg.set_editor_property("local_exposure_highlight_contrast", 1.0)
+    pp_cfg.set_editor_property("local_exposure_shadow_contrast", 1.0)
+    pp_cfg.set_editor_property("bloom_intensity", 0.42)
+    pp_cfg.set_editor_property("bloom_threshold", 1.65)
+    pp_cfg.set_editor_property("film_slope", 0.90)
+    pp_cfg.set_editor_property("film_toe", 0.53)
+    pp_cfg.set_editor_property("film_shoulder", 0.28)
+    pp_cfg.set_editor_property("color_contrast", 1.05)
+    pp_cfg.set_editor_property("color_saturation", 0.96)
+    pp_cfg.set_editor_property("vignette_intensity", 0.28)
+    pp_cfg.set_editor_property("tonemapper_sharpen", 0.35)
+    da_pres.set_editor_property("camera_post_process_config", pp_cfg)
+
+    # Verify Invariants (CellWallPanelMeshSlot.mesh stays None, CellFloorGrateMeshSlot.MaterialOverrides[0] populated)
+    if da_pres.get_editor_property("cell_wall_panel_mesh_slot").get_editor_property("mesh") is not None:
+        raise AssertionError("CellWallPanelMeshSlot.mesh must NEVER be populated!")
+
+    grate_overrides = list(
+        da_pres.get_editor_property("cell_floor_grate_mesh_slot").get_editor_property("material_overrides") or []
+    )
+    if not grate_overrides or grate_overrides[0] is None:
+        raise AssertionError("CellFloorGrateMeshSlot.MaterialOverrides[0] must be populated!")
+
+    # Verify & enforce all 4 Niagara VFX slots on DA_Presentation
     required_vfx_bindings: List[Tuple[str, str]] = [
         ("laser_slice_sparks_vfx", f"{VFX_DIR}/NS_LaserSliceSparks"),
         ("sliver_vaporized_vfx", f"{VFX_DIR}/NS_LaserSliceSparks"),
@@ -575,7 +1245,10 @@ def bind_materials_to_presentation(
     if not unreal.EditorAssetLibrary.save_loaded_asset(da_pres, only_if_is_dirty=False):
         raise RuntimeError(f"Failed saving {DA_PRESENTATION_PATH}")
 
-    log_info(f"Bound all master materials, VFX slots + flapper dark gunmetal override and saved {DA_PRESENTATION_PATH}")
+    log_info(
+        f"Bound all Phase 10 master materials, 8 MI_Station_* PBR instances, cook-safe SkyLight cubemap, "
+        f"lighting/atmosphere/post-process configs, and saved {DA_PRESENTATION_PATH}"
+    )
 
 
 def update_contracts_and_monoliths(
@@ -622,23 +1295,27 @@ def update_contracts_and_monoliths(
 
 
 def main() -> None:
-    log_info("Starting Phase 9.5 master material generation, VFX assertions, contract directives & DA_Presentation binding...")
+    log_info("Starting Phase 10 Render Royalty material generation, station PBR remap, cubemap duplication & DA_Presentation calibration...")
     m_laser = build_laser_sheet_master()
     m_molten = build_molten_cut_cap_master()
     m_slag = build_slag_outer_master()
     m_gunmetal = build_dark_gunmetal_master()
     m_wall = build_cell_wall_master()
     m_floor = build_cell_floor_master()
-    bind_materials_to_presentation(
+    _, station_instances = build_station_pbr_master_and_instances()
+    ambient_cubemap = ensure_cook_safe_ambient_cubemap()
+    bind_materials_and_lighting_to_presentation(
         m_laser=m_laser,
         m_slag=m_slag,
         m_molten=m_molten,
         m_wall=m_wall,
         m_floor=m_floor,
         m_gunmetal=m_gunmetal,
+        station_instances=station_instances,
+        ambient_cubemap=ambient_cubemap,
     )
     update_contracts_and_monoliths(m_slag=m_slag, m_molten=m_molten)
-    log_info("Completed Phase 9.5 BuildMaterialsAndBind successfully.")
+    log_info("Completed Phase 10 BuildMaterialsAndBind successfully.")
 
 
 if __name__ == "__main__":

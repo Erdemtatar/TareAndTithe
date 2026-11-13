@@ -263,8 +263,8 @@ void ADirectorBoothActor::BeginPlay()
 
 		ApplyBoothMaterial(BoothFrameVisual, FLinearColor(0.028f, 0.031f, 0.038f, 1.0f), 0.78f, 0.35f);
 		ApplyBoothMaterial(BlastShutterVisual, FLinearColor(0.060f, 0.062f, 0.068f, 1.0f), 0.66f, 0.45f);
-		ApplyBoothMaterial(BoothHeaderBackingPlate, SignboardBackingColor, 0.96f, 0.02f);
-		ApplyBoothMaterial(BoothVerdictBackingPlate, SignboardBackingColor, 0.96f, 0.02f);
+		ApplyBoothMaterial(BoothHeaderBackingPlate, SignboardBackingColor, 0.99f, 0.0f);
+		ApplyBoothMaterial(BoothVerdictBackingPlate, SignboardBackingColor, 0.99f, 0.0f);
 	}
 
 	SetShutterTargetOpenAlpha(0.0f, true);

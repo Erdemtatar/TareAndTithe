@@ -20,6 +20,7 @@
 #include "EnhancedInputSubsystems.h"
 #include "GameFramework/GameUserSettings.h"
 #include "GameFramework/PlayerController.h"
+#include "HAL/IConsoleManager.h"
 #include "InputAction.h"
 #include "InputActionValue.h"
 #include "InputCoreTypes.h"
@@ -515,6 +516,7 @@ void AInspectorPawn::ApplyPresentationData(const UTareTithePresentationDataAsset
 		AudioTelemetryBridgeComponent->ApplyPresentationData(InPresentationData);
 	}
 
+	ApplyLockedCameraExposureSettings();
 	InitializeLaserSheetDynamicMaterial();
 	UpdateLaserSheetMaterialVisuals();
 }
@@ -567,16 +569,48 @@ void AInspectorPawn::ApplyLockedCameraExposureSettings()
 		return;
 	}
 
+	FCameraPostProcessPolishConfig Cfg;
+	if (IsValid(PresentationData))
+	{
+		Cfg = PresentationData->CameraPostProcessConfig;
+	}
+	else
+	{
+		Cfg.LockedEV100MinMax = LockedAutoExposureMinBrightness;
+		Cfg.ExposureCompensationBias = LockedAutoExposureBias;
+		Cfg.BloomIntensity = LockedBloomIntensity;
+		Cfg.BloomThreshold = LockedBloomThreshold;
+	}
+
 	InspectorCamera->PostProcessBlendWeight = 1.0f;
 	FPostProcessSettings& PP = InspectorCamera->PostProcessSettings;
 	PP.bOverride_AutoExposureMinBrightness = true;
 	PP.bOverride_AutoExposureMaxBrightness = true;
 	PP.bOverride_AutoExposureBias = true;
+	PP.bOverride_LocalExposureHighlightContrastScale = true;
+	PP.bOverride_LocalExposureShadowContrastScale = true;
 	PP.bOverride_BloomIntensity = true;
-	PP.AutoExposureMinBrightness = LockedAutoExposureMinBrightness;
-	PP.AutoExposureMaxBrightness = LockedAutoExposureMaxBrightness;
-	PP.AutoExposureBias = LockedAutoExposureBias;
-	PP.BloomIntensity = LockedBloomIntensity;
+	PP.bOverride_BloomThreshold = true;
+	PP.bOverride_FilmSlope = true;
+	PP.bOverride_FilmToe = true;
+	PP.bOverride_FilmShoulder = true;
+	PP.bOverride_ColorContrast = true;
+	PP.bOverride_ColorSaturation = true;
+	PP.bOverride_VignetteIntensity = true;
+
+	PP.AutoExposureMinBrightness = FMath::Max(0.05f, Cfg.LockedEV100MinMax);
+	PP.AutoExposureMaxBrightness = FMath::Max(0.05f, Cfg.LockedEV100MinMax);
+	PP.AutoExposureBias = Cfg.ExposureCompensationBias;
+	PP.LocalExposureHighlightContrastScale = FMath::Clamp(Cfg.LocalExposureHighlightContrast, 0.5f, 1.0f);
+	PP.LocalExposureShadowContrastScale = FMath::Clamp(Cfg.LocalExposureShadowContrast, 0.5f, 1.0f);
+	PP.BloomIntensity = FMath::Clamp(Cfg.BloomIntensity, 0.0f, 2.0f);
+	PP.BloomThreshold = FMath::Max(1.15f, Cfg.BloomThreshold);
+	PP.FilmSlope = FMath::Clamp(Cfg.FilmSlope, 0.5f, 1.0f);
+	PP.FilmToe = FMath::Clamp(Cfg.FilmToe, 0.3f, 0.8f);
+	PP.FilmShoulder = FMath::Clamp(Cfg.FilmShoulder, 0.1f, 0.8f);
+	PP.ColorContrast = FVector4(1.0, 1.0, 1.0, static_cast<double>(FMath::Clamp(Cfg.ColorContrast, 0.8f, 1.4f)));
+	PP.ColorSaturation = FVector4(1.0, 1.0, 1.0, static_cast<double>(FMath::Clamp(Cfg.ColorSaturation, 0.5f, 1.4f)));
+	PP.VignetteIntensity = FMath::Clamp(Cfg.VignetteIntensity, 0.0f, 0.6f);
 }
 
 void AInspectorPawn::EnsureInputActionsAndMappingInitialized()
@@ -1239,6 +1273,14 @@ void AInspectorPawn::ApplyNativeScalabilityPreset(int32 QualityLevel, float TsrR
 		Settings->SetOverallScalabilityLevel(ClampedQuality);
 		Settings->SetResolutionScaleValueEx(FMath::Clamp(TsrResolutionScalePercent, 50.0f, 100.0f));
 		Settings->ApplySettings(false);
+	}
+
+	const float TargetSharpen = IsValid(PresentationData)
+		? FMath::Clamp(PresentationData->CameraPostProcessConfig.TonemapperSharpen, 0.0f, 1.0f)
+		: FCameraPostProcessPolishConfig().TonemapperSharpen;
+	if (IConsoleVariable* TonemapSharpenCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("r.Tonemapper.Sharpen")))
+	{
+		TonemapSharpenCVar->Set(TargetSharpen, ECVF_SetByGameSetting);
 	}
 }
 
