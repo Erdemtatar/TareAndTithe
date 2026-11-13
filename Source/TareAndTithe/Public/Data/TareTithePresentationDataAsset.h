@@ -45,25 +45,31 @@ struct TAREANDTITHE_API FCellDirectionalSpotConfig
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting")
-	FVector Location = FVector(182.0, -16.0, 336.0);
+	FVector Location = FVector(165.0, -22.0, 330.0);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting")
-	FVector TargetLocation = FVector(260.0, 4.0, 118.0);
+	FVector TargetLocation = FVector(260.0, 0.0, 105.0);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting", meta = (ClampMin = "0.0", ClampMax = "50000.0"))
-	float Intensity = 14800.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting", meta = (ClampMin = "0.0", ClampMax = "100000.0"))
+	float Intensity = 8800.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting", meta = (ClampMin = "100.0", ClampMax = "2500.0"))
-	float AttenuationRadius = 480.0f;
+	float AttenuationRadius = 580.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting", meta = (ClampMin = "1.0", ClampMax = "80.0"))
-	float InnerConeAngle = 19.0f;
+	float InnerConeAngle = 22.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting", meta = (ClampMin = "5.0", ClampMax = "89.0"))
-	float OuterConeAngle = 35.0f;
+	float OuterConeAngle = 40.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting", meta = (ClampMin = "0.0", ClampMax = "250.0"))
+	float SourceRadius = 26.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting", meta = (ClampMin = "0.0", ClampMax = "500.0"))
+	float SourceLength = 90.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting")
-	FLinearColor LightColor = FLinearColor(0.95f, 0.96f, 1.00f, 1.0f);
+	FLinearColor LightColor = FLinearColor(0.96f, 0.97f, 1.00f, 1.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting")
 	bool bCastShadows = false;
@@ -80,18 +86,24 @@ struct TAREANDTITHE_API FCellLightingRigConfig
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting")
 	FCellDirectionalSpotConfig KeySpot;
 
-	/** Unshadowed front-side fill point light tightly bounded off the outer side walls. */
+	/** Unshadowed front-side fill point light tightly bounded off the outer side walls (< 360 cm). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting")
-	FVector FillPointLocation = FVector(145.0, 12.0, 178.0);
+	FVector FillPointLocation = FVector(95.0, 14.0, 142.0);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting", meta = (ClampMin = "0.0", ClampMax = "20000.0"))
-	float FillPointIntensity = 2400.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting", meta = (ClampMin = "0.0", ClampMax = "50000.0"))
+	float FillPointIntensity = 2650.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting", meta = (ClampMin = "100.0", ClampMax = "2500.0"))
-	float FillPointRadius = 310.0f;
+	float FillPointRadius = 355.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting", meta = (ClampMin = "0.0", ClampMax = "250.0"))
+	float FillPointSourceRadius = 36.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting", meta = (ClampMin = "0.0", ClampMax = "500.0"))
+	float FillPointSourceLength = 0.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting")
-	FLinearColor FillPointColor = FLinearColor(0.82f, 0.89f, 1.00f, 1.0f);
+	FLinearColor FillPointColor = FLinearColor(0.84f, 0.90f, 1.00f, 1.0f);
 
 	/** Cool ~7400K left grazing rim spotlight raking across hero spine chamfers (bCastShadows = false). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting")
@@ -101,7 +113,7 @@ struct TAREANDTITHE_API FCellLightingRigConfig
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting")
 	FCellDirectionalSpotConfig RimSpotRight;
 
-	/** Unshadowed ~2150K upward-raking warm foundry pit glow illuminating the rear grate shaft & flanking columns. */
+	/** Unshadowed ~2150K frontal warm foundry shaft light illuminating the rear grate shaft & flanking columns (+X away from hero monolith). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Lighting")
 	FCellDirectionalSpotConfig MidgroundWashSpot;
 };
@@ -111,18 +123,18 @@ struct TAREANDTITHE_API FCellAtmosphereConfig
 {
 	GENERATED_BODY()
 
-	/** Cook-safe cubemap inside /Game/Presentation/ for SLS_SpecifiedCubemap inside the sealed inspection cell. */
+	/** Cook-safe cubemap inside /Game/Presentation/ for SLS_SpecifiedCubemap inside the inspection cell. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Atmosphere")
 	TObjectPtr<UTextureCube> AmbientSkyCubemap = nullptr;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Atmosphere", meta = (ClampMin = "0.0", ClampMax = "3.0"))
-	float SkyLightIntensity = 0.28f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Atmosphere", meta = (ClampMin = "0.0", ClampMax = "5.0"))
+	float SkyLightIntensity = 0.95f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Atmosphere")
 	FLinearColor SkyTintColor = FLinearColor(0.64f, 0.78f, 0.96f, 1.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Atmosphere")
-	FLinearColor LowerHemisphereColor = FLinearColor(0.012f, 0.014f, 0.018f, 1.0f);
+	FLinearColor LowerHemisphereColor = FLinearColor(0.035f, 0.042f, 0.055f, 1.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|Atmosphere")
 	bool bEnableDepthFog = true;
@@ -199,7 +211,7 @@ struct TAREANDTITHE_API FCameraPostProcessPolishConfig
 	float LockedEV100MinMax = 1.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|PostProcess", meta = (ClampMin = "-5.0", ClampMax = "5.0"))
-	float ExposureCompensationBias = 0.48f;
+	float ExposureCompensationBias = 0.85f;
 
 	/** Neutral 1.0f bypasses bilateral local-exposure contrast compression to prevent halation around UnlitText HUD glyphs. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Presentation|PostProcess", meta = (ClampMin = "0.5", ClampMax = "1.0"))

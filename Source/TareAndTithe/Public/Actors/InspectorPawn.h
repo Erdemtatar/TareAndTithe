@@ -217,7 +217,7 @@ protected:
 	float LockedAutoExposureMaxBrightness = 1.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Camera|Exposure", meta = (ClampMin = "-5.0", ClampMax = "5.0"))
-	float LockedAutoExposureBias = 0.48f;
+	float LockedAutoExposureBias = 0.85f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Camera|Exposure", meta = (ClampMin = "0.0", ClampMax = "2.0"))
 	float LockedBloomIntensity = 0.42f;

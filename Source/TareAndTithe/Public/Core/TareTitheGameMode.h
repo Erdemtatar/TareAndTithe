@@ -6,10 +6,13 @@
 #include "GameFramework/GameModeBase.h"
 #include "TareTitheGameMode.generated.h"
 
+class ASceneCapture2D;
+class UCameraComponent;
 class UMaterialInterface;
 class UShiftProgressionDataAsset;
 class UStaticMesh;
 class UTareTithePresentationDataAsset;
+class UTextureRenderTarget2D;
 
 UCLASS()
 class TAREANDTITHE_API ATareTitheGameMode : public AGameModeBase
@@ -21,6 +24,9 @@ public:
 
 	virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
 	virtual void StartPlay() override;
+
+	UFUNCTION(BlueprintCallable, Category = "Presentation|Diagnostics")
+	static ASceneCapture2D* SpawnTransientLitCapture2D(UCameraComponent* SourceCamera, UTextureRenderTarget2D* RenderTarget);
 
 protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Presentation")
@@ -77,17 +83,17 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell|FoundryShaft")
 	FVector FoundryColumnModuleSizeCm = FVector(30.0, 44.0, 100.0);
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell|Lighting", meta = (ClampMin = "100.0", ClampMax = "25000.0"))
-	float KeySpotLightIntensity = 14800.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell|Lighting", meta = (ClampMin = "100.0", ClampMax = "100000.0"))
+	float KeySpotLightIntensity = 8800.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell|Lighting", meta = (ClampMin = "50.0", ClampMax = "15000.0"))
-	float FillPointLightIntensity = 2400.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell|Lighting", meta = (ClampMin = "50.0", ClampMax = "50000.0"))
+	float FillPointLightIntensity = 2650.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell|Lighting")
-	FVector RimPointLightLocation = FVector(318.0, -148.0, 242.0);
+	FVector RimPointLightLocation = FVector(305.0, -135.0, 220.0);
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell|Lighting", meta = (ClampMin = "50.0", ClampMax = "15000.0"))
-	float RimPointLightIntensity = 11200.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell|Lighting", meta = (ClampMin = "50.0", ClampMax = "100000.0"))
+	float RimPointLightIntensity = 6800.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Scalability", meta = (ClampMin = "0", ClampMax = "3"))
 	int32 BaselineScalabilityLevel = 2;

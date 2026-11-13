@@ -6,10 +6,12 @@
 #include "Actors/MonolithRigActor.h"
 #include "Actors/ScaleAssemblyActor.h"
 #include "Actors/StrayFloorCatchActor.h"
+#include "Camera/CameraComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/ExponentialHeightFogComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/PointLightComponent.h"
+#include "Components/SceneCaptureComponent2D.h"
 #include "Components/SceneComponent.h"
 #include "Components/SkyLightComponent.h"
 #include "Components/SpotLightComponent.h"
@@ -18,11 +20,13 @@
 #include "Data/TareTithePresentationDataAsset.h"
 #include "Engine/ExponentialHeightFog.h"
 #include "Engine/PointLight.h"
+#include "Engine/SceneCapture2D.h"
 #include "Engine/SkyLight.h"
 #include "Engine/SpotLight.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/TextureCube.h"
+#include "Engine/TextureRenderTarget2D.h"
 #include "Engine/World.h"
 #include "GameFramework/GameUserSettings.h"
 #include "GameFramework/PlayerController.h"
@@ -73,6 +77,95 @@ void ATareTitheGameMode::StartPlay()
 	{
 		SpawnMissingGreyboxStationsIfNeeded();
 	}
+}
+
+ASceneCapture2D* ATareTitheGameMode::SpawnTransientLitCapture2D(
+	UCameraComponent* SourceCamera,
+	UTextureRenderTarget2D* RenderTarget)
+{
+	if (!IsValid(SourceCamera) || !IsValid(RenderTarget))
+	{
+		return nullptr;
+	}
+
+	UWorld* World = SourceCamera->GetWorld();
+	if (!IsValid(World))
+	{
+		return nullptr;
+	}
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	SpawnParams.ObjectFlags |= RF_Transient;
+
+	const FVector CamLocation = SourceCamera->GetComponentLocation();
+	const FRotator CamRotation = SourceCamera->GetComponentRotation();
+	ASceneCapture2D* CaptureActor = World->SpawnActor<ASceneCapture2D>(
+		ASceneCapture2D::StaticClass(),
+		FTransform(CamRotation, CamLocation, FVector::OneVector),
+		SpawnParams);
+	if (!IsValid(CaptureActor))
+	{
+		return nullptr;
+	}
+
+	CaptureActor->PrimaryActorTick.bCanEverTick = false;
+	CaptureActor->Tags.AddUnique(TEXT("Phase11AFixTransientLitCapture"));
+
+	if (USceneCaptureComponent2D* CaptureComp = CaptureActor->GetCaptureComponent2D())
+	{
+		CaptureComp->PrimaryComponentTick.bCanEverTick = false;
+		CaptureComp->SetMobility(EComponentMobility::Movable);
+		CaptureComp->SetWorldLocationAndRotation(CamLocation, CamRotation);
+		CaptureComp->ProjectionType = ECameraProjectionMode::Perspective;
+		CaptureComp->FOVAngle = SourceCamera->FieldOfView;
+		CaptureComp->TextureTarget = RenderTarget;
+		CaptureComp->CaptureSource = ESceneCaptureSource::SCS_FinalColorLDR;
+		CaptureComp->bCaptureEveryFrame = true;
+		CaptureComp->bCaptureOnMovement = false;
+		CaptureComp->bAlwaysPersistRenderingState = true;
+		CaptureComp->bUseRayTracingIfEnabled = true;
+		CaptureComp->PostProcessBlendWeight = 1.0f;
+
+		FPostProcessSettings CapturePP = SourceCamera->PostProcessSettings;
+		CapturePP.bOverride_DynamicGlobalIlluminationMethod = true;
+		CapturePP.DynamicGlobalIlluminationMethod = EDynamicGlobalIlluminationMethod::Lumen;
+		CapturePP.bOverride_ReflectionMethod = true;
+		CapturePP.ReflectionMethod = EReflectionMethod::Lumen;
+		CapturePP.bOverride_LumenSurfaceCacheResolution = true;
+		CapturePP.LumenSurfaceCacheResolution = 1.0f;
+		CaptureComp->PostProcessSettings = CapturePP;
+
+		static const TCHAR* const EnabledFlags[] = {
+			TEXT("Lighting"),
+			TEXT("GlobalIllumination"),
+			TEXT("LumenGlobalIllumination"),
+			TEXT("LumenReflections"),
+			TEXT("ReflectionEnvironment"),
+			TEXT("SkyLighting"),
+			TEXT("DynamicShadows"),
+			TEXT("PostProcessing"),
+			TEXT("Tonemapper"),
+			TEXT("ToneCurve"),
+			TEXT("EyeAdaptation"),
+			TEXT("Fog"),
+			TEXT("AntiAliasing"),
+			TEXT("TemporalAA"),
+		};
+		TArray<FEngineShowFlagsSetting> FlagSettings;
+		FlagSettings.Reserve(UE_ARRAY_COUNT(EnabledFlags));
+		for (const TCHAR* FlagName : EnabledFlags)
+		{
+			FEngineShowFlagsSetting Entry;
+			Entry.ShowFlagName = FlagName;
+			Entry.Enabled = true;
+			FlagSettings.Add(Entry);
+		}
+		CaptureComp->SetShowFlagSettings(FlagSettings);
+		CaptureComp->ShowFlags.SetTemporalAA(true);
+	}
+
+	return CaptureActor;
 }
 
 void ATareTitheGameMode::ResolveAndPublishPresentationAndProgression()
@@ -239,7 +332,11 @@ void ATareTitheGameMode::SpawnGreyboxPitEnclosureAndLighting(UWorld* World)
 		PitMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.14f);
 	}
 
-	auto SpawnEnclosureSlab = [&](const FVector& Location, const FVector& GreyboxScale3D, bool bIsFloorSlab)
+	auto SpawnEnclosureSlab = [&](
+		const FVector& Location,
+		const FVector& GreyboxScale3D,
+		bool bIsFloorSlab,
+		bool bUnoccludeLumenShell)
 	{
 		const FMeshPresentationSlot* AssignedSlot = nullptr;
 		UMaterialInterface* CustomCellMaterial = nullptr;
@@ -300,6 +397,16 @@ void ATareTitheGameMode::SpawnGreyboxPitEnclosureAndLighting(UWorld* World)
 				MeshComp->SetMaterial(0, ResolvedMat);
 			}
 		}
+
+		if (bUnoccludeLumenShell)
+		{
+			// Keep perimeter shell visible to primary raster camera rays so the outer frame stays dark,
+			// while unoccluding both SWRT Distance Fields / Surface Cache and HWRT RayTracingScene for Lumen GI & SkyLight cubemap reflections.
+			MeshComp->SetCastShadow(false);
+			MeshComp->SetAffectDistanceFieldLighting(false);
+			MeshComp->SetAffectDynamicIndirectLighting(false);
+			MeshComp->SetVisibleInRayTracing(false);
+		}
 	};
 
 	const double DropX = DefaultScaleAssemblyLocation.X;
@@ -337,14 +444,14 @@ void ATareTitheGameMode::SpawnGreyboxPitEnclosureAndLighting(UWorld* World)
 		}
 	}
 
-	// Visual-only pit floor and cell enclosure slabs (NoCollision).
-	SpawnEnclosureSlab(FVector(EnclosureCenterX, DropY, -95.0), FVector(EnclosureSpanScaleX, EnclosureSpanScaleY, 0.20), true);
-	// Front wall behind Director Booth and rear cell wall behind X = -150 cm so pulled-back camera never clips level geometry.
-	SpawnEnclosureSlab(FVector(FrontWallX, DropY, WallCenterZ), FVector(0.20, EnclosureSpanScaleY, WallHeightScaleZ), false);
-	SpawnEnclosureSlab(FVector(RearWallX, DropY, WallCenterZ), FVector(0.20, EnclosureSpanScaleY, WallHeightScaleZ), false);
-	SpawnEnclosureSlab(FVector(EnclosureCenterX, DropY - SideWallOffsetY, WallCenterZ), FVector(EnclosureSpanScaleX, 0.20, WallHeightScaleZ), false);
-	SpawnEnclosureSlab(FVector(EnclosureCenterX, DropY + SideWallOffsetY, WallCenterZ), FVector(EnclosureSpanScaleX, 0.20, WallHeightScaleZ), false);
-	SpawnEnclosureSlab(FVector(EnclosureCenterX, DropY, CeilingZ), FVector(EnclosureSpanScaleX, EnclosureSpanScaleY, 0.20), false);
+	// Visual-only pit floor (grounding intact) and 5 perimeter shell slabs (Lumen SWRT + HWRT unoccluded).
+	SpawnEnclosureSlab(FVector(EnclosureCenterX, DropY, -95.0), FVector(EnclosureSpanScaleX, EnclosureSpanScaleY, 0.20), true, false);
+	// Front wall behind Director Booth (+530) and behind-camera rear cell wall (-200) + Left/Right/Ceiling shell slabs.
+	SpawnEnclosureSlab(FVector(FrontWallX, DropY, WallCenterZ), FVector(0.20, EnclosureSpanScaleY, WallHeightScaleZ), false, true);
+	SpawnEnclosureSlab(FVector(RearWallX, DropY, WallCenterZ), FVector(0.20, EnclosureSpanScaleY, WallHeightScaleZ), false, true);
+	SpawnEnclosureSlab(FVector(EnclosureCenterX, DropY - SideWallOffsetY, WallCenterZ), FVector(EnclosureSpanScaleX, 0.20, WallHeightScaleZ), false, true);
+	SpawnEnclosureSlab(FVector(EnclosureCenterX, DropY + SideWallOffsetY, WallCenterZ), FVector(EnclosureSpanScaleX, 0.20, WallHeightScaleZ), false, true);
+	SpawnEnclosureSlab(FVector(EnclosureCenterX, DropY, CeilingZ), FVector(EnclosureSpanScaleX, EnclosureSpanScaleY, 0.20), false, true);
 
 	FCellLightingRigConfig RigCfg;
 	if (IsValid(PresentationData))
@@ -599,7 +706,11 @@ void ATareTitheGameMode::SpawnGreyboxPitEnclosureAndLighting(UWorld* World)
 			return;
 		}
 		const FVector AimDir = (SpotCfg.TargetLocation - SpotCfg.Location).GetSafeNormal(1.0e-4f, FVector::DownVector);
-		const FRotator SpotRotation = FRotationMatrix::MakeFromX(AimDir).Rotator();
+		// Orient centered overhead/shaft strip lights (|Location.Y| < 50 cm) with capsule tangent (Local +Z) horizontal along World +Y,
+		// while lateral rim lights keep vertical raking capsule alignment along World +Z.
+		const FRotator SpotRotation = (FMath::Abs(SpotCfg.Location.Y) < 50.0)
+			? FRotationMatrix::MakeFromXZ(AimDir, FVector::RightVector).Rotator()
+			: FRotationMatrix::MakeFromX(AimDir).Rotator();
 
 		ASpotLight* SpawnedSpot = World->SpawnActor<ASpotLight>(
 			ASpotLight::StaticClass(),
@@ -608,10 +719,14 @@ void ATareTitheGameMode::SpawnGreyboxPitEnclosureAndLighting(UWorld* World)
 		if (IsValid(SpawnedSpot) && IsValid(SpawnedSpot->SpotLightComponent))
 		{
 			SpawnedSpot->SpotLightComponent->SetMobility(EComponentMobility::Movable);
+			// Override ASpotLight CDO's default (-90, 0, 0) RelativeRotation so GetDirection() (+X) matches AimDir 1:1.
+			SpawnedSpot->SpotLightComponent->SetWorldLocationAndRotation(SpotCfg.Location, SpotRotation);
 			SpawnedSpot->SpotLightComponent->SetIntensity(SpotCfg.Intensity);
 			SpawnedSpot->SpotLightComponent->SetAttenuationRadius(SpotCfg.AttenuationRadius);
 			SpawnedSpot->SpotLightComponent->SetInnerConeAngle(SpotCfg.InnerConeAngle);
 			SpawnedSpot->SpotLightComponent->SetOuterConeAngle(FMath::Max(SpotCfg.InnerConeAngle + 1.0f, SpotCfg.OuterConeAngle));
+			SpawnedSpot->SpotLightComponent->SetSourceRadius(FMath::Max(0.0f, SpotCfg.SourceRadius));
+			SpawnedSpot->SpotLightComponent->SetSourceLength(FMath::Max(0.0f, SpotCfg.SourceLength));
 			SpawnedSpot->SpotLightComponent->SetLightColor(SpotCfg.LightColor);
 			SpawnedSpot->SpotLightComponent->SetVolumetricScatteringIntensity(0.0f);
 			SpawnedSpot->SpotLightComponent->SetCastShadows(bAllowShadowCasting);
@@ -621,7 +736,7 @@ void ATareTitheGameMode::SpawnGreyboxPitEnclosureAndLighting(UWorld* World)
 	// 1. Sole shadow-casting VSM spotlight in the cell.
 	SpawnConfiguredSpotLight(RigCfg.KeySpot, RigCfg.KeySpot.bCastShadows);
 
-	// 2. Unshadowed front-side fill point light for crisp underside bevel legibility.
+	// 2. Unshadowed front-side area fill point light for crisp frontal bevel & scale pan legibility.
 	if (RigCfg.FillPointIntensity > KINDA_SMALL_NUMBER)
 	{
 		APointLight* CellFillLight = World->SpawnActor<APointLight>(
@@ -633,16 +748,18 @@ void ATareTitheGameMode::SpawnGreyboxPitEnclosureAndLighting(UWorld* World)
 			CellFillLight->PointLightComponent->SetMobility(EComponentMobility::Movable);
 			CellFillLight->PointLightComponent->SetIntensity(RigCfg.FillPointIntensity);
 			CellFillLight->PointLightComponent->SetAttenuationRadius(RigCfg.FillPointRadius);
+			CellFillLight->PointLightComponent->SetSourceRadius(FMath::Max(0.0f, RigCfg.FillPointSourceRadius));
+			CellFillLight->PointLightComponent->SetSourceLength(FMath::Max(0.0f, RigCfg.FillPointSourceLength));
 			CellFillLight->PointLightComponent->SetVolumetricScatteringIntensity(0.0f);
 			CellFillLight->PointLightComponent->SetCastShadows(false);
 			CellFillLight->PointLightComponent->SetLightColor(RigCfg.FillPointColor);
 		}
 	}
 
-	// 3 & 4. Dual cool ~7600-7800K grazing rim spotlights raking left/right across Rodin station metal chamfers.
+	// 3 & 4. Dual cool ~7400K industrial tube rim spotlights raking left/right across Rodin station metal chamfers.
 	SpawnConfiguredSpotLight(RigCfg.RimSpotLeft, false);
 	SpawnConfiguredSpotLight(RigCfg.RimSpotRight, false);
 
-	// 5. Unshadowed ~6800K midground architectural wash lifting rear wall pilasters & booth stanchions out of #000000 void.
+	// 5. Unshadowed ~2150K warm foundry shaft tube light pointed +X onto the rear grate shaft & flanking columns.
 	SpawnConfiguredSpotLight(RigCfg.MidgroundWashSpot, false);
 }
