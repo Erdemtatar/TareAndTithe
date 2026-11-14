@@ -9,7 +9,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 
 :: --- USER ENVIRONMENT CONFIGURATION (UE 5.8 - TareAndTithe) ---
 if "%UE5_ROOT%"=="" set "UE5_ROOT=C:\Program Files\Epic Games\UE_5.8"
-if "%TEAM_NAME%"=="" set "TEAM_NAME=ErdemTatar"
+if "%TEAM_NAME%"=="" set "TEAM_NAME=Homsetxi"
 if "%GAME_NAME%"=="" set "GAME_NAME=TareAndTithe"
 
 set "BUILD_CONFIG=%~1"
