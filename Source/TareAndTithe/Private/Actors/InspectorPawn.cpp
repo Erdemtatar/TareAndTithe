@@ -243,6 +243,14 @@ AInspectorPawn::AInspectorPawn()
 	AmbientBedAudioComponent->PrimaryComponentTick.bCanEverTick = false;
 	AmbientBedAudioComponent->bAutoActivate = false;
 	AmbientBedAudioComponent->bAutoDestroy = false;
+	AmbientBedAudioComponent->bAllowSpatialization = false;
+
+	ClampGroanAudioComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("ClampGroanAudioComponent"));
+	ClampGroanAudioComponent->SetupAttachment(PawnRoot);
+	ClampGroanAudioComponent->PrimaryComponentTick.bCanEverTick = false;
+	ClampGroanAudioComponent->bAutoActivate = false;
+	ClampGroanAudioComponent->bAutoDestroy = false;
+	ClampGroanAudioComponent->bAllowSpatialization = false;
 }
 
 void AInspectorPawn::BeginPlay()
@@ -296,6 +304,12 @@ void AInspectorPawn::BeginPlay()
 	if (IsValid(AmbientBedAudioComponent))
 	{
 		AmbientBedAudioComponent->bAutoDestroy = false;
+		AmbientBedAudioComponent->bAllowSpatialization = false;
+	}
+	if (IsValid(ClampGroanAudioComponent))
+	{
+		ClampGroanAudioComponent->bAutoDestroy = false;
+		ClampGroanAudioComponent->bAllowSpatialization = false;
 	}
 
 	if (IsValid(AudioTelemetryBridgeComponent))
@@ -303,6 +317,7 @@ void AInspectorPawn::BeginPlay()
 		AudioTelemetryBridgeComponent->SetContinuousLoopsAudioComponent(ContinuousMetaSoundAudioComponent);
 		AudioTelemetryBridgeComponent->SetDiscreteImpulsesAudioComponent(ImpulseMetaSoundAudioComponent);
 		AudioTelemetryBridgeComponent->SetAmbientBedAudioComponent(AmbientBedAudioComponent);
+		AudioTelemetryBridgeComponent->SetClampGroanAudioComponent(ClampGroanAudioComponent);
 		AudioTelemetryBridgeComponent->OnFilteredTelemetryStream.AddUObject(this, &AInspectorPawn::HandleFilteredTelemetryStream);
 	}
 

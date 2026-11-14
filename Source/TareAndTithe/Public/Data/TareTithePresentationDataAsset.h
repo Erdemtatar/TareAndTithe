@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "UObject/SoftObjectPtr.h"
 #include "Core/TareTitheTypes.h"
 #include "TareTithePresentationDataAsset.generated.h"
 
@@ -541,6 +542,119 @@ struct TAREANDTITHE_API FOuterEdgeFramingConfig
 	FOuterEdgeFramingConfig GetSanitized() const;
 };
 
+USTRUCT(BlueprintType)
+struct TAREANDTITHE_API FClampGroanAudioConfig
+{
+	GENERATED_BODY()
+
+	FClampGroanAudioConfig();
+
+	/** Cook-safe soft reference to /Game/Presentation/Audio/Waves/SFX_ClampSteelGroan_Loop.SFX_ClampSteelGroan_Loop (resolved without DA_Presentation.uasset resave). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|ClampGroan")
+	TSoftObjectPtr<USoundBase> ClampSteelGroanLoopSound;
+
+	/** Ducked 2D SFX_CellAmbience_Loop gain (-7.5 dB) so clamp tension, spatial one-shots, and Director PA cues cut cleanly through room tone. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|Mix", meta = (ClampMin = "0.0", ClampMax = "1.5"))
+	float AmbientBedVolumeMultiplier = 0.42f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|Mix", meta = (ClampMin = "0.1", ClampMax = "2.5"))
+	float SpatialImpulseMinVolumeMultiplier = 0.92f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|Mix", meta = (ClampMin = "0.1", ClampMax = "2.5"))
+	float SpatialImpulseMaxVolumeMultiplier = 1.25f;
+
+	/** Neutral parameter value (0.15f) sent to MS_TelemetryLoops "ClampStrain" so its unclamped MapRange(0.15..1.0 -> 0.0..0.65) outputs exact 0.000f mono bleed. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|ClampGroan", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float MetaSoundClampStrainNeutralValue = 0.15f;
+
+	/** Silent balanced gate: ClampStrain < 0.46f and ClampFatigue < 0.05f holds groan at 0.0f. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|ClampGroan", meta = (ClampMin = "0.10", ClampMax = "0.75"))
+	float GroanOnsetStrainThreshold = 0.46f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|ClampGroan", meta = (ClampMin = "0.01", ClampMax = "0.50"))
+	float GroanOnsetFatigueThreshold = 0.05f;
+
+	/** Zone 2 boundary: ClampStrain >= 0.66f OR ClampFatigue >= 0.15f transitions from subtle resting tension into urgent tip-over danger. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|ClampGroan", meta = (ClampMin = "0.48", ClampMax = "0.90"))
+	float GroanZone2StrainThreshold = 0.66f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|ClampGroan", meta = (ClampMin = "0.05", ClampMax = "0.80"))
+	float GroanZone2FatigueThreshold = 0.15f;
+
+	/** JAW SHEAR CRITICAL strain threshold (0.78f). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|ClampGroan", meta = (ClampMin = "0.55", ClampMax = "0.99"))
+	float GroanCriticalStrainThreshold = 0.78f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|ClampGroan", meta = (ClampMin = "0.10", ClampMax = "1.00"))
+	float GroanCriticalFatigueThreshold = 0.35f;
+
+	/** Zone 1 subtle resting overhang volume [0.16f .. 0.38f] across [0.46f .. 0.66f) strain (~0.303f at Ctr 02 59% spawn). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|ClampGroan", meta = (ClampMin = "0.02", ClampMax = "1.00"))
+	float GroanZone1MinVolume = 0.16f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|ClampGroan", meta = (ClampMin = "0.05", ClampMax = "1.20"))
+	float GroanZone1MaxVolume = 0.38f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|ClampGroan", meta = (ClampMin = "0.50", ClampMax = "1.50"))
+	float GroanZone1MinPitch = 0.94f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|ClampGroan", meta = (ClampMin = "0.50", ClampMax = "1.50"))
+	float GroanZone1MaxPitch = 0.99f;
+
+	/** Zone 2 urgent shear danger volume: 0.78f at 0.66 strain -> 1.18f at 0.78 critical -> 1.35f approaching 1.00 snap / >= 0.35 fatigue. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|ClampGroan", meta = (ClampMin = "0.20", ClampMax = "2.00"))
+	float GroanZone2EntryVolume = 0.78f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|ClampGroan", meta = (ClampMin = "0.30", ClampMax = "2.20"))
+	float GroanCriticalVolume = 1.18f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|ClampGroan", meta = (ClampMin = "0.30", ClampMax = "2.50"))
+	float GroanPreSnapVolume = 1.35f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|ClampGroan", meta = (ClampMin = "0.70", ClampMax = "2.00"))
+	float GroanZone2EntryPitch = 1.03f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|ClampGroan", meta = (ClampMin = "0.70", ClampMax = "2.00"))
+	float GroanCriticalPitch = 1.11f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|ClampGroan", meta = (ClampMin = "0.70", ClampMax = "2.00"))
+	float GroanMaxPitchMultiplier = 1.15f;
+
+	/** Post-slice / torque-shift creak surge: Clamp(Max(SteadyVolume, 0.52f) + 0.36f, 0.75f, 1.40f), SteadyPitch + 0.05f. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|ClampGroan|Surge", meta = (ClampMin = "0.005", ClampMax = "0.25"))
+	float GroanTorqueSpikeMinDelta = 0.03f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|ClampGroan|Surge", meta = (ClampMin = "0.01", ClampMax = "0.50"))
+	float GroanFatigueSpikeMinDelta = 0.05f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|ClampGroan|Surge", meta = (ClampMin = "0.10", ClampMax = "1.50"))
+	float GroanSurgeBaseFloorVolume = 0.52f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|ClampGroan|Surge", meta = (ClampMin = "0.00", ClampMax = "1.20"))
+	float GroanSliceSurgeVolumeBoost = 0.36f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|ClampGroan|Surge", meta = (ClampMin = "0.20", ClampMax = "2.00"))
+	float GroanSurgeMinClampVolume = 0.75f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|ClampGroan|Surge", meta = (ClampMin = "0.30", ClampMax = "2.50"))
+	float GroanMaxVolumeMultiplier = 1.40f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|ClampGroan|Surge", meta = (ClampMin = "0.00", ClampMax = "0.30"))
+	float GroanSliceSurgePitchBoost = 0.05f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|ClampGroan|Surge", meta = (ClampMin = "0.10", ClampMax = "2.00"))
+	float GroanSliceSurgeDurationSeconds = 0.85f;
+
+	/** FadeIn (0.06s to 1.0f internal envelope) and <= 0.08s instant cutoff FadeOut on snap/fault/phase exit. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|ClampGroan|Envelope", meta = (ClampMin = "0.01", ClampMax = "0.25"))
+	float GroanFadeInSeconds = 0.06f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|ClampGroan|Envelope", meta = (ClampMin = "0.01", ClampMax = "0.12"))
+	float GroanFastCutoffSeconds = 0.08f;
+
+	FClampGroanAudioConfig GetSanitized() const;
+};
+
 UCLASS(BlueprintType)
 class TAREANDTITHE_API UTareTithePresentationDataAsset : public UPrimaryDataAsset
 {
@@ -577,6 +691,10 @@ public:
 	/** Brutal overdriven PA klaxon horn + harsh speaker-cabinet buzz & mic-cut click (~0.70s) for fault reprimands & reject buzz. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|DirectorIntercom")
 	TObjectPtr<USoundBase> DirectorIntercomReprimandSound = nullptr;
+
+	/** Phase 12-FIX3 dedicated stereo SFX_ClampSteelGroan_Loop two-zone danger envelope, post-slice creak surge & spatial mix calibration. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|ClampGroan")
+	FClampGroanAudioConfig ClampGroanAudio;
 
 	// ============================================================================
 	// Core Materials

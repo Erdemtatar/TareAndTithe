@@ -139,3 +139,71 @@ FOuterEdgeFramingConfig FOuterEdgeFramingConfig::GetSanitized() const
 	Out.DedicatedOuterRimRadius = FMath::Clamp(Out.DedicatedOuterRimRadius, 60.0f, 220.0f);
 	return Out;
 }
+
+FClampGroanAudioConfig::FClampGroanAudioConfig()
+	: ClampSteelGroanLoopSound(FSoftObjectPath(TEXT("/Game/Presentation/Audio/Waves/SFX_ClampSteelGroan_Loop.SFX_ClampSteelGroan_Loop")))
+{
+}
+
+FClampGroanAudioConfig FClampGroanAudioConfig::GetSanitized() const
+{
+	FClampGroanAudioConfig Out = *this;
+	if (Out.ClampSteelGroanLoopSound.ToSoftObjectPath().IsNull())
+	{
+		Out.ClampSteelGroanLoopSound = TSoftObjectPtr<USoundBase>(
+			FSoftObjectPath(TEXT("/Game/Presentation/Audio/Waves/SFX_ClampSteelGroan_Loop.SFX_ClampSteelGroan_Loop")));
+	}
+
+	Out.AmbientBedVolumeMultiplier = FMath::Clamp(Out.AmbientBedVolumeMultiplier, 0.0f, 1.5f);
+	Out.SpatialImpulseMinVolumeMultiplier = FMath::Clamp(Out.SpatialImpulseMinVolumeMultiplier, 0.1f, 2.5f);
+	Out.SpatialImpulseMaxVolumeMultiplier = FMath::Clamp(
+		Out.SpatialImpulseMaxVolumeMultiplier,
+		Out.SpatialImpulseMinVolumeMultiplier,
+		2.5f);
+	Out.MetaSoundClampStrainNeutralValue = FMath::Clamp(Out.MetaSoundClampStrainNeutralValue, 0.0f, 1.0f);
+
+	Out.GroanOnsetStrainThreshold = FMath::Clamp(Out.GroanOnsetStrainThreshold, 0.10f, 0.75f);
+	Out.GroanOnsetFatigueThreshold = FMath::Clamp(Out.GroanOnsetFatigueThreshold, 0.01f, 0.50f);
+	Out.GroanZone2StrainThreshold = FMath::Clamp(
+		Out.GroanZone2StrainThreshold,
+		Out.GroanOnsetStrainThreshold + 0.04f,
+		0.92f);
+	Out.GroanZone2FatigueThreshold = FMath::Clamp(
+		Out.GroanZone2FatigueThreshold,
+		Out.GroanOnsetFatigueThreshold + 0.02f,
+		0.85f);
+	Out.GroanCriticalStrainThreshold = FMath::Clamp(
+		Out.GroanCriticalStrainThreshold,
+		Out.GroanZone2StrainThreshold + 0.04f,
+		0.99f);
+	Out.GroanCriticalFatigueThreshold = FMath::Clamp(
+		Out.GroanCriticalFatigueThreshold,
+		Out.GroanZone2FatigueThreshold + 0.04f,
+		1.00f);
+
+	Out.GroanZone1MinVolume = FMath::Clamp(Out.GroanZone1MinVolume, 0.02f, 1.00f);
+	Out.GroanZone1MaxVolume = FMath::Clamp(Out.GroanZone1MaxVolume, Out.GroanZone1MinVolume, 1.20f);
+	Out.GroanZone1MinPitch = FMath::Clamp(Out.GroanZone1MinPitch, 0.50f, 1.50f);
+	Out.GroanZone1MaxPitch = FMath::Clamp(Out.GroanZone1MaxPitch, Out.GroanZone1MinPitch, 1.50f);
+
+	Out.GroanZone2EntryVolume = FMath::Clamp(Out.GroanZone2EntryVolume, Out.GroanZone1MaxVolume, 2.00f);
+	Out.GroanCriticalVolume = FMath::Clamp(Out.GroanCriticalVolume, Out.GroanZone2EntryVolume, 2.20f);
+	Out.GroanPreSnapVolume = FMath::Clamp(Out.GroanPreSnapVolume, Out.GroanCriticalVolume, 2.50f);
+
+	Out.GroanZone2EntryPitch = FMath::Clamp(Out.GroanZone2EntryPitch, Out.GroanZone1MaxPitch, 2.00f);
+	Out.GroanCriticalPitch = FMath::Clamp(Out.GroanCriticalPitch, Out.GroanZone2EntryPitch, 2.00f);
+	Out.GroanMaxPitchMultiplier = FMath::Clamp(Out.GroanMaxPitchMultiplier, Out.GroanCriticalPitch, 2.00f);
+
+	Out.GroanTorqueSpikeMinDelta = FMath::Clamp(Out.GroanTorqueSpikeMinDelta, 0.005f, 0.25f);
+	Out.GroanFatigueSpikeMinDelta = FMath::Clamp(Out.GroanFatigueSpikeMinDelta, 0.01f, 0.50f);
+	Out.GroanSurgeBaseFloorVolume = FMath::Clamp(Out.GroanSurgeBaseFloorVolume, 0.10f, 1.50f);
+	Out.GroanSliceSurgeVolumeBoost = FMath::Clamp(Out.GroanSliceSurgeVolumeBoost, 0.00f, 1.20f);
+	Out.GroanSurgeMinClampVolume = FMath::Clamp(Out.GroanSurgeMinClampVolume, 0.20f, 2.00f);
+	Out.GroanMaxVolumeMultiplier = FMath::Clamp(Out.GroanMaxVolumeMultiplier, Out.GroanSurgeMinClampVolume, 2.50f);
+	Out.GroanSliceSurgePitchBoost = FMath::Clamp(Out.GroanSliceSurgePitchBoost, 0.00f, 0.30f);
+	Out.GroanSliceSurgeDurationSeconds = FMath::Clamp(Out.GroanSliceSurgeDurationSeconds, 0.10f, 2.00f);
+
+	Out.GroanFadeInSeconds = FMath::Clamp(Out.GroanFadeInSeconds, 0.01f, 0.25f);
+	Out.GroanFastCutoffSeconds = FMath::Clamp(Out.GroanFastCutoffSeconds, 0.01f, 0.12f);
+	return Out;
+}

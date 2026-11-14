@@ -57,6 +57,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inspector|HUD")
 	UInspectorHudBridgeComponent* GetInspectorHudBridgeComponent() const { return InspectorHudBridgeComponent; }
 
+	UFUNCTION(BlueprintPure, Category = "Inspector|Audio")
+	UAudioTelemetryBridgeComponent* GetAudioTelemetryBridgeComponent() const { return AudioTelemetryBridgeComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Inspector|Audio")
+	UAudioComponent* GetClampGroanAudioComponent() const { return ClampGroanAudioComponent; }
+
 	UFUNCTION(BlueprintCallable, Category = "Inspector|Diagnostics")
 	void InjectAimCursorDeltaForTest(FVector2D MouseDelta);
 
@@ -131,6 +137,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inspector|Audio")
 	TObjectPtr<UAudioComponent> AmbientBedAudioComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inspector|Audio")
+	TObjectPtr<UAudioComponent> ClampGroanAudioComponent;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Audio")
 	TObjectPtr<USoundBase> ContinuousMetaSoundAsset;
