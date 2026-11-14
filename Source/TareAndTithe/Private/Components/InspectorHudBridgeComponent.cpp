@@ -9,6 +9,7 @@
 #include "Engine/Engine.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
+#include "GameFramework/GameUserSettings.h"
 #include "HAL/FileManager.h"
 #include "HAL/IConsoleManager.h"
 #include "Misc/Paths.h"
@@ -43,8 +44,8 @@ namespace
 
 UInspectorHudBridgeComponent::UInspectorHudBridgeComponent()
 {
-	// Tier 1 strictly enforced: 0.00 ms idle CPU cost.
-	PrimaryComponentTick.bCanEverTick = false;
+	// Tier 2 strictly enforced: 0.00 ms idle CPU cost; wakes ONLY while rolling displayed scale mass toward target.
+	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.bStartWithTickEnabled = false;
 }
 
@@ -69,6 +70,28 @@ void UInspectorHudBridgeComponent::BeginPlay()
 
 	ResetTransientTelemetryAndHysteresis();
 
+	CachedGraphicsQualityLevel = 2;
+	CachedTsrScalePercent = 85.0f;
+	if (UGameUserSettings* Settings = UGameUserSettings::GetGameUserSettings())
+	{
+		const int32 OverallQuality = Settings->GetOverallScalabilityLevel();
+		if (OverallQuality >= 0 && OverallQuality <= 3)
+		{
+			CachedGraphicsQualityLevel = OverallQuality;
+			static const float PresetTsrScaleByLevel[4] = { 65.0f, 75.0f, 85.0f, 100.0f };
+			CachedTsrScalePercent = PresetTsrScaleByLevel[OverallQuality];
+		}
+		float CurrentScaleNormalized = 0.0f;
+		float CurrentScaleValue = 0.0f;
+		float MinScaleValue = 50.0f;
+		float MaxScaleValue = 100.0f;
+		Settings->GetResolutionScaleInformationEx(CurrentScaleNormalized, CurrentScaleValue, MinScaleValue, MaxScaleValue);
+		if (CurrentScaleValue >= 50.0f && CurrentScaleValue <= 100.0f)
+		{
+			CachedTsrScalePercent = CurrentScaleValue;
+		}
+	}
+
 	UWorld* World = GetWorld();
 	if (!IsValid(World) || !World->IsGameWorld())
 	{
@@ -90,6 +113,7 @@ void UInspectorHudBridgeComponent::BeginPlay()
 		CachedContractIndex = ShiftSubsystem->GetCurrentContractIndex();
 		CachedTotalContracts = FMath::Max(1, ShiftSubsystem->GetTotalContractCount());
 		CachedSnapshot = ShiftSubsystem->GetCurrentSnapshot();
+		SnapRollingMassImmediate(CachedSnapshot.SettledScaleMassKg);
 		bCachedReticleVisible = (CachedShiftPhase == EShiftPhase::ActiveInspection);
 		TryArmShift1TutorialForCurrentContract();
 	}
@@ -100,6 +124,8 @@ void UInspectorHudBridgeComponent::BeginPlay()
 
 void UInspectorHudBridgeComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	SnapRollingMassImmediate(0.0f);
+
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(TutorialAutoDismissTimerHandle);
@@ -224,6 +250,45 @@ void UInspectorHudBridgeComponent::ApplyPresentationData(const UTareTithePresent
 	}
 }
 
+void UInspectorHudBridgeComponent::TickComponent(
+	float DeltaTime,
+	ELevelTick TickType,
+	FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	const FPhase12EPresentationPolishConfig Phase12ECfg = ResolvePhase12EConfig();
+	if (!Phase12ECfg.bEnableDampedWeightReadout || !OverlayWidget.IsValid())
+	{
+		DisplayedPanMassKg = TargetPanMassKg;
+		PushBottomCrtConsole();
+		SetComponentTickEnabled(false);
+		return;
+	}
+
+	const float ClampedDt = FMath::Clamp(DeltaTime, 0.0f, 0.05f);
+	DisplayedPanMassKg = FMath::FInterpTo(
+		DisplayedPanMassKg,
+		TargetPanMassKg,
+		ClampedDt,
+		Phase12ECfg.WeightReadoutInterpSpeed);
+
+	if (FMath::IsNearlyEqual(DisplayedPanMassKg, TargetPanMassKg, 0.004f))
+	{
+		DisplayedPanMassKg = TargetPanMassKg;
+		SetComponentTickEnabled(false);
+	}
+
+	PushBottomCrtConsole();
+}
+
+void UInspectorHudBridgeComponent::NotifyScalabilityPresetApplied(int32 QualityLevel, float TsrScalePercent)
+{
+	CachedGraphicsQualityLevel = FMath::Clamp(QualityLevel, 0, 3);
+	CachedTsrScalePercent = FMath::Clamp(TsrScalePercent, 50.0f, 100.0f);
+	PushGraphicsQualityRow();
+}
+
 void UInspectorHudBridgeComponent::MountOverlayIfNeeded()
 {
 	if (bIsMountedToViewport || ActiveHudConfig.bEnableLegacyWorldSpaceReadouts)
@@ -248,6 +313,7 @@ void UInspectorHudBridgeComponent::MountOverlayIfNeeded()
 		.HudConfig(ActiveHudConfig)
 		.InitialLocalViewportSize(InitialLocalSize);
 	OverlayWidget->SetControlsCardExpanded(bControlsCardExpanded);
+	PushGraphicsQualityRow();
 
 	ViewportClient->AddViewportWidgetContent(OverlayWidget.ToSharedRef(), 10);
 	MountedViewportClient = ViewportClient;
@@ -320,6 +386,7 @@ void UInspectorHudBridgeComponent::ResetTransientTelemetryAndHysteresis()
 	CachedClampFatigue = 0.0f;
 	CachedLaserCharge = 0.0f;
 	CachedPreview = FSlicePreviewTelemetry();
+	SnapRollingMassImmediate(0.0f);
 
 	bLatchedIsotopeHazard = false;
 	bLatchedVeinInDrop = false;
@@ -430,6 +497,7 @@ void UInspectorHudBridgeComponent::HandleTutorialAutoDismissTimerElapsed()
 void UInspectorHudBridgeComponent::HandleCareerReset()
 {
 	DismissActiveTutorialHint(false);
+	SnapRollingMassImmediate(0.0f);
 	for (int32 Idx = 0; Idx < 3; ++Idx)
 	{
 		bShift1TutorialStageSeen[Idx] = false;
@@ -511,6 +579,7 @@ void UInspectorHudBridgeComponent::HandleContractSnapshotUpdated(const FContract
 		return;
 	}
 
+	SyncTargetPanMassFromSnapshot(false);
 	PushAllPanels();
 }
 
@@ -527,6 +596,9 @@ void UInspectorHudBridgeComponent::HandleShiftPhaseChanged(EShiftPhase NewPhase)
 	{
 		DismissActiveTutorialHint(false);
 		ResetTransientTelemetryAndHysteresis();
+		// Safeguard 2: ContractIntro has 0.0s IntroDelay and transitions immediately into ActiveInspection in LoadAndBeginContract;
+		// skip throwaway intermediate PushAllPanels() while keeping the ContractIntro -> ActiveInspection transition intact for Hold [R].
+		return;
 	}
 	else if (NewPhase == EShiftPhase::ActiveInspection)
 	{
@@ -541,6 +613,7 @@ void UInspectorHudBridgeComponent::HandleShiftPhaseChanged(EShiftPhase NewPhase)
 				CachedSnapshot = ShiftSubsystem->GetCurrentSnapshot();
 			}
 		}
+		SyncTargetPanMassFromSnapshot(CachedSnapshot.SettledScaleMassKg <= KINDA_SMALL_NUMBER);
 		// Refinement B: Arm Shift-01 tutorial strictly when aiming input unlocks in ActiveInspection.
 		TryArmShift1TutorialForCurrentContract();
 	}
@@ -606,6 +679,8 @@ void UInspectorHudBridgeComponent::HandleActiveContractLoaded(
 			bCachedReticleVisible = (CachedShiftPhase == EShiftPhase::ActiveInspection);
 		}
 	}
+
+	SnapRollingMassImmediate(CachedSnapshot.SettledScaleMassKg);
 
 	if (IsValid(Contract) && CachedSnapshot.ContractDirectiveText.IsEmpty())
 	{
@@ -683,6 +758,7 @@ void UInspectorHudBridgeComponent::PushAllPanels()
 	PushBottomCrtConsole();
 	PushCenterAlertBanner();
 	PushReticleCard();
+	PushGraphicsQualityRow();
 }
 
 void UInspectorHudBridgeComponent::PushTopLeftPanel()
@@ -889,7 +965,49 @@ void UInspectorHudBridgeComponent::PushCenterAlertBanner()
 		VM.PrimaryBannerText = bDirCut
 			? LOCTEXT("DirCutPassStamp", "DIRECTOR'S CUT STAMPED (+2 SCRIP)")
 			: LOCTEXT("StandardPassStamp", "QUOTA STAMPED (+1 SCRIP)");
-		VM.SecondarySubText = LOCTEXT("PassSub", "ADVANCING TO NEXT MONOLITH CONTRACT...");
+
+		const FPhase12EPresentationPolishConfig Phase12ECfg = ResolvePhase12EConfig();
+		if (Phase12ECfg.bEnablePassReceiptSubline)
+		{
+			const float SignedDevKg = CachedSnapshot.LastStampedDeviationKg;
+			const int32 AwardedScrip = (CachedSnapshot.LastStampScripAwarded > 0)
+				? CachedSnapshot.LastStampScripAwarded
+				: (bDirCut ? 2 : 1);
+			const int32 CurShift = FMath::Max(1, CachedSnapshot.CurrentShiftNumber);
+			const int32 TargetShifts = FMath::Max(1, CachedSnapshot.TargetBondShifts);
+			const int32 TotalPerShift = FMath::Max(1, CachedTotalContracts);
+			const int32 TotalBondContracts = FMath::Max(1, TargetShifts * TotalPerShift);
+
+			FString BondSegment;
+			if (CurShift <= TargetShifts)
+			{
+				const int32 CompletedBondContracts = ((CurShift - 1) * TotalPerShift) + (CachedSnapshot.ContractIndex + 1);
+				const int32 RemainingBondContracts = FMath::Clamp(TotalBondContracts - CompletedBondContracts, 0, TotalBondContracts);
+				const int32 BondRemainingPct = FMath::Clamp(
+					FMath::RoundToInt((static_cast<float>(RemainingBondContracts) / static_cast<float>(TotalBondContracts)) * 100.0f),
+					0,
+					100);
+				BondSegment = FString::Printf(TEXT("BOND REMAINING: %d%%"), BondRemainingPct);
+			}
+			else
+			{
+				BondSegment = TEXT("OVERTIME (BOND 0%)");
+			}
+
+			const TCHAR* FastSkipHint = Phase12ECfg.bEnableContractPassFastSkip ? TEXT(" | [E] NEXT") : TEXT("");
+			VM.SecondarySubText = FText::FromString(
+				FString::Printf(
+					TEXT("DEVIATION: %+0.2f KG | SCRIP: +%d | %s%s"),
+					SignedDevKg,
+					AwardedScrip,
+					*BondSegment,
+					FastSkipHint));
+		}
+		else
+		{
+			VM.SecondarySubText = LOCTEXT("PassSub", "ADVANCING TO NEXT MONOLITH CONTRACT...");
+		}
+
 		VM.AccentColor = bDirCut
 			? FLinearColor(1.00f, 0.82f, 0.18f, 1.0f)
 			: FLinearColor(0.10f, 0.98f, 0.44f, 1.0f);
@@ -1189,11 +1307,27 @@ void UInspectorHudBridgeComponent::PushBottomCrtConsole()
 			TolKg,
 			DirTolKg));
 
+	const FPhase12EPresentationPolishConfig Phase12ECfg = ResolvePhase12EConfig();
 	const float SettledKg = FMath::Max(0.0f, CachedSnapshot.SettledScaleMassKg);
-	VM.MassReadoutText = FText::FromString(FString::Printf(TEXT("%05.2f / %05.2f KG"), SettledKg, TargetKg));
+	const float ShownKg = Phase12ECfg.bEnableDampedWeightReadout
+		? FMath::Max(0.0f, DisplayedPanMassKg)
+		: SettledKg;
+	VM.MassReadoutText = FText::FromString(FString::Printf(TEXT("%05.2f / %05.2f KG"), ShownKg, TargetKg));
 
 	const bool bOvershoot = SettledKg > (MaxValidKg + QuotaEpsilonKg);
 	const bool bFaultActive = (CachedShiftPhase == EShiftPhase::FaultResetDelay);
+	const bool bPhysicallySettling =
+		(CachedSnapshot.InFlightMassKg > 0.01f) ||
+		(SettledKg > 0.01f && !CachedSnapshot.bIsReceiverPhysicallySettled && !bOvershoot);
+
+	const FLinearColor SkyBlue(0.45f, 0.84f, 1.00f, 1.0f);
+	const FLinearColor Emerald(0.10f, 0.98f, 0.44f, 1.0f);
+	const FLinearColor Gold(1.00f, 0.84f, 0.18f, 1.0f);
+	const FLinearColor Amber(1.00f, 0.78f, 0.14f, 1.0f);
+	const FLinearColor Crimson(1.00f, 0.24f, 0.18f, 1.0f);
+	const FLinearColor Orange(1.00f, 0.56f, 0.06f, 1.0f);
+	const FLinearColor CoolSlate(0.64f, 0.76f, 0.86f, 0.94f);
+
 	if (bOvershoot || bFaultActive)
 	{
 		VM.MassReadoutColor = FLinearColor(1.00f, 0.22f, 0.16f, 1.0f);
@@ -1204,15 +1338,52 @@ void UInspectorHudBridgeComponent::PushBottomCrtConsole()
 	}
 	else if (CachedSnapshot.bIsWithinQuotaWindow)
 	{
-		VM.MassReadoutColor = FLinearColor(0.10f, 0.98f, 0.44f, 1.0f);
+		VM.MassReadoutColor = Emerald;
 	}
 	else
 	{
-		VM.MassReadoutColor = FLinearColor(1.00f, 0.78f, 0.14f, 1.0f);
+		VM.MassReadoutColor = Amber;
+	}
+
+	VM.bShowMassStatusBadge = Phase12ECfg.bEnableAsciiMassStatusBadge;
+	if (bOvershoot || (bFaultActive && LatchedFaultReason == EContractFaultReason::QuotaOvershoot))
+	{
+		VM.MassStatusBadgeText = FText::FromString(TEXT("[OVER]"));
+		VM.MassStatusBadgeColor = Crimson;
+	}
+	else if (bFaultActive)
+	{
+		VM.MassStatusBadgeText = FText::FromString(TEXT("[FAULT]"));
+		VM.MassStatusBadgeColor = Crimson;
+	}
+	else if (bPhysicallySettling)
+	{
+		VM.MassStatusBadgeText = FText::FromString(TEXT("[SETTLING]"));
+		VM.MassStatusBadgeColor = Gold;
+	}
+	else if (SettledKg <= 0.005f)
+	{
+		VM.MassStatusBadgeText = FText::FromString(TEXT("[EMPTY]"));
+		VM.MassStatusBadgeColor = CoolSlate;
+	}
+	else if (CachedSnapshot.bIsWithinDirectorsCutWindow)
+	{
+		VM.MassStatusBadgeText = FText::FromString(TEXT("[* DIR.CUT]"));
+		VM.MassStatusBadgeColor = Gold;
+	}
+	else if (CachedSnapshot.bIsWithinQuotaWindow)
+	{
+		VM.MassStatusBadgeText = FText::FromString(TEXT("[VALID]"));
+		VM.MassStatusBadgeColor = Emerald;
+	}
+	else
+	{
+		VM.MassStatusBadgeText = FText::FromString(TEXT("[UNDER]"));
+		VM.MassStatusBadgeColor = Amber;
 	}
 
 	const float GaugeMaxKg = FMath::Max(1.0f, MaxValidKg * 1.15f);
-	VM.NormalizedMassFill = FMath::Clamp(SettledKg / GaugeMaxKg, 0.0f, 1.0f);
+	VM.NormalizedMassFill = FMath::Clamp(ShownKg / GaugeMaxKg, 0.0f, 1.0f);
 	VM.NormalizedValidMin = FMath::Clamp(MinValidKg / GaugeMaxKg, 0.0f, 1.0f);
 	VM.NormalizedValidMax = FMath::Clamp(MaxValidKg / GaugeMaxKg, 0.0f, 1.0f);
 	VM.NormalizedDirCutMin = FMath::Clamp(MinDirKg / GaugeMaxKg, 0.0f, 1.0f);
@@ -1224,25 +1395,18 @@ void UInspectorHudBridgeComponent::PushBottomCrtConsole()
 	VM.TareBadgeText = FText::FromString(FString::Printf(TEXT("TARE: %.1f / %.1f KG"), TareKg, MaxTareKg));
 	VM.TareBadgeColor = bTareExceeded
 		? FLinearColor(1.00f, 0.22f, 0.16f, 1.0f)
-		: FLinearColor(1.00f, 0.78f, 0.14f, 1.0f);
+		: Amber;
 
 	if (CachedSnapshot.ActiveDiverterRoute == EDiverterRoute::TareChute)
 	{
 		VM.RouteBadgeText = LOCTEXT("CrtRouteTare", "ROUTE: TARE [SPACE]");
-		VM.RouteBadgeColor = FLinearColor(1.00f, 0.56f, 0.06f, 1.0f);
+		VM.RouteBadgeColor = Orange;
 	}
 	else
 	{
 		VM.RouteBadgeText = LOCTEXT("CrtRouteTithe", "ROUTE: TITHE [SPACE]");
 		VM.RouteBadgeColor = FLinearColor(0.05f, 0.90f, 1.00f, 1.0f);
 	}
-
-	// Operational status line
-	const FLinearColor SkyBlue(0.45f, 0.84f, 1.00f, 1.0f);
-	const FLinearColor Emerald(0.10f, 0.98f, 0.44f, 1.0f);
-	const FLinearColor Gold(1.00f, 0.84f, 0.18f, 1.0f);
-	const FLinearColor Crimson(1.00f, 0.24f, 0.18f, 1.0f);
-	const FLinearColor Orange(1.00f, 0.56f, 0.06f, 1.0f);
 
 	if (bFaultActive)
 	{
@@ -1261,9 +1425,18 @@ void UInspectorHudBridgeComponent::PushBottomCrtConsole()
 	}
 	else if (CachedShiftPhase == EShiftPhase::ContractPassTransition)
 	{
-		VM.OperationalStatusText = CachedSnapshot.bLastStampWasDirectorsCut
-			? LOCTEXT("CrtStatusDirPass", "DIRECTOR'S CUT (+2 SCRIP) - ADVANCING...")
-			: LOCTEXT("CrtStatusStdPass", "QUOTA STAMPED (+1 SCRIP) - ADVANCING...");
+		if (Phase12ECfg.bEnableContractPassFastSkip)
+		{
+			VM.OperationalStatusText = CachedSnapshot.bLastStampWasDirectorsCut
+				? LOCTEXT("CrtStatusDirPassSkip", "DIRECTOR'S CUT (+2) - HOISTING NEXT ([E] SKIP)")
+				: LOCTEXT("CrtStatusStdPassSkip", "STAMPED - HOISTING NEXT ([E] SKIP)");
+		}
+		else
+		{
+			VM.OperationalStatusText = CachedSnapshot.bLastStampWasDirectorsCut
+				? LOCTEXT("CrtStatusDirPass", "DIRECTOR'S CUT (+2 SCRIP) - ADVANCING...")
+				: LOCTEXT("CrtStatusStdPass", "QUOTA STAMPED (+1 SCRIP) - ADVANCING...");
+		}
 		VM.OperationalStatusColor = CachedSnapshot.bLastStampWasDirectorsCut ? Gold : Emerald;
 	}
 	else if (bOvershoot)
@@ -1271,7 +1444,7 @@ void UInspectorHudBridgeComponent::PushBottomCrtConsole()
 		VM.OperationalStatusText = LOCTEXT("CrtStatusOverQuota", "OVER QUOTA - HOLD [R] TO PURGE CELL");
 		VM.OperationalStatusColor = Crimson;
 	}
-	else if (CachedSnapshot.InFlightMassKg > 0.01f || (!CachedSnapshot.bScaleSettledForStamp && SettledKg > 0.01f))
+	else if (bPhysicallySettling)
 	{
 		VM.OperationalStatusText = LOCTEXT("CrtStatusSettling", "SETTLING...");
 		VM.OperationalStatusColor = Gold;
@@ -1305,16 +1478,87 @@ void UInspectorHudBridgeComponent::PushBottomCrtConsole()
 	}
 
 	const FString DiagJson = FString::Printf(
-		TEXT("{\"header\":\"%s\",\"windows\":\"%s\",\"mass\":\"%s\",\"tare\":\"%s\",\"route\":\"%s\",\"status\":\"%s\"}"),
+		TEXT("{\"header\":\"%s\",\"windows\":\"%s\",\"mass\":\"%s\",\"badge\":\"%s\",\"tare\":\"%s\",\"route\":\"%s\",\"status\":\"%s\"}"),
 		*EscapeDiagJsonField(VM.ConsoleHeaderText.ToString()),
 		*EscapeDiagJsonField(VM.WindowsSummaryText.ToString()),
 		*EscapeDiagJsonField(VM.MassReadoutText.ToString()),
+		*EscapeDiagJsonField(VM.MassStatusBadgeText.ToString()),
 		*EscapeDiagJsonField(VM.TareBadgeText.ToString()),
 		*EscapeDiagJsonField(VM.RouteBadgeText.ToString()),
 		*EscapeDiagJsonField(VM.OperationalStatusText.ToString()));
 	CVarDiagBottomCrtJson->Set(*DiagJson, ECVF_SetByCode);
 
 	OverlayWidget->UpdateBottomCrtConsole(VM);
+}
+
+void UInspectorHudBridgeComponent::PushGraphicsQualityRow()
+{
+	if (!OverlayWidget.IsValid())
+	{
+		return;
+	}
+
+	const FPhase12EPresentationPolishConfig Phase12ECfg = ResolvePhase12EConfig();
+	OverlayWidget->SetGraphicsQualityReadout(
+		FormatGraphicsQualityReadout(CachedGraphicsQualityLevel, CachedTsrScalePercent),
+		Phase12ECfg.bEnableControlsGraphicsRow);
+}
+
+void UInspectorHudBridgeComponent::SnapRollingMassImmediate(float NewMassKg)
+{
+	TargetPanMassKg = FMath::Max(0.0f, NewMassKg);
+	DisplayedPanMassKg = TargetPanMassKg;
+	if (IsComponentTickEnabled())
+	{
+		SetComponentTickEnabled(false);
+	}
+}
+
+void UInspectorHudBridgeComponent::SyncTargetPanMassFromSnapshot(bool bForceSnap)
+{
+	const FPhase12EPresentationPolishConfig Phase12ECfg = ResolvePhase12EConfig();
+	const float AuthSettledKg = FMath::Max(0.0f, CachedSnapshot.SettledScaleMassKg);
+	if (bForceSnap || !Phase12ECfg.bEnableDampedWeightReadout)
+	{
+		SnapRollingMassImmediate(AuthSettledKg);
+		return;
+	}
+
+	TargetPanMassKg = AuthSettledKg;
+	if (FMath::Abs(TargetPanMassKg - DisplayedPanMassKg) > 0.005f)
+	{
+		if (!IsComponentTickEnabled())
+		{
+			SetComponentTickEnabled(true);
+		}
+	}
+	else
+	{
+		DisplayedPanMassKg = TargetPanMassKg;
+		if (IsComponentTickEnabled())
+		{
+			SetComponentTickEnabled(false);
+		}
+	}
+}
+
+FPhase12EPresentationPolishConfig UInspectorHudBridgeComponent::ResolvePhase12EConfig() const
+{
+	return IsValid(PresentationData)
+		? PresentationData->Phase12EPolishConfig.GetSanitized()
+		: FPhase12EPresentationPolishConfig();
+}
+
+FText UInspectorHudBridgeComponent::FormatGraphicsQualityReadout(int32 QualityLevel, float TsrScalePercent)
+{
+	static const TCHAR* TierNames[4] = { TEXT("LOW"), TEXT("MED"), TEXT("HIGH"), TEXT("EPIC") };
+	const int32 SafeTier = FMath::Clamp(QualityLevel, 0, 3);
+	const int32 RoundedPct = FMath::Clamp(FMath::RoundToInt(TsrScalePercent), 50, 100);
+	if (SafeTier == 3 && RoundedPct >= 100)
+	{
+		return FText::FromString(FString::Printf(TEXT("GFX: %s (%d%%)"), TierNames[SafeTier], RoundedPct));
+	}
+	return FText::FromString(FString::Printf(TEXT("GFX: %s (TSR %d%%)"), TierNames[SafeTier], RoundedPct));
 }
 
 FText UInspectorHudBridgeComponent::FormatFaultStampHeadline(EContractFaultReason FaultReason)
@@ -1578,6 +1822,7 @@ void UInspectorHudBridgeComponent::SetControlsCardExpanded(bool bExpanded)
 	if (OverlayWidget.IsValid())
 	{
 		OverlayWidget->SetControlsCardExpanded(bControlsCardExpanded);
+		PushGraphicsQualityRow();
 		PushReticleCard();
 	}
 }

@@ -19,6 +19,7 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "GeometryScript/CollisionFunctions.h"
+#include "GeometryScript/MeshAssetFunctions.h"
 #include "HAL/PlatformTime.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
@@ -26,23 +27,26 @@
 #include "PhysicsEngine/BodySetup.h"
 #include "Subsystems/InspectionShiftSubsystem.h"
 #include "UObject/ConstructorHelpers.h"
+#include "UObject/Package.h"
 
 namespace
 {
-	bool BuildFast26DopSingleConvexCollision(
+	bool ExtractFast26DopConvexGeom(
 		UDynamicMesh* DynMesh,
-		UDynamicMeshComponent* TargetComponent,
-		float MinThicknessCm)
+		float MinThicknessCm,
+		FKAggregateGeom& OutFastAggGeom,
+		FBox& OutMeshBounds)
 	{
-		if (!IsValid(DynMesh) || !IsValid(TargetComponent))
+		OutFastAggGeom.EmptyElements();
+		OutMeshBounds = FBox(ForceInit);
+		if (!IsValid(DynMesh))
 		{
 			return false;
 		}
 
 		TArray<FVector, TInlineAllocator<32>> HullVertices;
-		FBox MeshBounds(ForceInit);
 
-		DynMesh->ProcessMesh([&HullVertices, &MeshBounds, MinThicknessCm](const UE::Geometry::FDynamicMesh3& ReadMesh)
+		DynMesh->ProcessMesh([&HullVertices, &OutMeshBounds, MinThicknessCm](const UE::Geometry::FDynamicMesh3& ReadMesh)
 		{
 			if (ReadMesh.VertexCount() < 4)
 			{
@@ -74,7 +78,7 @@ namespace
 			for (int32 Vid : ReadMesh.VertexIndicesItr())
 			{
 				const FVector Pos(ReadMesh.GetVertex(Vid));
-				MeshBounds += Pos;
+				OutMeshBounds += Pos;
 				for (int32 DirIdx = 0; DirIdx < 26; ++DirIdx)
 				{
 					const double Dot =
@@ -112,11 +116,11 @@ namespace
 				}
 			}
 
-			if (MeshBounds.IsValid && HullVertices.Num() >= 3)
+			if (OutMeshBounds.IsValid && HullVertices.Num() >= 3)
 			{
 				const double SafeMinThick = FMath::Max(0.1, static_cast<double>(MinThicknessCm));
-				const FVector Center = MeshBounds.GetCenter();
-				const FVector Size = MeshBounds.GetSize();
+				const FVector Center = OutMeshBounds.GetCenter();
+				const FVector Size = OutMeshBounds.GetSize();
 				for (int32 Axis = 0; Axis < 3; ++Axis)
 				{
 					if (Size[Axis] < SafeMinThick)
@@ -130,7 +134,7 @@ namespace
 			}
 		});
 
-		if (HullVertices.Num() < 4 || !MeshBounds.IsValid)
+		if (HullVertices.Num() < 4 || !OutMeshBounds.IsValid)
 		{
 			return false;
 		}
@@ -143,8 +147,27 @@ namespace
 		}
 		ConvexElem.UpdateElemBox();
 
+		OutFastAggGeom.ConvexElems.Add(MoveTemp(ConvexElem));
+		return true;
+	}
+
+	bool BuildFast26DopSingleConvexCollision(
+		UDynamicMesh* DynMesh,
+		UDynamicMeshComponent* TargetComponent,
+		float MinThicknessCm,
+		FGeometryScriptSimpleCollision* OutBuiltSimpleCollision = nullptr)
+	{
+		if (!IsValid(DynMesh) || !IsValid(TargetComponent))
+		{
+			return false;
+		}
+
 		FKAggregateGeom FastAggGeom;
-		FastAggGeom.ConvexElems.Add(MoveTemp(ConvexElem));
+		FBox MeshBounds(ForceInit);
+		if (!ExtractFast26DopConvexGeom(DynMesh, MinThicknessCm, FastAggGeom, MeshBounds))
+		{
+			return false;
+		}
 
 		TargetComponent->bUseAsyncCooking = false;
 		TargetComponent->SetSimpleCollisionShapes(FastAggGeom, true);
@@ -154,6 +177,10 @@ namespace
 			BodySetup->AggGeom.ConvexElems.Num() > 0 &&
 			BodySetup->AggGeom.ConvexElems[0].GetChaosConvexMesh().IsValid())
 		{
+			if (OutBuiltSimpleCollision != nullptr)
+			{
+				OutBuiltSimpleCollision->AggGeom = FastAggGeom;
+			}
 			return true;
 		}
 
@@ -167,7 +194,15 @@ namespace
 		TargetComponent->SetSimpleCollisionShapes(BoxAggGeom, true);
 
 		BodySetup = TargetComponent->GetBodySetup();
-		return IsValid(BodySetup) && (BodySetup->AggGeom.GetElementCount() > 0);
+		if (IsValid(BodySetup) && (BodySetup->AggGeom.GetElementCount() > 0))
+		{
+			if (OutBuiltSimpleCollision != nullptr)
+			{
+				OutBuiltSimpleCollision->AggGeom = BoxAggGeom;
+			}
+			return true;
+		}
+		return false;
 	}
 }
 
@@ -439,6 +474,7 @@ void AMonolithRigActor::BeginPlay()
 			{
 				ApplyPresentationData(ExistingPresentation);
 			}
+			PreWarmInitial26DopCollisions(ShiftSubsystem->GetActiveShiftProgression());
 			HandleContractSnapshotUpdated(ShiftSubsystem->GetCurrentSnapshot());
 
 			ShiftSubsystem->RegisterTelemetryPublisher(this, this);
@@ -483,6 +519,8 @@ void AMonolithRigActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		ClampTorqueSolverComponent->OnTelemetryImpulse.RemoveAll(this);
 		ClampTorqueSolverComponent->OnClampStructuralSnap.RemoveAll(this);
 	}
+
+	CachedInitial26DopCollisions.Reset();
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -854,7 +892,7 @@ bool AMonolithRigActor::LoadContractOnRig(
 	const FVector MountLocalCoMCm = TransformRemainderCoMToMountLocal(MonolithSliceComponent->GetRemainderLocalCoMCm());
 	ClampTorqueSolverComponent->InitializeFromContract(Contract, InitialMassKg, MountLocalCoMCm);
 
-	PreCookRemainderSimpleCollision();
+	PreCookRemainderSimpleCollision(true);
 
 	OutInitialMassKg = InitialMassKg;
 	return true;
@@ -1451,52 +1489,166 @@ void AMonolithRigActor::SetClampTorqueCapacityMultiplierForTest(float InMultipli
 	}
 }
 
-void AMonolithRigActor::PreCookRemainderSimpleCollision()
+void AMonolithRigActor::PreWarmInitial26DopCollisions(const UShiftProgressionDataAsset* ProgressionAsset)
+{
+	const FPhase12EPresentationPolishConfig Phase12ECfg = IsValid(PresentationData)
+		? PresentationData->Phase12EPolishConfig.GetSanitized()
+		: FPhase12EPresentationPolishConfig();
+	if (!Phase12ECfg.bEnableInitial26DopCollisionCache || !IsValid(ProgressionAsset))
+	{
+		return;
+	}
+
+	UDynamicMesh* ScratchMesh = nullptr;
+	for (const TObjectPtr<UMonolithContractDataAsset>& ContractPtr : ProgressionAsset->OrderedContracts)
+	{
+		const UMonolithContractDataAsset* Contract = ContractPtr.Get();
+		if (!IsValid(Contract) ||
+			CachedInitial26DopCollisions.Contains(Contract) ||
+			Contract->BaseShape != EMonolithBaseShape::CustomStaticMesh ||
+			!IsValid(Contract->CustomMonolithMesh))
+		{
+			continue;
+		}
+
+		if (!IsValid(ScratchMesh))
+		{
+			ScratchMesh = NewObject<UDynamicMesh>(GetTransientPackage());
+		}
+		else
+		{
+			ScratchMesh->Reset();
+		}
+
+		FGeometryScriptCopyMeshFromAssetOptions AssetOptions;
+		AssetOptions.bApplyBuildSettings = true;
+		AssetOptions.bRequestTangents = false;
+		AssetOptions.bIgnoreRemoveDegenerates = false;
+
+		FGeometryScriptMeshReadLOD ReadLOD;
+		ReadLOD.LODType = EGeometryScriptLODType::MaxAvailable;
+		ReadLOD.LODIndex = 0;
+
+		EGeometryScriptOutcomePins CopyOutcome = EGeometryScriptOutcomePins::Failure;
+		UGeometryScriptLibrary_StaticMeshFunctions::CopyMeshFromStaticMesh(
+			Contract->CustomMonolithMesh.Get(),
+			ScratchMesh,
+			AssetOptions,
+			ReadLOD,
+			CopyOutcome,
+			nullptr);
+
+		if (CopyOutcome == EGeometryScriptOutcomePins::Success)
+		{
+			FKAggregateGeom PreWarmedAggGeom;
+			FBox BoundsUnused(ForceInit);
+			if (ExtractFast26DopConvexGeom(ScratchMesh, 0.5f, PreWarmedAggGeom, BoundsUnused))
+			{
+				FGeometryScriptSimpleCollision PreWarmedSimpleCollision;
+				PreWarmedSimpleCollision.AggGeom = MoveTemp(PreWarmedAggGeom);
+				CachedInitial26DopCollisions.Add(Contract, MoveTemp(PreWarmedSimpleCollision));
+			}
+		}
+	}
+
+	if (IsValid(ScratchMesh))
+	{
+		ScratchMesh->Reset();
+		ScratchMesh->MarkAsGarbage();
+	}
+}
+
+void AMonolithRigActor::PreCookRemainderSimpleCollision(bool bIsInitialContractLoad)
 {
 	const double PreCookStartSec = FPlatformTime::Seconds();
 	bRemainderSimpleCollisionPreCooked = false;
 
+	const FPhase12EPresentationPolishConfig Phase12ECfg = IsValid(PresentationData)
+		? PresentationData->Phase12EPolishConfig.GetSanitized()
+		: FPhase12EPresentationPolishConfig();
+	const bool bUseInitialCache = bIsInitialContractLoad &&
+		Phase12ECfg.bEnableInitial26DopCollisionCache &&
+		IsValid(CachedLoadedContract);
+
 	if (IsValid(RemainderMeshComponent))
 	{
-		if (UDynamicMesh* DynMesh = RemainderMeshComponent->GetDynamicMesh())
+		if (bUseInitialCache)
 		{
-			const int32 TriCount = DynMesh->GetTriangleCount();
-			if (TriCount > 48)
+			if (const FGeometryScriptSimpleCollision* CachedCollision = CachedInitial26DopCollisions.Find(CachedLoadedContract))
 			{
-				bRemainderSimpleCollisionPreCooked = BuildFast26DopSingleConvexCollision(
-					DynMesh,
-					RemainderMeshComponent,
-					0.5f);
-			}
-			else if (TriCount >= 4)
-			{
-				FGeometryScriptCollisionFromMeshOptions PreCookOptions;
-				PreCookOptions.bEmitTransaction = false;
-				PreCookOptions.Method = EGeometryScriptCollisionGenerationMethod::ConvexHulls;
-				PreCookOptions.bSimplifyHulls = true;
-				PreCookOptions.MaxConvexHullsPerMesh = 1;
-				PreCookOptions.ConvexHullTargetFaceCount = 16;
-				PreCookOptions.MinThickness = 0.5f;
-
-				UGeometryScriptLibrary_CollisionFunctions::SetDynamicMeshCollisionFromMesh(
-					DynMesh,
-					RemainderMeshComponent,
-					PreCookOptions,
-					nullptr);
-
-				const UBodySetup* BodySetup = RemainderMeshComponent->GetBodySetup();
-				if (!IsValid(BodySetup) || BodySetup->AggGeom.GetElementCount() == 0)
+				if (CachedCollision->AggGeom.GetElementCount() > 0)
 				{
-					PreCookOptions.Method = EGeometryScriptCollisionGenerationMethod::AlignedBoxes;
+					RemainderMeshComponent->bUseAsyncCooking = false;
+					RemainderMeshComponent->SetSimpleCollisionShapes(CachedCollision->AggGeom, true);
+					const UBodySetup* CachedBodySetup = RemainderMeshComponent->GetBodySetup();
+					if (IsValid(CachedBodySetup) && (CachedBodySetup->AggGeom.GetElementCount() > 0))
+					{
+						const bool bHasValidConvexOrPrim =
+							(CachedBodySetup->AggGeom.ConvexElems.Num() == 0) ||
+							CachedBodySetup->AggGeom.ConvexElems[0].GetChaosConvexMesh().IsValid();
+						if (bHasValidConvexOrPrim)
+						{
+							bRemainderSimpleCollisionPreCooked = true;
+						}
+					}
+				}
+			}
+		}
+
+		if (!bRemainderSimpleCollisionPreCooked)
+		{
+			if (UDynamicMesh* DynMesh = RemainderMeshComponent->GetDynamicMesh())
+			{
+				const int32 TriCount = DynMesh->GetTriangleCount();
+				if (TriCount > 48)
+				{
+					FGeometryScriptSimpleCollision BuiltCollision;
+					bRemainderSimpleCollisionPreCooked = BuildFast26DopSingleConvexCollision(
+						DynMesh,
+						RemainderMeshComponent,
+						0.5f,
+						bUseInitialCache ? &BuiltCollision : nullptr);
+					if (bRemainderSimpleCollisionPreCooked && bUseInitialCache && BuiltCollision.AggGeom.GetElementCount() > 0)
+					{
+						CachedInitial26DopCollisions.Add(CachedLoadedContract, MoveTemp(BuiltCollision));
+					}
+				}
+				else if (TriCount >= 4)
+				{
+					FGeometryScriptCollisionFromMeshOptions PreCookOptions;
+					PreCookOptions.bEmitTransaction = false;
+					PreCookOptions.Method = EGeometryScriptCollisionGenerationMethod::ConvexHulls;
+					PreCookOptions.bSimplifyHulls = true;
+					PreCookOptions.MaxConvexHullsPerMesh = 1;
+					PreCookOptions.ConvexHullTargetFaceCount = 16;
+					PreCookOptions.MinThickness = 0.5f;
+
 					UGeometryScriptLibrary_CollisionFunctions::SetDynamicMeshCollisionFromMesh(
 						DynMesh,
 						RemainderMeshComponent,
 						PreCookOptions,
 						nullptr);
-					BodySetup = RemainderMeshComponent->GetBodySetup();
-				}
 
-				bRemainderSimpleCollisionPreCooked = IsValid(BodySetup) && (BodySetup->AggGeom.GetElementCount() > 0);
+					const UBodySetup* BodySetup = RemainderMeshComponent->GetBodySetup();
+					if (!IsValid(BodySetup) || BodySetup->AggGeom.GetElementCount() == 0)
+					{
+						PreCookOptions.Method = EGeometryScriptCollisionGenerationMethod::AlignedBoxes;
+						UGeometryScriptLibrary_CollisionFunctions::SetDynamicMeshCollisionFromMesh(
+							DynMesh,
+							RemainderMeshComponent,
+							PreCookOptions,
+							nullptr);
+						BodySetup = RemainderMeshComponent->GetBodySetup();
+					}
+
+					bRemainderSimpleCollisionPreCooked = IsValid(BodySetup) && (BodySetup->AggGeom.GetElementCount() > 0);
+					if (bRemainderSimpleCollisionPreCooked && bUseInitialCache && IsValid(BodySetup))
+					{
+						FGeometryScriptSimpleCollision BuiltBoxOrHull;
+						BuiltBoxOrHull.AggGeom = BodySetup->AggGeom;
+						CachedInitial26DopCollisions.Add(CachedLoadedContract, MoveTemp(BuiltBoxOrHull));
+					}
+				}
 			}
 		}
 	}

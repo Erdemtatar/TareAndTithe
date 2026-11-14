@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "GeometryScript/GeometryScriptTypes.h"
 #include "Core/TareTitheTypes.h"
 #include "Interfaces/SliceableTargetInterface.h"
 #include "Interfaces/TelemetryPublisherInterface.h"
@@ -232,7 +233,10 @@ private:
 	void HandleChunkSpawnedFromSlice(ASeveredChunkActor* SpawnedChunk);
 	void HandleSliverVaporized(float VaporizedMassKg, const FVector& WorldLocation);
 	void HandleClampStructuralSnap();
-	void PreCookRemainderSimpleCollision();
+	void PreWarmInitial26DopCollisions(const UShiftProgressionDataAsset* ProgressionAsset);
+	void PreCookRemainderSimpleCollision(bool bIsInitialContractLoad = false);
+
+	TMap<TObjectPtr<const UMonolithContractDataAsset>, FGeometryScriptSimpleCollision> CachedInitial26DopCollisions;
 
 	UPROPERTY()
 	TObjectPtr<UStaticMesh> FallbackCubeMesh;

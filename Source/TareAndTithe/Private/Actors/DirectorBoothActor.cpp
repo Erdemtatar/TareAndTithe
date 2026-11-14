@@ -834,8 +834,14 @@ void ADirectorBoothActor::HandleShiftVerdict(EShiftVerdictType Verdict, EContrac
 	}
 	case EShiftVerdictType::DirectorsCutPassed:
 	{
+		const FPhase12EPresentationPolishConfig Phase12ECfg = IsValid(PresentationData)
+			? PresentationData->Phase12EPolishConfig.GetSanitized()
+			: FPhase12EPresentationPolishConfig();
+		const float PassShutterAlpha = Phase12ECfg.bEnableSnappyContractTransition
+			? Phase12ECfg.ContractPassShutterDipAlpha
+			: 1.0f;
 		bUseFastFaultShutterSlam = false;
-		SetShutterTargetOpenAlpha(1.0f, false);
+		SetShutterTargetOpenAlpha(PassShutterAlpha, false);
 		SetPanopticonLampState(FLinearColor(1.00f, 0.78f, 0.16f, 1.0f), 1.45f);
 		SetWindowGlowCardsState(SurvCfg.IdleWindowCardBaseColor, SurvCfg.IdleWindowCardEmissive, true);
 		RefreshDirectorIntercomWingReadout();
@@ -843,8 +849,14 @@ void ADirectorBoothActor::HandleShiftVerdict(EShiftVerdictType Verdict, EContrac
 	}
 	case EShiftVerdictType::ContractPassed:
 	{
+		const FPhase12EPresentationPolishConfig Phase12ECfg = IsValid(PresentationData)
+			? PresentationData->Phase12EPolishConfig.GetSanitized()
+			: FPhase12EPresentationPolishConfig();
+		const float PassShutterAlpha = Phase12ECfg.bEnableSnappyContractTransition
+			? Phase12ECfg.ContractPassShutterDipAlpha
+			: 1.0f;
 		bUseFastFaultShutterSlam = false;
-		SetShutterTargetOpenAlpha(1.0f, false);
+		SetShutterTargetOpenAlpha(PassShutterAlpha, false);
 		SetPanopticonLampState(VerdictApprovedLampColor, 1.0f);
 		SetWindowGlowCardsState(SurvCfg.IdleWindowCardBaseColor, SurvCfg.IdleWindowCardEmissive, true);
 		RefreshDirectorIntercomWingReadout();

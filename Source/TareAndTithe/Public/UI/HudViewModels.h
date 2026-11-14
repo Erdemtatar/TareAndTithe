@@ -84,6 +84,9 @@ struct FBottomCrtConsoleViewModel
 	FText WindowsSummaryText;
 	FText MassReadoutText;
 	FLinearColor MassReadoutColor = FLinearColor(1.00f, 0.78f, 0.12f, 1.0f);
+	FText MassStatusBadgeText;
+	FLinearColor MassStatusBadgeColor = FLinearColor(0.64f, 0.76f, 0.86f, 0.94f);
+	bool bShowMassStatusBadge = true;
 	FText TareBadgeText;
 	FLinearColor TareBadgeColor = FLinearColor(1.00f, 0.78f, 0.12f, 1.0f);
 	FText RouteBadgeText;

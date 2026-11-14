@@ -47,6 +47,18 @@ void UInspectorKinestheticsComponent::BindShakeAndCameraComponents(
 	ShakeOffsetComponent = InShakeOffsetComponent;
 	CameraComponent = InCameraComponent;
 	BaseFieldOfView = FMath::Clamp(InBaseFieldOfView, 60.0f, 115.0f);
+	if (IsValid(CameraComponent))
+	{
+		bBaseOverrideSceneFringe = CameraComponent->PostProcessSettings.bOverride_SceneFringeIntensity != 0;
+		BaseSceneFringeIntensity = bBaseOverrideSceneFringe
+			? CameraComponent->PostProcessSettings.SceneFringeIntensity
+			: 0.0f;
+	}
+	else
+	{
+		bBaseOverrideSceneFringe = false;
+		BaseSceneFringeIntensity = 0.0f;
+	}
 	ResetKinestheticsImmediate();
 }
 
@@ -86,6 +98,13 @@ void UInspectorKinestheticsComponent::ResetKinestheticsImmediate()
 	CurrentFovOffsetDegrees = 0.0f;
 	CurrentChargeNormalized = 0.0f;
 	ChargeHumPhaseSeconds = 0.0;
+	StampFovPunchElapsedSeconds = 0.0f;
+	StampFovPunchScale = 1.0f;
+	CurrentStampFovPunchDegrees = 0.0f;
+	bStampFovPunchActive = false;
+	FaultChromaticElapsedSeconds = 0.0f;
+	FaultChromaticPeakActive = 0.0f;
+	bFaultChromaticPulseActive = false;
 
 	if (IsValid(ShakeOffsetComponent))
 	{
@@ -94,6 +113,8 @@ void UInspectorKinestheticsComponent::ResetKinestheticsImmediate()
 	if (IsValid(CameraComponent))
 	{
 		CameraComponent->SetFieldOfView(BaseFieldOfView);
+		CameraComponent->PostProcessSettings.SceneFringeIntensity = BaseSceneFringeIntensity;
+		CameraComponent->PostProcessSettings.bOverride_SceneFringeIntensity = bBaseOverrideSceneFringe ? 1 : 0;
 	}
 
 	SetComponentTickEnabled(false);
@@ -171,7 +192,11 @@ void UInspectorKinestheticsComponent::TickComponent(
 		ChargeHumPhaseSeconds = 0.0;
 	}
 
-	// Tension FOV pull (90.0 -> 88.6 deg) during charge and crisp release back to 90.0 deg.
+	const FPhase12EPresentationPolishConfig Phase12ECfg = IsValid(PresentationData)
+		? PresentationData->Phase12EPolishConfig.GetSanitized()
+		: FPhase12EPresentationPolishConfig();
+
+	// Tension FOV pull (85.0 -> 83.6 deg) during charge and crisp release back to baseline.
 	const float TargetFovOffset = (CurrentChargeNormalized > KINDA_SMALL_NUMBER)
 		? (-MaxChargeFovPullDegrees * CurrentChargeNormalized)
 		: 0.0f;
@@ -179,6 +204,54 @@ void UInspectorKinestheticsComponent::TickComponent(
 		? ChargeFovPullInterpSpeed
 		: FovReleaseInterpSpeed;
 	CurrentFovOffsetDegrees = FMath::FInterpTo(CurrentFovOffsetDegrees, TargetFovOffset, ClampedDelta, ActiveFovSpeed);
+
+	// Phase 12E: 0.18s 1.5 deg camera FOV punch on valid [E] pass stamp (85.0 -> 83.5 -> 85.0 deg).
+	if (bStampFovPunchActive)
+	{
+		StampFovPunchElapsedSeconds += ClampedDelta;
+		const float PunchDuration = Phase12ECfg.StampFovPunchDurationSeconds;
+		if (!Phase12ECfg.bEnableStampFovPunch || StampFovPunchElapsedSeconds >= PunchDuration)
+		{
+			bStampFovPunchActive = false;
+			StampFovPunchElapsedSeconds = 0.0f;
+			CurrentStampFovPunchDegrees = 0.0f;
+		}
+		else
+		{
+			const float NormT = FMath::Clamp(StampFovPunchElapsedSeconds / PunchDuration, 0.0f, 1.0f);
+			const float RawEnv = (NormT < 0.30f) ? (NormT / 0.30f) : ((1.0f - NormT) / 0.70f);
+			const float SmoothEnv = RawEnv * RawEnv * (3.0f - 2.0f * RawEnv);
+			CurrentStampFovPunchDegrees = -Phase12ECfg.StampFovPunchDegrees * StampFovPunchScale * SmoothEnv;
+		}
+	}
+	else
+	{
+		CurrentStampFovPunchDegrees = 0.0f;
+	}
+
+	// Phase 12E: 0.25s Chromatic Aberration camera glitch pulse on FaultTriggered with exact baseline restore.
+	float ActiveSceneFringe = BaseSceneFringeIntensity;
+	bool bOverrideSceneFringeNow = bBaseOverrideSceneFringe;
+	if (bFaultChromaticPulseActive)
+	{
+		FaultChromaticElapsedSeconds += ClampedDelta;
+		const float FringeDuration = Phase12ECfg.FaultChromaticDurationSeconds;
+		if (!Phase12ECfg.bEnableFaultChromaticPulse || FaultChromaticElapsedSeconds >= FringeDuration)
+		{
+			bFaultChromaticPulseActive = false;
+			FaultChromaticElapsedSeconds = 0.0f;
+			FaultChromaticPeakActive = 0.0f;
+		}
+		else
+		{
+			const float NormT = FMath::Clamp(FaultChromaticElapsedSeconds / FringeDuration, 0.0f, 1.0f);
+			const float FringeEnv = (NormT < 0.16f)
+				? (NormT / 0.16f)
+				: (0.5f * (1.0f + FMath::Cos(UE_PI * ((NormT - 0.16f) / 0.84f))));
+			ActiveSceneFringe = BaseSceneFringeIntensity + (FaultChromaticPeakActive * FringeEnv);
+			bOverrideSceneFringeNow = true;
+		}
+	}
 
 	if (HasConvergedToRest())
 	{
@@ -198,7 +271,9 @@ void UInspectorKinestheticsComponent::TickComponent(
 
 	if (IsValid(CameraComponent))
 	{
-		CameraComponent->SetFieldOfView(BaseFieldOfView + CurrentFovOffsetDegrees);
+		CameraComponent->SetFieldOfView(BaseFieldOfView + CurrentFovOffsetDegrees + CurrentStampFovPunchDegrees);
+		CameraComponent->PostProcessSettings.SceneFringeIntensity = ActiveSceneFringe;
+		CameraComponent->PostProcessSettings.bOverride_SceneFringeIntensity = bOverrideSceneFringeNow ? 1 : 0;
 	}
 }
 
@@ -222,6 +297,9 @@ void UInspectorKinestheticsComponent::HandleTelemetryImpulse(
 	const FVector& WorldLocation)
 {
 	const float ClampedMag = FMath::Clamp(NormalizedMagnitude, 0.0f, 1.0f);
+	const FPhase12EPresentationPolishConfig Phase12ECfg = IsValid(PresentationData)
+		? PresentationData->Phase12EPolishConfig.GetSanitized()
+		: FPhase12EPresentationPolishConfig();
 
 	switch (ImpulseId)
 	{
@@ -243,9 +321,23 @@ void UInspectorKinestheticsComponent::HandleTelemetryImpulse(
 		EnsureActiveTickEnabled();
 		break;
 	}
+	case ETelemetryImpulseId::VerdictStamped:
+	{
+		if (Phase12ECfg.bEnableStampFovPunch && Phase12ECfg.StampFovPunchDegrees > KINDA_SMALL_NUMBER)
+		{
+			bStampFovPunchActive = true;
+			StampFovPunchElapsedSeconds = 0.0f;
+			StampFovPunchScale = FMath::Max(0.25f, ClampedMag);
+			EnsureActiveTickEnabled();
+		}
+		break;
+	}
 	case ETelemetryImpulseId::FaultTriggered:
 	{
 		CurrentChargeNormalized = 0.0f;
+		bStampFovPunchActive = false;
+		StampFovPunchElapsedSeconds = 0.0f;
+		CurrentStampFovPunchDegrees = 0.0f;
 		float EffectiveFaultScale = ClampedMag;
 		if (const UWorld* World = GetWorld())
 		{
@@ -262,6 +354,12 @@ void UInspectorKinestheticsComponent::HandleTelemetryImpulse(
 		RecoilVelocityCmPerSec.Z -= FaultThudDownwardImpulseCmPerSec * EffectiveFaultScale;
 		RecoilAngularVelocityDegPerSec.Y -= FaultThudPitchImpulseDegPerSec * EffectiveFaultScale;
 		RecoilAngularVelocityDegPerSec.X += FaultThudRollImpulseDegPerSec * EffectiveFaultScale * FaultRollAlternatingSign;
+		if (Phase12ECfg.bEnableFaultChromaticPulse && Phase12ECfg.FaultChromaticPeakIntensity > KINDA_SMALL_NUMBER)
+		{
+			bFaultChromaticPulseActive = true;
+			FaultChromaticElapsedSeconds = 0.0f;
+			FaultChromaticPeakActive = Phase12ECfg.FaultChromaticPeakIntensity * EffectiveFaultScale;
+		}
 		EnsureActiveTickEnabled();
 		break;
 	}
@@ -384,10 +482,13 @@ void UInspectorKinestheticsComponent::EnsureActiveTickEnabled()
 
 bool UInspectorKinestheticsComponent::HasConvergedToRest() const
 {
-	return (CurrentChargeNormalized <= KINDA_SMALL_NUMBER) &&
+	return !bStampFovPunchActive &&
+		!bFaultChromaticPulseActive &&
+		(CurrentChargeNormalized <= KINDA_SMALL_NUMBER) &&
 		(RecoilOffsetCm.SizeSquared() <= (RestPositionEpsilonCm * RestPositionEpsilonCm)) &&
 		(RecoilVelocityCmPerSec.SizeSquared() <= (RestVelocityEpsilonCmPerSec * RestVelocityEpsilonCmPerSec)) &&
 		(RecoilRotationDeg.SizeSquared() <= (RestAngleEpsilonDeg * RestAngleEpsilonDeg)) &&
 		(RecoilAngularVelocityDegPerSec.SizeSquared() <= (RestAngVelEpsilonDegPerSec * RestAngVelEpsilonDegPerSec)) &&
-		(FMath::Abs(CurrentFovOffsetDegrees) <= RestFovEpsilonDeg);
+		(FMath::Abs(CurrentFovOffsetDegrees) <= RestFovEpsilonDeg) &&
+		(FMath::Abs(CurrentStampFovPunchDegrees) <= RestFovEpsilonDeg);
 }

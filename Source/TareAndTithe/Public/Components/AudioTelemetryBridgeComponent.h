@@ -140,6 +140,9 @@ private:
 	void SilenceClampGroanFast();
 	void HandlePostFadeZeroVolumeElapsed();
 	void MuteAndCutoffLoopsForFaultOrPhaseExit();
+	void ArmFaultAmbienceDuck();
+	void HandleFaultAmbienceDuckTimerStep();
+	void CancelFaultAmbienceDuckAndRestoreBaseline();
 
 	void SpawnSpatialImpulseSoundIfAssigned(ETelemetryImpulseId ImpulseId, float ClampedMagnitude, const FVector& WorldLocation);
 	void ForwardFloatToBoundAudio(FName ParameterName, float Value);
@@ -182,8 +185,11 @@ private:
 	float LastMetaSoundClampStrainParam = 0.15f;
 
 	uint8 SurgeStage = 0;
+	uint8 FaultAmbienceDuckStage = 0;
+	bool bFaultAmbienceDuckActive = false;
 	FTimerHandle GroanSurgeTimerHandle;
 	FTimerHandle GroanPostFadeZeroTimerHandle;
+	FTimerHandle FaultAmbienceDuckTimerHandle;
 
 	TArray<FPublisherSubscription> ActiveSubscriptions;
 	TArray<TWeakObjectPtr<UAudioComponent>> BoundAudioComponents;

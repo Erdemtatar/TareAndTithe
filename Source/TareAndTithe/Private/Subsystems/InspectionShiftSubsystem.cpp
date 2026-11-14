@@ -539,6 +539,7 @@ bool UInspectionShiftSubsystem::TryStampQuotaVerdict()
 	const int32 AwardedScrip = bPrecisionStamp ? 2 : 1;
 	ScripBalance += AwardedScrip;
 	LastStampScripAwarded = AwardedScrip;
+	LastStampedDeviationKg = SettledMassKg - ActiveContract->TargetTitheMassKg;
 	bLastStampWasDirectorsCut = bPrecisionStamp;
 	ClearTransientRequisitionFeedback();
 
@@ -553,6 +554,19 @@ bool UInspectionShiftSubsystem::TryStampQuotaVerdict()
 	const int32 TotalContracts = GetTotalContractCount();
 	if (CurrentContractIndex + 1 < TotalContracts)
 	{
+		const FPhase12EPresentationPolishConfig Phase12ECfg = IsValid(ActivePresentationAsset)
+			? ActivePresentationAsset->Phase12EPolishConfig.GetSanitized()
+			: FPhase12EPresentationPolishConfig();
+
+		if (const UWorld* World = GetWorld())
+		{
+			ContractPassEnteredWorldTimeSec = World->GetTimeSeconds();
+		}
+		else
+		{
+			ContractPassEnteredWorldTimeSec = 0.0;
+		}
+
 		SetShiftPhase(EShiftPhase::ContractPassTransition);
 		RefreshAndBroadcastSnapshot();
 		OnShiftVerdict.Broadcast(
@@ -561,9 +575,12 @@ bool UInspectionShiftSubsystem::TryStampQuotaVerdict()
 
 		if (UWorld* World = GetWorld())
 		{
-			const float DelaySeconds = IsValid(ActiveProgressionAsset)
+			const float FallbackDelaySeconds = IsValid(ActiveProgressionAsset)
 				? FMath::Max(0.2f, ActiveProgressionAsset->FaultAutoResetDelaySeconds)
 				: DefaultTransitionDelaySeconds;
+			const float DelaySeconds = Phase12ECfg.bEnableSnappyContractTransition
+				? Phase12ECfg.ContractPassTransitionDurationSeconds
+				: FallbackDelaySeconds;
 
 			World->GetTimerManager().SetTimer(
 				TransitionTimerHandle,
@@ -596,10 +613,32 @@ bool UInspectionShiftSubsystem::TryConfirmOrStampAction()
 		return TryStampQuotaVerdict();
 	}
 
+	if (CurrentPhase == EShiftPhase::ContractPassTransition)
+	{
+		const FPhase12EPresentationPolishConfig Phase12ECfg = IsValid(ActivePresentationAsset)
+			? ActivePresentationAsset->Phase12EPolishConfig.GetSanitized()
+			: FPhase12EPresentationPolishConfig();
+		if (Phase12ECfg.bEnableContractPassFastSkip)
+		{
+			if (UWorld* World = GetWorld())
+			{
+				const double ElapsedSec = World->GetTimeSeconds() - ContractPassEnteredWorldTimeSec;
+				if (ElapsedSec >= static_cast<double>(Phase12ECfg.ContractPassFastSkipDebounceSeconds))
+				{
+					World->GetTimerManager().ClearTimer(TransitionTimerHandle);
+					HandleContractPassTimerElapsed();
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
 	if (CurrentPhase == EShiftPhase::ShiftCompleted || CurrentPhase == EShiftPhase::BondCleared)
 	{
 		++CurrentShiftNumber;
 		LastStampScripAwarded = 0;
+		LastStampedDeviationKg = 0.0f;
 		bLastStampWasDirectorsCut = false;
 		ClearTransientRequisitionFeedback();
 		OnTelemetryImpulse.Broadcast(ETelemetryImpulseId::VerdictStamped, 0.90f, QueryReceiverLocationOrZero());
@@ -699,6 +738,7 @@ void UInspectionShiftSubsystem::RequestManualContractReset()
 	if (CurrentPhase == EShiftPhase::ActiveInspection)
 	{
 		LastStampScripAwarded = 0;
+		LastStampedDeviationKg = 0.0f;
 		bLastStampWasDirectorsCut = false;
 		ClearTransientRequisitionFeedback();
 		TriggerContractFault(EContractFaultReason::ManualOperatorReset);
@@ -714,6 +754,7 @@ bool UInspectionShiftSubsystem::ExecuteCareerResetToShiftOne()
 	CurrentShiftNumber = 1;
 	ScripBalance = 0;
 	LastStampScripAwarded = 0;
+	LastStampedDeviationKg = 0.0f;
 	bLastStampWasDirectorsCut = false;
 	ClampHydraulicsLevel = 0;
 	TareHopperLevel = 0;
@@ -727,6 +768,7 @@ bool UInspectionShiftSubsystem::AdvanceToShiftForVerification(int32 TargetShiftN
 {
 	CurrentShiftNumber = FMath::Max(1, TargetShiftNumber);
 	LastStampScripAwarded = 0;
+	LastStampedDeviationKg = 0.0f;
 	bLastStampWasDirectorsCut = false;
 	ClearTransientRequisitionFeedback();
 	return StartShiftFromContract(StartContractIndex);
@@ -1213,6 +1255,8 @@ void UInspectionShiftSubsystem::RefreshAndBroadcastSnapshot()
 	CachedSnapshot.bIsWithinDirectorsCutWindow = bWithinDirectorsCut;
 	CachedSnapshot.bLastStampWasDirectorsCut = bLastStampWasDirectorsCut;
 	CachedSnapshot.bScaleSettledForStamp = bReadyForStamp;
+	CachedSnapshot.bIsReceiverPhysicallySettled = bReceiverSettled;
+	CachedSnapshot.LastStampedDeviationKg = LastStampedDeviationKg;
 
 	OnNativeContractSnapshotUpdated.Broadcast(CachedSnapshot);
 	OnContractSnapshotUpdated.Broadcast(CachedSnapshot);

@@ -125,4 +125,15 @@ private:
 	float CurrentChargeNormalized = 0.0f;
 	double ChargeHumPhaseSeconds = 0.0;
 	float FaultRollAlternatingSign = 1.0f;
+
+	float StampFovPunchElapsedSeconds = 0.0f;
+	float StampFovPunchScale = 1.0f;
+	float CurrentStampFovPunchDegrees = 0.0f;
+	bool bStampFovPunchActive = false;
+
+	float BaseSceneFringeIntensity = 0.0f;
+	float FaultChromaticElapsedSeconds = 0.0f;
+	float FaultChromaticPeakActive = 0.0f;
+	bool bBaseOverrideSceneFringe = false;
+	bool bFaultChromaticPulseActive = false;
 };

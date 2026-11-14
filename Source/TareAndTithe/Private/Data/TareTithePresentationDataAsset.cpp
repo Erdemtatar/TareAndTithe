@@ -262,3 +262,19 @@ FPhase12DPresentationPolishConfig FPhase12DPresentationPolishConfig::GetSanitize
 	Out.CutCapThermalDecayDurationSeconds = FMath::Clamp(Out.CutCapThermalDecayDurationSeconds, 0.50f, 8.00f);
 	return Out;
 }
+
+FPhase12EPresentationPolishConfig FPhase12EPresentationPolishConfig::GetSanitized() const
+{
+	FPhase12EPresentationPolishConfig Out = *this;
+	Out.ContractPassTransitionDurationSeconds = FMath::Clamp(Out.ContractPassTransitionDurationSeconds, 0.35f, 2.50f);
+	Out.ContractPassFastSkipDebounceSeconds = FMath::Clamp(Out.ContractPassFastSkipDebounceSeconds, 0.10f, 1.00f);
+	Out.ContractPassShutterDipAlpha = FMath::Clamp(Out.ContractPassShutterDipAlpha, 0.00f, 1.00f);
+	Out.WeightReadoutInterpSpeed = FMath::Clamp(Out.WeightReadoutInterpSpeed, 4.0f, 40.0f);
+	Out.StampFovPunchDegrees = FMath::Clamp(Out.StampFovPunchDegrees, 0.0f, 3.0f);
+	Out.StampFovPunchDurationSeconds = FMath::Clamp(Out.StampFovPunchDurationSeconds, 0.08f, 0.40f);
+	Out.FaultChromaticPeakIntensity = FMath::Clamp(Out.FaultChromaticPeakIntensity, 0.0f, 5.0f);
+	Out.FaultChromaticDurationSeconds = FMath::Clamp(Out.FaultChromaticDurationSeconds, 0.08f, 0.60f);
+	Out.FaultAmbienceDuckVolumeScale = FMath::Clamp(Out.FaultAmbienceDuckVolumeScale, 0.0f, 1.0f);
+	Out.FaultAmbienceDuckDurationSeconds = FMath::Clamp(Out.FaultAmbienceDuckDurationSeconds, 0.10f, 0.60f);
+	return Out;
+}

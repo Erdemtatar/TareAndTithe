@@ -717,10 +717,35 @@ void AInspectorPawn::EnsureInputActionsAndMappingInitialized()
 		if (IsValid(AssignedMappingContext))
 		{
 			ActiveMappingContext = AssignedMappingContext;
-			if (!IsValid(AssignedToggleControlsHudAction) && !IsValid(TransientAuxControlsIMC) && IsValid(ActiveToggleControlsHudAction))
+			const bool bNeedsToggleBind = !IsValid(AssignedToggleControlsHudAction) && IsValid(ActiveToggleControlsHudAction);
+			const bool bNeedsLowBind = !IsValid(AssignedScalabilityLowAction) && IsValid(ActiveScalabilityLowAction);
+			const bool bNeedsMedBind = !IsValid(AssignedScalabilityMedAction) && IsValid(ActiveScalabilityMedAction);
+			const bool bNeedsHighBind = !IsValid(AssignedScalabilityHighAction) && IsValid(ActiveScalabilityHighAction);
+			const bool bNeedsEpicBind = !IsValid(AssignedScalabilityEpicAction) && IsValid(ActiveScalabilityEpicAction);
+			if (!IsValid(TransientAuxControlsIMC) &&
+				(bNeedsToggleBind || bNeedsLowBind || bNeedsMedBind || bNeedsHighBind || bNeedsEpicBind))
 			{
 				TransientAuxControlsIMC = NewObject<UInputMappingContext>(this, TEXT("IMC_Transient_AuxControlsToggle"));
-				TransientAuxControlsIMC->MapKey(ActiveToggleControlsHudAction, EKeys::H);
+				if (bNeedsToggleBind)
+				{
+					TransientAuxControlsIMC->MapKey(ActiveToggleControlsHudAction, EKeys::H);
+				}
+				if (bNeedsLowBind)
+				{
+					TransientAuxControlsIMC->MapKey(ActiveScalabilityLowAction, EKeys::F6);
+				}
+				if (bNeedsMedBind)
+				{
+					TransientAuxControlsIMC->MapKey(ActiveScalabilityMedAction, EKeys::F7);
+				}
+				if (bNeedsHighBind)
+				{
+					TransientAuxControlsIMC->MapKey(ActiveScalabilityHighAction, EKeys::F8);
+				}
+				if (bNeedsEpicBind)
+				{
+					TransientAuxControlsIMC->MapKey(ActiveScalabilityEpicAction, EKeys::F9);
+				}
 			}
 		}
 		else
@@ -1445,11 +1470,12 @@ void AInspectorPawn::HandleFilteredTelemetryStream(ETelemetryStreamId StreamId, 
 
 void AInspectorPawn::ApplyNativeScalabilityPreset(int32 QualityLevel, float TsrResolutionScalePercent)
 {
+	const int32 ClampedQuality = FMath::Clamp(QualityLevel, 0, 3);
+	const float ClampedScale = FMath::Clamp(TsrResolutionScalePercent, 50.0f, 100.0f);
 	if (UGameUserSettings* Settings = UGameUserSettings::GetGameUserSettings())
 	{
-		const int32 ClampedQuality = FMath::Clamp(QualityLevel, 0, 3);
 		Settings->SetOverallScalabilityLevel(ClampedQuality);
-		Settings->SetResolutionScaleValueEx(FMath::Clamp(TsrResolutionScalePercent, 50.0f, 100.0f));
+		Settings->SetResolutionScaleValueEx(ClampedScale);
 		Settings->ApplySettings(false);
 	}
 
@@ -1459,6 +1485,11 @@ void AInspectorPawn::ApplyNativeScalabilityPreset(int32 QualityLevel, float TsrR
 	if (IConsoleVariable* TonemapSharpenCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("r.Tonemapper.Sharpen")))
 	{
 		TonemapSharpenCVar->Set(TargetSharpen, ECVF_SetByGameSetting);
+	}
+
+	if (IsValid(InspectorHudBridgeComponent))
+	{
+		InspectorHudBridgeComponent->NotifyScalabilityPresetApplied(ClampedQuality, ClampedScale);
 	}
 }
 

@@ -57,6 +57,7 @@ public:
 	void SetViewportSizeOverrideForTest(const FVector2D& InTestViewportSize, bool bEnableOverride);
 	void SetControlsCardExpanded(bool bInExpanded);
 	bool IsControlsCardExpanded() const { return bIsControlsCardExpanded; }
+	void SetGraphicsQualityReadout(const FText& InQualityText, bool bInShowRow);
 	void UpdateTopLeftPanel(const FTopLeftIndentureViewModel& ViewModel);
 	void UpdateTopRightPanel(const FTopRightDirectorViewModel& ViewModel);
 	void UpdateCenterAlertBanner(const FCenterAlertViewModel& ViewModel);

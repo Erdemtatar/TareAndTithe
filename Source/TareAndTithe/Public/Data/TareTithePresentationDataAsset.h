@@ -844,6 +844,74 @@ struct TAREANDTITHE_API FLaserSheetPresentationConfig
 	FLaserSheetPresentationConfig GetSanitized() const;
 };
 
+USTRUCT(BlueprintType)
+struct TAREANDTITHE_API FPhase12EPresentationPolishConfig
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12EPolish|Transition")
+	bool bEnableInitial26DopCollisionCache = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12EPolish|Transition")
+	bool bEnableSnappyContractTransition = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12EPolish|Transition", meta = (ClampMin = "0.35", ClampMax = "2.50"))
+	float ContractPassTransitionDurationSeconds = 1.10f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12EPolish|Transition")
+	bool bEnableContractPassFastSkip = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12EPolish|Transition", meta = (ClampMin = "0.10", ClampMax = "1.00"))
+	float ContractPassFastSkipDebounceSeconds = 0.22f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12EPolish|Transition", meta = (ClampMin = "0.00", ClampMax = "1.00"))
+	float ContractPassShutterDipAlpha = 0.35f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12EPolish|WeighingConsole")
+	bool bEnableDampedWeightReadout = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12EPolish|WeighingConsole", meta = (ClampMin = "4.0", ClampMax = "40.0"))
+	float WeightReadoutInterpSpeed = 14.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12EPolish|WeighingConsole")
+	bool bEnableAsciiMassStatusBadge = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12EPolish|PassStamp")
+	bool bEnablePassReceiptSubline = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12EPolish|PassStamp")
+	bool bEnableStampFovPunch = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12EPolish|PassStamp", meta = (ClampMin = "0.0", ClampMax = "3.0"))
+	float StampFovPunchDegrees = 1.50f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12EPolish|PassStamp", meta = (ClampMin = "0.08", ClampMax = "0.40"))
+	float StampFovPunchDurationSeconds = 0.18f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12EPolish|FaultFeedback")
+	bool bEnableFaultChromaticPulse = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12EPolish|FaultFeedback", meta = (ClampMin = "0.0", ClampMax = "5.0"))
+	float FaultChromaticPeakIntensity = 2.80f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12EPolish|FaultFeedback", meta = (ClampMin = "0.08", ClampMax = "0.60"))
+	float FaultChromaticDurationSeconds = 0.25f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12EPolish|FaultFeedback")
+	bool bEnableFaultAmbienceDuck = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12EPolish|FaultFeedback", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float FaultAmbienceDuckVolumeScale = 0.18f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12EPolish|FaultFeedback", meta = (ClampMin = "0.10", ClampMax = "0.60"))
+	float FaultAmbienceDuckDurationSeconds = 0.25f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12EPolish|ControlsHud")
+	bool bEnableControlsGraphicsRow = true;
+
+	FPhase12EPresentationPolishConfig GetSanitized() const;
+};
+
 UCLASS(BlueprintType)
 class TAREANDTITHE_API UTareTithePresentationDataAsset : public UPrimaryDataAsset
 {
@@ -1016,6 +1084,13 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12DPolish")
 	FPhase12DPresentationPolishConfig Phase12DPolishConfig;
+
+	// ============================================================================
+	// Phase 12E Transition Pacing, Micro-Juice, Weighing Console & Quality HUD
+	// ============================================================================
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12EPolish")
+	FPhase12EPresentationPolishConfig Phase12EPolishConfig;
 
 	virtual FPrimaryAssetId GetPrimaryAssetId() const override;
 };

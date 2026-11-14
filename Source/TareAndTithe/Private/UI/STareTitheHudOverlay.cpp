@@ -464,23 +464,25 @@ public:
 			const TCHAR* KeyText;
 			const TCHAR* ActionText;
 		};
-		static const FControlRowSpec Rows[7] = {
+		static const FControlRowSpec Rows[8] = {
 			{ TEXT("[LMB]"),    TEXT("HOLD SLICE") },
 			{ TEXT("[SCROLL]"), TEXT("ROLL (+SHIFT)") },
 			{ TEXT("[RMB]"),    TEXT("BEVEL / ABORT") },
 			{ TEXT("[SPACE]"),  TEXT("TITHE / TARE") },
 			{ TEXT("[E]"),      TEXT("STAMP / NEXT") },
 			{ TEXT("[1-3]"),    TEXT("UPGRADES") },
-			{ TEXT("HOLD [R]"), TEXT("PURGE CELL") }
+			{ TEXT("HOLD [R]"), TEXT("PURGE CELL") },
+			{ TEXT("[F6-F9]"),  TEXT("GFX: HIGH (TSR 85%)") }
 		};
 
 		TSharedRef<SVerticalBox> RowsList = SNew(SVerticalBox)
 			.Visibility(EVisibility::HitTestInvisible);
 
-		for (int32 Idx = 0; Idx < 7; ++Idx)
+		for (int32 Idx = 0; Idx < 8; ++Idx)
 		{
 			TSharedPtr<STextBlock> KeyBlock;
 			TSharedPtr<STextBlock> ActionBlock;
+			TSharedPtr<SHorizontalBox> RowBox;
 			SVerticalBox::FSlot* RowSlotPtr = nullptr;
 
 			RowsList->AddSlot()
@@ -488,7 +490,7 @@ public:
 			.AutoHeight()
 			.Padding(0.0f, (Idx == 0) ? 5.5f : 3.5f, 0.0f, 0.0f)
 			[
-				SNew(SHorizontalBox)
+				SAssignNew(RowBox, SHorizontalBox)
 				.Visibility(EVisibility::HitTestInvisible)
 
 				+ SHorizontalBox::Slot()
@@ -515,12 +517,19 @@ public:
 					.Justification(ETextJustify::Right)
 					.Font(ActionFont)
 					.Text(FText::FromString(Rows[Idx].ActionText))
-					.ColorAndOpacity(FLinearColor(0.84f, 0.90f, 0.96f, 0.94f))
+					.ColorAndOpacity(
+						(Idx == 7)
+						? FLinearColor(0.56f, 0.92f, 1.00f, 0.96f)
+						: FLinearColor(0.84f, 0.90f, 0.96f, 0.94f))
 					.ShadowOffset(FVector2D(1.0f, 1.0f))
 					.ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.88f))
 				]
 			];
 
+			if (Idx == 7)
+			{
+				GraphicsRowBox = RowBox;
+			}
 			RowSlots.Add(RowSlotPtr);
 			KeyBlocks.Add(KeyBlock);
 			ActionBlocks.Add(ActionBlock);
@@ -624,6 +633,26 @@ public:
 
 	bool IsExpanded() const { return bExpanded; }
 
+	void SetGraphicsQualityReadout(const FText& InQualityText, bool bInShowRow)
+	{
+		bShowGraphicsRow = bInShowRow;
+		if (ActionBlocks.IsValidIndex(7) && ActionBlocks[7].IsValid())
+		{
+			ActionBlocks[7]->SetText(InQualityText);
+		}
+		if (GraphicsRowBox.IsValid())
+		{
+			GraphicsRowBox->SetVisibility(bShowGraphicsRow ? EVisibility::HitTestInvisible : EVisibility::Collapsed);
+		}
+		if (RowSlots.IsValidIndex(7) && RowSlots[7] != nullptr)
+		{
+			const bool bCompact = (CachedRowPt > 0.0f && CachedRowPt < 10.0f);
+			const float TopPad = bShowGraphicsRow ? (bCompact ? 2.5f : 3.5f) : 0.0f;
+			RowSlots[7]->SetPadding(FMargin(0.0f, TopPad, 0.0f, 0.0f));
+		}
+		Invalidate(EInvalidateWidgetReason::LayoutAndVolatility);
+	}
+
 	void UpdateResponsiveTypography(float EffectiveCardWidth)
 	{
 		const bool bCompact = (EffectiveCardWidth < 250.0f);
@@ -668,9 +697,12 @@ public:
 		{
 			if (RowSlots[Idx] != nullptr)
 			{
-				const float TopPad = bCompact
-					? ((Idx == 0) ? 4.0f : 2.5f)
-					: ((Idx == 0) ? 5.5f : 3.5f);
+				const bool bRowHidden = (Idx == 7 && !bShowGraphicsRow);
+				const float TopPad = bRowHidden
+					? 0.0f
+					: (bCompact
+						? ((Idx == 0) ? 4.0f : 2.5f)
+						: ((Idx == 0) ? 5.5f : 3.5f));
 				RowSlots[Idx]->SetPadding(FMargin(0.0f, TopPad, 0.0f, 0.0f));
 			}
 		}
@@ -740,11 +772,13 @@ public:
 private:
 	FHudPresentationConfig Config;
 	bool bExpanded = true;
+	bool bShowGraphicsRow = true;
 	float CachedHeaderPt = -1.0f;
 	float CachedRowPt = -1.0f;
 
 	TSharedPtr<SBox> ExpandedContainer;
 	TSharedPtr<SBox> CollapsedPillContainer;
+	TSharedPtr<SHorizontalBox> GraphicsRowBox;
 	TSharedPtr<STextBlock> HeaderTitleBlock;
 	TSharedPtr<STextBlock> HideHintBlock;
 	TSharedPtr<STextBlock> CollapsedPillTextBlock;
@@ -1475,7 +1509,7 @@ public:
 				.Visibility(EVisibility::HitTestInvisible)
 
 				+ SHorizontalBox::Slot()
-				.FillWidth(0.30f)
+				.FillWidth(0.25f)
 				.HAlign(HAlign_Left)
 				.VAlign(VAlign_Center)
 				[
@@ -1485,20 +1519,40 @@ public:
 				]
 
 				+ SHorizontalBox::Slot()
-				.FillWidth(0.40f)
+				.FillWidth(0.50f)
 				.HAlign(HAlign_Center)
 				.VAlign(VAlign_Center)
 				[
-					SAssignNew(MassReadoutBlock, STextBlock)
+					SNew(SHorizontalBox)
 					.Visibility(EVisibility::HitTestInvisible)
-					.Justification(ETextJustify::Center)
-					.Font(MassHeroFont)
-					.ShadowOffset(FVector2D(1.0f, 1.0f))
-					.ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.92f))
+
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					[
+						SAssignNew(MassReadoutBlock, STextBlock)
+						.Visibility(EVisibility::HitTestInvisible)
+						.Justification(ETextJustify::Center)
+						.Font(MassHeroFont)
+						.ShadowOffset(FVector2D(1.0f, 1.0f))
+						.ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.92f))
+					]
+
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					.Padding(7.0f, 0.0f, 0.0f, 0.0f)
+					[
+						SAssignNew(MassStatusBadgeBlock, STextBlock)
+						.Visibility(EVisibility::HitTestInvisible)
+						.Font(StatusFont)
+						.ShadowOffset(FVector2D(1.0f, 1.0f))
+						.ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.90f))
+					]
 				]
 
 				+ SHorizontalBox::Slot()
-				.FillWidth(0.30f)
+				.FillWidth(0.25f)
 				.HAlign(HAlign_Right)
 				.VAlign(VAlign_Center)
 				[
@@ -1552,6 +1606,16 @@ public:
 		{
 			MassReadoutBlock->SetText(VM.MassReadoutText);
 			MassReadoutBlock->SetColorAndOpacity(VM.MassReadoutColor);
+		}
+		if (MassStatusBadgeBlock.IsValid())
+		{
+			const bool bVisible = VM.bShowMassStatusBadge && !VM.MassStatusBadgeText.IsEmpty();
+			MassStatusBadgeBlock->SetVisibility(bVisible ? EVisibility::HitTestInvisible : EVisibility::Collapsed);
+			if (bVisible)
+			{
+				MassStatusBadgeBlock->SetText(VM.MassStatusBadgeText);
+				MassStatusBadgeBlock->SetColorAndOpacity(VM.MassStatusBadgeColor);
+			}
 		}
 		if (TareBadgeBlock.IsValid())
 		{
@@ -1725,6 +1789,7 @@ private:
 	TSharedPtr<STextBlock> ConsoleHeaderBlock;
 	TSharedPtr<STextBlock> WindowsSummaryBlock;
 	TSharedPtr<STextBlock> MassReadoutBlock;
+	TSharedPtr<STextBlock> MassStatusBadgeBlock;
 	TSharedPtr<STextBlock> TareBadgeBlock;
 	TSharedPtr<STextBlock> RouteBadgeBlock;
 	TSharedPtr<STextBlock> OperationalStatusBlock;
@@ -1997,7 +2062,7 @@ void STareTitheHudOverlay::RefreshReticleClampedOffset()
 			: ((ControlsDesired.X > 10.0f) ? ControlsDesired.X : 108.0f);
 		const float ControlsH = (ControlsDesired.Y > 10.0f)
 			? ControlsDesired.Y
-			: (bIsControlsCardExpanded ? 196.0f : 28.0f);
+			: (bIsControlsCardExpanded ? 218.0f : 28.0f);
 		const float ControlsTopY = TopLeftBottomY + 8.0f;
 		const float ControlsBottomY = ControlsTopY + ControlsH;
 		const float ControlsRightX = Margin + ControlsW;
@@ -2273,6 +2338,15 @@ void STareTitheHudOverlay::SetControlsCardExpanded(bool bInExpanded)
 	}
 	RefreshResponsiveMetrics();
 	Invalidate(EInvalidateWidgetReason::LayoutAndVolatility);
+}
+
+void STareTitheHudOverlay::SetGraphicsQualityReadout(const FText& InQualityText, bool bInShowRow)
+{
+	if (LeftControlsCard.IsValid())
+	{
+		LeftControlsCard->SetGraphicsQualityReadout(InQualityText, bInShowRow);
+	}
+	RefreshReticleClampedOffset();
 }
 
 void STareTitheHudOverlay::UpdateTopLeftPanel(const FTopLeftIndentureViewModel& ViewModel)

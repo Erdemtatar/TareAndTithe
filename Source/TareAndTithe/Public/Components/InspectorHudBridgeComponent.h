@@ -36,6 +36,7 @@ public:
 
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 	void BindPawnTelemetrySources(
 		ULaserPlaneAimComponent* InLaserAimComp,
@@ -44,6 +45,7 @@ public:
 		FOnInspectorReticleProjectionUpdatedSignature& InReticleProjectionDelegate);
 
 	void ApplyPresentationData(const UTareTithePresentationDataAsset* InPresentationData);
+	void NotifyScalabilityPresetApplied(int32 QualityLevel, float TsrScalePercent);
 
 	// ============================================================================
 	// Diagnostics & Automated Composited UI Verification (Phase 12A)
@@ -203,6 +205,11 @@ private:
 	void PushCenterAlertBanner();
 	void PushReticleCard();
 	void PushBottomCrtConsole();
+	void PushGraphicsQualityRow();
+	void SnapRollingMassImmediate(float NewMassKg);
+	void SyncTargetPanMassFromSnapshot(bool bForceSnap);
+	FPhase12EPresentationPolishConfig ResolvePhase12EConfig() const;
+	static FText FormatGraphicsQualityReadout(int32 QualityLevel, float TsrScalePercent);
 
 	UFUNCTION()
 	void HandleShiftVerdict(EShiftVerdictType Verdict, EContractFaultReason FaultReason);
@@ -258,6 +265,10 @@ private:
 	float CachedClampStrain = 0.0f;
 	float CachedClampFatigue = 0.0f;
 	float CachedLaserCharge = 0.0f;
+	float TargetPanMassKg = 0.0f;
+	float DisplayedPanMassKg = 0.0f;
+	float CachedTsrScalePercent = 85.0f;
+	int32 CachedGraphicsQualityLevel = 2;
 	double LastVeinInDropAutoClearTimeSec = -10.0;
 
 	ELaserSliceVisualState LastEvaluatedReticleState = ELaserSliceVisualState::IdleOrSafeCyan;

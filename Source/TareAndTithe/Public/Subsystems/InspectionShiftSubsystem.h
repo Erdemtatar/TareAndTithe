@@ -273,6 +273,8 @@ private:
 	int32 TargetBondShifts = 3;
 	int32 ScripBalance = 0;
 	int32 LastStampScripAwarded = 0;
+	float LastStampedDeviationKg = 0.0f;
+	double ContractPassEnteredWorldTimeSec = -10.0;
 	uint8 ClampHydraulicsLevel = 0;
 	uint8 TareHopperLevel = 0;
 	uint8 VeinScannerDamperLevel = 0;

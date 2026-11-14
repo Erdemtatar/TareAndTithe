@@ -301,6 +301,12 @@ struct FContractRuntimeSnapshot
 
 	UPROPERTY(BlueprintReadOnly, Category = "Shift")
 	bool bScaleSettledForStamp = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Shift")
+	bool bIsReceiverPhysicallySettled = true;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Shift")
+	float LastStampedDeviationKg = 0.0f;
 };
 
 using FShiftHudSnapshot = FContractRuntimeSnapshot;

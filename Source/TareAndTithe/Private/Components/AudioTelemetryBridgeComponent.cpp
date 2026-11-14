@@ -59,6 +59,7 @@ void UAudioTelemetryBridgeComponent::BeginPlay()
 void UAudioTelemetryBridgeComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	ClearGroanSurgeTimer();
+	CancelFaultAmbienceDuckAndRestoreBaseline();
 
 	if (UWorld* World = GetWorld())
 	{
@@ -280,8 +281,11 @@ void UAudioTelemetryBridgeComponent::ApplyPresentationData(const UTareTithePrese
 		{
 			AmbientBedAudioComponent->SetSound(PresentationData->AmbientCellBedSound);
 		}
-		AmbientBedAudioComponent->SetVolumeMultiplier(CachedGroanConfig.AmbientBedVolumeMultiplier);
-		LastAmbientBedVolumeMultiplier = CachedGroanConfig.AmbientBedVolumeMultiplier;
+		if (!bFaultAmbienceDuckActive)
+		{
+			AmbientBedAudioComponent->SetVolumeMultiplier(CachedGroanConfig.AmbientBedVolumeMultiplier);
+			LastAmbientBedVolumeMultiplier = CachedGroanConfig.AmbientBedVolumeMultiplier;
+		}
 		if (bAutoPlayAssignedAudioComponents && !AmbientBedAudioComponent->IsPlaying())
 		{
 			AmbientBedAudioComponent->Play();
@@ -327,6 +331,7 @@ void UAudioTelemetryBridgeComponent::UnregisterAudioComponent(UAudioComponent* I
 void UAudioTelemetryBridgeComponent::ClearAudioComponents()
 {
 	ClearGroanSurgeTimer();
+	CancelFaultAmbienceDuckAndRestoreBaseline();
 	BoundAudioComponents.Reset();
 	ContinuousLoopsAudioComponent = nullptr;
 	DiscreteImpulsesAudioComponent = nullptr;
@@ -522,6 +527,7 @@ void UAudioTelemetryBridgeComponent::HandlePublisherImpulse(
 	if (ImpulseId == ETelemetryImpulseId::FaultTriggered)
 	{
 		MuteAndCutoffLoopsForFaultOrPhaseExit();
+		ArmFaultAmbienceDuck();
 	}
 	else if (ImpulseId == ETelemetryImpulseId::SliceCommitted)
 	{
@@ -548,6 +554,7 @@ void UAudioTelemetryBridgeComponent::HandleShiftPhaseChanged(EShiftPhase NewPhas
 	}
 
 	LastFaultImpulseFrameNumber = MAX_uint64;
+	CancelFaultAmbienceDuckAndRestoreBaseline();
 
 	bool bHasActiveFault = false;
 	if (UWorld* World = GetWorld())
@@ -565,6 +572,7 @@ void UAudioTelemetryBridgeComponent::HandleShiftPhaseChanged(EShiftPhase NewPhas
 	}
 
 	bClampGroanMutedByPhaseOrFault = false;
+	CancelFaultAmbienceDuckAndRestoreBaseline();
 	bHasBaselineContractStrainSample = true;
 	bHasBaselineContractFatigueSample = true;
 	PushNeutralClampStrainToMetaSound();
@@ -596,6 +604,7 @@ void UAudioTelemetryBridgeComponent::HandleActiveContractLoaded(
 	}
 
 	bClampGroanMutedByPhaseOrFault = false;
+	CancelFaultAmbienceDuckAndRestoreBaseline();
 	bHasBaselineContractStrainSample = true;
 	bHasBaselineContractFatigueSample = true;
 	PushNeutralClampStrainToMetaSound();
@@ -932,6 +941,105 @@ void UAudioTelemetryBridgeComponent::MuteAndCutoffLoopsForFaultOrPhaseExit()
 	ClearGroanSurgeTimer();
 	PushZeroedLoopsToMetaSound();
 	SilenceClampGroanFast();
+}
+
+void UAudioTelemetryBridgeComponent::ArmFaultAmbienceDuck()
+{
+	const FPhase12EPresentationPolishConfig Phase12ECfg = IsValid(PresentationData)
+		? PresentationData->Phase12EPolishConfig.GetSanitized()
+		: FPhase12EPresentationPolishConfig();
+	if (!Phase12ECfg.bEnableFaultAmbienceDuck || !IsValid(AmbientBedAudioComponent))
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!IsValid(World))
+	{
+		return;
+	}
+
+	const float BaseVol = CachedGroanConfig.AmbientBedVolumeMultiplier;
+	const float DuckedVol = BaseVol * Phase12ECfg.FaultAmbienceDuckVolumeScale;
+	bFaultAmbienceDuckActive = true;
+	AmbientBedAudioComponent->SetVolumeMultiplier(DuckedVol);
+	LastAmbientBedVolumeMultiplier = DuckedVol;
+
+	const float TotalDurationSec = FMath::Clamp(Phase12ECfg.FaultAmbienceDuckDurationSeconds, 0.10f, 0.60f);
+	const float HalfStepSec = 0.5f * TotalDurationSec;
+	if (HalfStepSec >= 0.10f)
+	{
+		FaultAmbienceDuckStage = 2;
+		World->GetTimerManager().SetTimer(
+			FaultAmbienceDuckTimerHandle,
+			this,
+			&UAudioTelemetryBridgeComponent::HandleFaultAmbienceDuckTimerStep,
+			HalfStepSec,
+			false);
+	}
+	else
+	{
+		FaultAmbienceDuckStage = 1;
+		World->GetTimerManager().SetTimer(
+			FaultAmbienceDuckTimerHandle,
+			this,
+			&UAudioTelemetryBridgeComponent::HandleFaultAmbienceDuckTimerStep,
+			TotalDurationSec,
+			false);
+	}
+}
+
+void UAudioTelemetryBridgeComponent::HandleFaultAmbienceDuckTimerStep()
+{
+	if (!bFaultAmbienceDuckActive || !IsValid(AmbientBedAudioComponent))
+	{
+		CancelFaultAmbienceDuckAndRestoreBaseline();
+		return;
+	}
+
+	if (FaultAmbienceDuckStage >= 2)
+	{
+		FaultAmbienceDuckStage = 1;
+		const FPhase12EPresentationPolishConfig Phase12ECfg = IsValid(PresentationData)
+			? PresentationData->Phase12EPolishConfig.GetSanitized()
+			: FPhase12EPresentationPolishConfig();
+		const float BaseVol = CachedGroanConfig.AmbientBedVolumeMultiplier;
+		const float MidVol = BaseVol * FMath::Lerp(Phase12ECfg.FaultAmbienceDuckVolumeScale, 1.0f, 0.55f);
+		AmbientBedAudioComponent->SetVolumeMultiplier(MidVol);
+		LastAmbientBedVolumeMultiplier = MidVol;
+
+		if (UWorld* World = GetWorld())
+		{
+			const float RemainingStepSec = FMath::Max(0.10f, 0.5f * Phase12ECfg.FaultAmbienceDuckDurationSeconds);
+			World->GetTimerManager().SetTimer(
+				FaultAmbienceDuckTimerHandle,
+				this,
+				&UAudioTelemetryBridgeComponent::HandleFaultAmbienceDuckTimerStep,
+				RemainingStepSec,
+				false);
+			return;
+		}
+	}
+
+	CancelFaultAmbienceDuckAndRestoreBaseline();
+}
+
+void UAudioTelemetryBridgeComponent::CancelFaultAmbienceDuckAndRestoreBaseline()
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(FaultAmbienceDuckTimerHandle);
+	}
+
+	const bool bWasDucking = bFaultAmbienceDuckActive;
+	bFaultAmbienceDuckActive = false;
+	FaultAmbienceDuckStage = 0;
+
+	if (IsValid(AmbientBedAudioComponent) && (bWasDucking || !FMath::IsNearlyEqual(LastAmbientBedVolumeMultiplier, CachedGroanConfig.AmbientBedVolumeMultiplier)))
+	{
+		AmbientBedAudioComponent->SetVolumeMultiplier(CachedGroanConfig.AmbientBedVolumeMultiplier);
+		LastAmbientBedVolumeMultiplier = CachedGroanConfig.AmbientBedVolumeMultiplier;
+	}
 }
 
 void UAudioTelemetryBridgeComponent::SpawnSpatialImpulseSoundIfAssigned(
