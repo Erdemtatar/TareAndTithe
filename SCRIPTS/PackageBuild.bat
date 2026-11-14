@@ -61,12 +61,17 @@ if exist "%DEFAULT_GAME_INI%" (
 )
 
 set "ARCHIVE_DIR=%REPO_ROOT%\PackagedBuilds\%BUILD_CONFIG%"
+set "STAGED_BUILDS_DIR=%REPO_ROOT%\Saved\StagedBuilds"
 set "DIST_DIR=%REPO_ROOT%\Dist"
 set "WIN_STAGE_DIR=%ARCHIVE_DIR%\Windows"
 set "ZIP_FILENAME=%TEAM_NAME%_%GAME_NAME%.zip"
 set "ZIP_OUTPUT_PATH=%DIST_DIR%\%ZIP_FILENAME%"
 
 if exist "%ARCHIVE_DIR%" rmdir /s /q "%ARCHIVE_DIR%"
+if exist "%STAGED_BUILDS_DIR%" (
+    echo [INFO] Purging intermediate staging folder "%STAGED_BUILDS_DIR%"...
+    rmdir /s /q "%STAGED_BUILDS_DIR%"
+)
 if not exist "%DIST_DIR%" mkdir "%DIST_DIR%"
 
 echo [INFO] Starting UE5 Win64 (%BUILD_CONFIG%) BuildCookRun for "%PROJECT_NAME%"...
@@ -117,8 +122,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "if ($zipMB -ge 950) { Write-Warning ('[CRITICAL] Archive size (' + $zipMB + ' MB) approaches or exceeds the 1024 MB itch.io web upload limit! Audit Content/ and MapsToCook immediately!'); exit 2 }"
 
 if %ERRORLEVEL% EQU 2 (
-    echo [WARNING] Packaging succeeded, but archive size requires immediate optimization.
-    exit /b 0
+    echo [ERROR] Archive size reached or exceeded the 950 MB hard submission limit. Failing build.
+    exit /b 2
 )
 if %ERRORLEVEL% NEQ 0 (
     echo [ERROR] PowerShell zip archiving failed.

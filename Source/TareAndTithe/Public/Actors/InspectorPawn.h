@@ -390,6 +390,9 @@ private:
 		const UShiftProgressionDataAsset* ShiftConfig,
 		int32 ContractIndex);
 	void HandleManualResetHoldElapsed();
+	void OnEscapeQuitPressed();
+	void OnEscapeQuitReleased();
+	void ExecuteStandaloneQuit();
 
 	// EnhancedInput Callbacks
 	void Input_AimCursor(const FInputActionValue& Value);
@@ -492,6 +495,7 @@ private:
 	TObjectPtr<UInputMappingContext> TransientAuxControlsIMC;
 
 	FTimerHandle ManualResetHoldTimerHandle;
+	FTimerHandle EscapeQuitTimerHandle;
 	FShiftHudSnapshot CachedHudSnapshot;
 	FSlicePreviewTelemetry CachedPreviewTelemetry;
 	FVector2D LastBroadcastReticleUV = FVector2D(-1.0f, -1.0f);

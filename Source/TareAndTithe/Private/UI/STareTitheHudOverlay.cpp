@@ -464,21 +464,23 @@ public:
 			const TCHAR* KeyText;
 			const TCHAR* ActionText;
 		};
-		static const FControlRowSpec Rows[8] = {
-			{ TEXT("[LMB]"),    TEXT("HOLD SLICE") },
-			{ TEXT("[SCROLL]"), TEXT("ROLL (+SHIFT)") },
-			{ TEXT("[RMB]"),    TEXT("BEVEL / ABORT") },
-			{ TEXT("[SPACE]"),  TEXT("TITHE / TARE") },
-			{ TEXT("[E]"),      TEXT("STAMP / NEXT") },
-			{ TEXT("[1-3]"),    TEXT("UPGRADES") },
-			{ TEXT("HOLD [R]"), TEXT("PURGE CELL") },
-			{ TEXT("[F6-F9]"),  TEXT("GFX: HIGH (TSR 85%)") }
+		static const FControlRowSpec Rows[9] = {
+			{ TEXT("[LMB]"),      TEXT("HOLD SLICE") },
+			{ TEXT("[SCROLL]"),   TEXT("ROLL (+SHIFT)") },
+			{ TEXT("[RMB]"),      TEXT("BEVEL / ABORT") },
+			{ TEXT("[SPACE]"),    TEXT("TITHE / TARE") },
+			{ TEXT("[E]"),        TEXT("STAMP / NEXT") },
+			{ TEXT("[1-3]"),      TEXT("UPGRADES") },
+			{ TEXT("HOLD [R]"),   TEXT("PURGE CELL") },
+			{ TEXT("[F6-F9]"),    TEXT("GFX: HIGH (TSR 85%)") },
+			{ TEXT("HOLD [ESC]"), TEXT("EXIT GAME") }
 		};
+		static constexpr int32 NumControlRows = UE_ARRAY_COUNT(Rows);
 
 		TSharedRef<SVerticalBox> RowsList = SNew(SVerticalBox)
 			.Visibility(EVisibility::HitTestInvisible);
 
-		for (int32 Idx = 0; Idx < 8; ++Idx)
+		for (int32 Idx = 0; Idx < NumControlRows; ++Idx)
 		{
 			TSharedPtr<STextBlock> KeyBlock;
 			TSharedPtr<STextBlock> ActionBlock;
@@ -662,8 +664,9 @@ public:
 		const float ActionPt = bCompact ? 9.0f : 10.5f;
 
 		const FString DiagJson = FString::Printf(
-			TEXT("{\"width\":%.2f,\"compact\":%s,\"header_pt\":%.1f,\"hint_pt\":%.1f,\"key_pt\":%.1f,\"action_pt\":%.1f,\"pad_x\":%.1f,\"pad_y\":%.1f}"),
+			TEXT("{\"width\":%.2f,\"rows\":%d,\"compact\":%s,\"header_pt\":%.1f,\"hint_pt\":%.1f,\"key_pt\":%.1f,\"action_pt\":%.1f,\"pad_x\":%.1f,\"pad_y\":%.1f}"),
 			EffectiveCardWidth,
+			KeyBlocks.Num(),
 			bCompact ? TEXT("true") : TEXT("false"),
 			HeaderPt,
 			HintPt,
@@ -2062,7 +2065,7 @@ void STareTitheHudOverlay::RefreshReticleClampedOffset()
 			: ((ControlsDesired.X > 10.0f) ? ControlsDesired.X : 108.0f);
 		const float ControlsH = (ControlsDesired.Y > 10.0f)
 			? ControlsDesired.Y
-			: (bIsControlsCardExpanded ? 218.0f : 28.0f);
+			: (bIsControlsCardExpanded ? 237.0f : 28.0f);
 		const float ControlsTopY = TopLeftBottomY + 8.0f;
 		const float ControlsBottomY = ControlsTopY + ControlsH;
 		const float ControlsRightX = Margin + ControlsW;

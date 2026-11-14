@@ -5,6 +5,7 @@
 #include "Camera/CameraTypes.h"
 #include "Components/AudioComponent.h"
 #include "Components/AudioTelemetryBridgeComponent.h"
+#include "Components/InputComponent.h"
 #include "Components/InspectorHudBridgeComponent.h"
 #include "Components/InspectorKinestheticsComponent.h"
 #include "Components/LaserCapacitorComponent.h"
@@ -29,6 +30,8 @@
 #include "InputCoreTypes.h"
 #include "InputMappingContext.h"
 #include "Interfaces/SliceableTargetInterface.h"
+#include "Kismet/GameplayStatics.h"
+#include "Kismet/KismetSystemLibrary.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "Math/RotationMatrix.h"
@@ -435,6 +438,23 @@ void AInspectorPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 
 	EnsureInputActionsAndMappingInitialized();
 
+	if (IsValid(PlayerInputComponent))
+	{
+		FInputKeyBinding& EscapePressedBinding = PlayerInputComponent->BindKey(
+			EKeys::Escape,
+			IE_Pressed,
+			this,
+			&AInspectorPawn::OnEscapeQuitPressed);
+		EscapePressedBinding.bExecuteWhenPaused = true;
+
+		FInputKeyBinding& EscapeReleasedBinding = PlayerInputComponent->BindKey(
+			EKeys::Escape,
+			IE_Released,
+			this,
+			&AInspectorPawn::OnEscapeQuitReleased);
+		EscapeReleasedBinding.bExecuteWhenPaused = true;
+	}
+
 	UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(PlayerInputComponent);
 	if (!IsValid(EnhancedInput))
 	{
@@ -519,6 +539,7 @@ void AInspectorPawn::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	if (UWorld* World = GetWorld())
 	{
+		GetWorldTimerManager().ClearTimer(EscapeQuitTimerHandle);
 		World->GetTimerManager().ClearTimer(ManualResetHoldTimerHandle);
 
 		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
@@ -2040,4 +2061,41 @@ void AInspectorPawn::Input_ToggleControlsHud(const FInputActionValue& /*Value*/)
 		PC->SetInputMode(GameOnlyInput);
 		PC->SetShowMouseCursor(false);
 	}
+}
+
+void AInspectorPawn::OnEscapeQuitPressed()
+{
+	const float RawHoldSeconds = IsValid(PresentationData)
+		? PresentationData->EscapeQuitHoldDurationSeconds
+		: GetDefault<UTareTithePresentationDataAsset>()->EscapeQuitHoldDurationSeconds;
+	const float HoldSeconds = FMath::Max(0.15f, RawHoldSeconds);
+
+	if (UGameplayStatics::IsGamePaused(this))
+	{
+		ExecuteStandaloneQuit();
+		return;
+	}
+
+	if (GetWorld() != nullptr)
+	{
+		GetWorldTimerManager().SetTimer(
+			EscapeQuitTimerHandle,
+			this,
+			&AInspectorPawn::ExecuteStandaloneQuit,
+			HoldSeconds,
+			false);
+	}
+}
+
+void AInspectorPawn::OnEscapeQuitReleased()
+{
+	if (GetWorld() != nullptr)
+	{
+		GetWorldTimerManager().ClearTimer(EscapeQuitTimerHandle);
+	}
+}
+
+void AInspectorPawn::ExecuteStandaloneQuit()
+{
+	UKismetSystemLibrary::QuitGame(this, nullptr, EQuitPreference::Quit, false);
 }

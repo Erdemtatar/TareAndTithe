@@ -1092,5 +1092,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12EPolish")
 	FPhase12EPresentationPolishConfig Phase12EPolishConfig;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|System", meta = (ClampMin = "0.15", ClampMax = "2.0"))
+	float EscapeQuitHoldDurationSeconds = 0.35f;
+
 	virtual FPrimaryAssetId GetPrimaryAssetId() const override;
 };
