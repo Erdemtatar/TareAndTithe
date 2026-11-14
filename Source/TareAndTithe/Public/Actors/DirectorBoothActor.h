@@ -81,6 +81,9 @@ protected:
 	TObjectPtr<UInstancedStaticMeshComponent> DirectorSilhouetteCylindersISM;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "DirectorBooth|Panopticon")
+	TObjectPtr<UInstancedStaticMeshComponent> DirectorOpticalGlintsISM;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "DirectorBooth|Panopticon")
 	TObjectPtr<USceneComponent> CenterBayPivot;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "DirectorBooth|Panopticon")
@@ -317,7 +320,10 @@ private:
 	bool IsLegacyWorldSpaceReadoutEnabled() const;
 	void UpdateLegacySignboardVisibility();
 	void RebuildPanopticonSurveillanceVisuals();
-	void SetWindowGlowCardsState(const FLinearColor& BaseColor, const FLinearColor& EmissiveColor);
+	void SetWindowGlowCardsState(
+		const FLinearColor& BaseColor,
+		const FLinearColor& EmissiveColor,
+		bool bApplyRightBaySurveillanceLift = false);
 	void RefreshContractDirectiveWingReadout();
 	void RefreshRequisitionCornerReadout();
 	void RefreshDirectorIntercomWingReadout();
@@ -359,6 +365,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> DirectorSilhouetteMID;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> DirectorOpticalGlintMID;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> LeftWindowGlowCardMID;

@@ -444,53 +444,15 @@ def build_laser_sheet_master() -> unreal.Material:
 
 
 def build_molten_cut_cap_master() -> unreal.Material:
+    import sys as _sys
+
+    _scripts_dir = os.path.dirname(os.path.abspath(__file__))
+    if _scripts_dir not in _sys.path:
+        _sys.path.insert(0, _scripts_dir)
+    import UpgradeMaterialsPhase12D as _phase12d_mats
+
     mat = get_or_create_material("M_MoltenCutCap_Master")
-    mat.set_editor_property("blend_mode", unreal.BlendMode.BLEND_OPAQUE)
-    mat.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_DEFAULT_LIT)
-    mat.set_editor_property("two_sided", False)
-    mat.set_editor_property("has_pixel_animation", True)
-
-    crust_base = make_const_color3(mat, 0.032, 0.020, 0.016, -320, -260)
-    rough_const = make_const_scalar(mat, 0.64, -320, -120)
-    metal_const = make_const_scalar(mat, 0.30, -320, -20)
-
-    connect_prop(crust_base, "", unreal.MaterialProperty.MP_BASE_COLOR)
-    connect_prop(rough_const, "", unreal.MaterialProperty.MP_ROUGHNESS)
-    connect_prop(metal_const, "", unreal.MaterialProperty.MP_METALLIC)
-
-    # Rich magma fissure contrast exceeding BloomThreshold=1.65 cleanly on hot cores while keeping dark slag crust seams
-    noise_alpha = make_local_noise_01(mat, 0.16, -1080, 200)
-    core_pow = create_expr(mat, unreal.MaterialExpressionPower, -680, 200)
-    core_pow.set_editor_property("const_exponent", 1.35)
-    connect_expr(noise_alpha, "", core_pow, "Base")
-
-    ember_low = make_const_color3(mat, 1.15, 0.12, 0.012, -600, 60)
-    ember_high = make_const_color3(mat, 4.85, 1.18, 0.085, -600, 240)
-
-    ember_lerp = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, -340, 160)
-    connect_expr(ember_low, "", ember_lerp, "A")
-    connect_expr(ember_high, "", ember_lerp, "B")
-    connect_expr(core_pow, "", ember_lerp, "Alpha")
-
-    time_node = create_expr(mat, unreal.MaterialExpressionTime, -860, 420)
-    sine_node = create_expr(mat, unreal.MaterialExpressionSine, -680, 420)
-    sine_node.set_editor_property("period", 3.2)
-    connect_expr(time_node, "", sine_node, "")
-
-    breath_amp = create_expr(mat, unreal.MaterialExpressionMultiply, -500, 420)
-    breath_amp.set_editor_property("const_b", 0.09)
-    connect_expr(sine_node, "", breath_amp, "A")
-
-    breath_factor = create_expr(mat, unreal.MaterialExpressionAdd, -340, 420)
-    breath_factor.set_editor_property("const_b", 1.00)
-    connect_expr(breath_amp, "", breath_factor, "A")
-
-    emissive_out = create_expr(mat, unreal.MaterialExpressionMultiply, -140, 260)
-    connect_expr(ember_lerp, "", emissive_out, "A")
-    connect_expr(breath_factor, "", emissive_out, "B")
-
-    connect_prop(emissive_out, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
-
+    _phase12d_mats.populate_phase12d_molten_cut_cap_graph(mat)
     finalize_and_save_material(mat, is_opaque_nanite_compatible=True)
     return mat
 
@@ -831,166 +793,22 @@ def load_and_verify_rodin_prop_textures(prop_name: str) -> Tuple[unreal.Texture2
 
 def build_station_pbr_master_and_instances() -> Tuple[unreal.Material, Dict[str, unreal.MaterialInstanceConstant]]:
     """
-    Guard 3: Nanite-compatible Substrate-clean M_StationPBR_Master + 8 MI_Station_* instances
+    Guard 3 & Phase 12D: Nanite-compatible Substrate-clean M_StationPBR_Master + 9 MI_Station_* instances
     unpacking glTF 2.0 ORM (R=AO, G=Roughness, B=Metallic) with roughness contrast curve,
-    conductor F0 floor guard, and crisp normal strength using zero extra VRAM textures.
+    conductor F0 floor guard, crisp normal strength, rigid object/ISM-instance-locked procedural edge chipping
+    & cavity/slag grime, rear grid macro soot suppression, and zero extra VRAM textures.
     """
+    import sys as _sys
+
+    _scripts_dir = os.path.dirname(os.path.abspath(__file__))
+    if _scripts_dir not in _sys.path:
+        _sys.path.insert(0, _scripts_dir)
+    import UpgradeMaterialsPhase12D as _phase12d_mats
+
     default_diff, default_orm, default_norm = load_and_verify_rodin_prop_textures("SM_ClampJaw")
 
     mat = get_or_create_material("M_StationPBR_Master")
-    mat.set_editor_property("blend_mode", unreal.BlendMode.BLEND_OPAQUE)
-    mat.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_DEFAULT_LIT)
-    mat.set_editor_property("two_sided", False)
-
-    # 1. Texture Sample Parameters
-    tex_base = create_expr(mat, unreal.MaterialExpressionTextureSampleParameter2D, -1280, -360)
-    tex_base.set_editor_property("parameter_name", "BaseColorMap")
-    tex_base.set_editor_property("texture", default_diff)
-    tex_base.set_editor_property("sampler_type", resolve_sampler_type_for_texture(default_diff))
-
-    tex_orm = create_expr(mat, unreal.MaterialExpressionTextureSampleParameter2D, -1280, 40)
-    tex_orm.set_editor_property("parameter_name", "ORMMap")
-    tex_orm.set_editor_property("texture", default_orm)
-    tex_orm.set_editor_property("sampler_type", resolve_sampler_type_for_texture(default_orm))
-
-    tex_norm = create_expr(mat, unreal.MaterialExpressionTextureSampleParameter2D, -1280, 460)
-    tex_norm.set_editor_property("parameter_name", "NormalMap")
-    tex_norm.set_editor_property("texture", default_norm)
-    tex_norm.set_editor_property("sampler_type", resolve_sampler_type_for_texture(default_norm))
-
-    # 2. ORM Unpack: R = Ambient Occlusion, G = Roughness, B = Metallic (glTF 2.0 standard)
-    ao_strength = create_expr(mat, unreal.MaterialExpressionScalarParameter, -920, -40)
-    ao_strength.set_editor_property("parameter_name", "AOStrength")
-    ao_strength.set_editor_property("default_value", 0.85)
-
-    ao_lerp = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, -620, -40)
-    ao_lerp.set_editor_property("const_a", 1.0)
-    connect_expr(tex_orm, "R", ao_lerp, "B")
-    connect_expr(ao_strength, "", ao_lerp, "Alpha")
-    connect_prop(ao_lerp, "", unreal.MaterialProperty.MP_AMBIENT_OCCLUSION)
-
-    # Roughness Contrast Remap from ORM.G
-    rough_clamp_in = create_expr(mat, unreal.MaterialExpressionClamp, -980, 110)
-    rough_clamp_in.set_editor_property("min_default", 0.02)
-    rough_clamp_in.set_editor_property("max_default", 1.0)
-    connect_expr(tex_orm, "G", rough_clamp_in, "")
-
-    rough_exp_param = create_expr(mat, unreal.MaterialExpressionScalarParameter, -980, 220)
-    rough_exp_param.set_editor_property("parameter_name", "RoughnessContrastExp")
-    rough_exp_param.set_editor_property("default_value", 1.65)
-
-    rough_pow = create_expr(mat, unreal.MaterialExpressionPower, -760, 140)
-    connect_expr(rough_clamp_in, "", rough_pow, "Base")
-    connect_expr(rough_exp_param, "", rough_pow, "Exp")
-
-    rough_min_param = create_expr(mat, unreal.MaterialExpressionScalarParameter, -760, 260)
-    rough_min_param.set_editor_property("parameter_name", "RoughnessMin")
-    rough_min_param.set_editor_property("default_value", 0.25)
-
-    rough_max_param = create_expr(mat, unreal.MaterialExpressionScalarParameter, -760, 360)
-    rough_max_param.set_editor_property("parameter_name", "RoughnessMax")
-    rough_max_param.set_editor_property("default_value", 0.48)
-
-    rough_remap = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, -500, 180)
-    connect_expr(rough_min_param, "", rough_remap, "A")
-    connect_expr(rough_max_param, "", rough_remap, "B")
-    connect_expr(rough_pow, "", rough_remap, "Alpha")
-
-    rough_final = create_expr(mat, unreal.MaterialExpressionClamp, -280, 180)
-    rough_final.set_editor_property("min_default", 0.16)
-    rough_final.set_editor_property("max_default", 0.85)
-    connect_expr(rough_remap, "", rough_final, "")
-    connect_prop(rough_final, "", unreal.MaterialProperty.MP_ROUGHNESS)
-
-    # Bounded Semi-Metallic Cast-Steel Remap from ORM.B -> Lerp(MetallicMin, MetallicMax, Saturate(ORM.B * MetallicScale)) in [0.38, 0.62]
-    metal_scale_param = create_expr(mat, unreal.MaterialExpressionScalarParameter, -1040, 360)
-    metal_scale_param.set_editor_property("parameter_name", "MetallicScale")
-    metal_scale_param.set_editor_property("default_value", 1.05)
-
-    metal_scaled = create_expr(mat, unreal.MaterialExpressionMultiply, -860, 420)
-    connect_expr(tex_orm, "B", metal_scaled, "A")
-    connect_expr(metal_scale_param, "", metal_scaled, "B")
-
-    metal_alpha = create_expr(mat, unreal.MaterialExpressionClamp, -700, 420)
-    metal_alpha.set_editor_property("min_default", 0.0)
-    metal_alpha.set_editor_property("max_default", 1.0)
-    connect_expr(metal_scaled, "", metal_alpha, "")
-
-    metal_min_param = create_expr(mat, unreal.MaterialExpressionScalarParameter, -740, 520)
-    metal_min_param.set_editor_property("parameter_name", "MetallicMin")
-    metal_min_param.set_editor_property("default_value", 0.40)
-
-    metal_max_param = create_expr(mat, unreal.MaterialExpressionScalarParameter, -740, 610)
-    metal_max_param.set_editor_property("parameter_name", "MetallicMax")
-    metal_max_param.set_editor_property("default_value", 0.58)
-
-    metal_lerp = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, -500, 480)
-    connect_expr(metal_min_param, "", metal_lerp, "A")
-    connect_expr(metal_max_param, "", metal_lerp, "B")
-    connect_expr(metal_alpha, "", metal_lerp, "Alpha")
-
-    metal_final = create_expr(mat, unreal.MaterialExpressionClamp, -300, 480)
-    metal_final.set_editor_property("min_default", 0.0)
-    metal_final.set_editor_property("max_default", 1.0)
-    connect_expr(metal_lerp, "", metal_final, "")
-    connect_prop(metal_final, "", unreal.MaterialProperty.MP_METALLIC)
-
-    spec_scale_param = create_expr(mat, unreal.MaterialExpressionScalarParameter, -300, 570)
-    spec_scale_param.set_editor_property("parameter_name", "SpecularScale")
-    spec_scale_param.set_editor_property("default_value", 0.72)
-    connect_prop(spec_scale_param, "", unreal.MaterialProperty.MP_SPECULAR)
-
-    # 3. BaseColor + Cast-Steel Diffuse & Conductor F0 Floor Protection
-    albedo_tint_param = create_expr(mat, unreal.MaterialExpressionVectorParameter, -1040, -220)
-    albedo_tint_param.set_editor_property("parameter_name", "AlbedoTint")
-    albedo_tint_param.set_editor_property("default_value", unreal.LinearColor(1.65, 1.72, 1.82, 1.0))
-
-    tinted_rgb = create_expr(mat, unreal.MaterialExpressionMultiply, -800, -320)
-    connect_expr(tex_base, "RGB", tinted_rgb, "A")
-    connect_expr(albedo_tint_param, "", tinted_rgb, "B")
-
-    conductor_f0_param = create_expr(mat, unreal.MaterialExpressionVectorParameter, -800, -170)
-    conductor_f0_param.set_editor_property("parameter_name", "ConductorMinF0")
-    conductor_f0_param.set_editor_property("default_value", unreal.LinearColor(0.24, 0.26, 0.30, 1.0))
-
-    diffuse_floor_rgb = create_expr(mat, unreal.MaterialExpressionMultiply, -600, -380)
-    diffuse_floor_rgb.set_editor_property("const_b", 0.45)
-    connect_expr(conductor_f0_param, "", diffuse_floor_rgb, "A")
-
-    diffuse_safe_rgb = create_expr(mat, unreal.MaterialExpressionMax, -440, -340)
-    connect_expr(tinted_rgb, "", diffuse_safe_rgb, "A")
-    connect_expr(diffuse_floor_rgb, "", diffuse_safe_rgb, "B")
-
-    conductor_safe_rgb = create_expr(mat, unreal.MaterialExpressionMax, -440, -220)
-    connect_expr(tinted_rgb, "", conductor_safe_rgb, "A")
-    connect_expr(conductor_f0_param, "", conductor_safe_rgb, "B")
-
-    final_albedo = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, -220, -280)
-    connect_expr(diffuse_safe_rgb, "", final_albedo, "A")
-    connect_expr(conductor_safe_rgb, "", final_albedo, "B")
-    connect_expr(metal_final, "", final_albedo, "Alpha")
-    connect_prop(final_albedo, "", unreal.MaterialProperty.MP_BASE_COLOR)
-
-    # 4. Crisp Tangent Normal Scaling
-    norm_xy_mask = create_expr(mat, unreal.MaterialExpressionComponentMask, -980, 620)
-    norm_xy_mask.set_editor_property("r", True)
-    norm_xy_mask.set_editor_property("g", True)
-    norm_xy_mask.set_editor_property("b", False)
-    norm_xy_mask.set_editor_property("a", False)
-    connect_expr(tex_norm, "RGB", norm_xy_mask, "")
-
-    norm_strength_param = create_expr(mat, unreal.MaterialExpressionScalarParameter, -980, 740)
-    norm_strength_param.set_editor_property("parameter_name", "NormalStrength")
-    norm_strength_param.set_editor_property("default_value", 1.35)
-
-    norm_xy_scaled = create_expr(mat, unreal.MaterialExpressionMultiply, -720, 640)
-    connect_expr(norm_xy_mask, "", norm_xy_scaled, "A")
-    connect_expr(norm_strength_param, "", norm_xy_scaled, "B")
-
-    norm_out = create_expr(mat, unreal.MaterialExpressionAppendVector, -460, 660)
-    connect_expr(norm_xy_scaled, "", norm_out, "A")
-    connect_expr(tex_norm, "B", norm_out, "B")
-    connect_prop(norm_out, "", unreal.MaterialProperty.MP_NORMAL)
+    _phase12d_mats.populate_phase12d_station_pbr_graph(mat, default_diff, default_orm, default_norm)
 
     # Enable MATUSAGE_INSTANCED_STATIC_MESHES so FoundryGrateShaftISM & FoundryFlankColumnISM compile cooked ISM shaders
     finalize_and_save_material(mat, is_opaque_nanite_compatible=True, enable_instanced_static_mesh=True)

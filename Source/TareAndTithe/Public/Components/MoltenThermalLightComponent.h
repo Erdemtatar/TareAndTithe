@@ -45,7 +45,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "MoltenThermal", meta = (ClampMin = "0.05", ClampMax = "5.0"))
 	float ConvergenceEpsilonIntensity = 0.5f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "MoltenThermal", meta = (ClampMin = "0.10", ClampMax = "4.0"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "MoltenThermal", meta = (ClampMin = "0.10", ClampMax = "8.0"))
 	float FlashDecayDurationSeconds = 0.85f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "MoltenThermal", meta = (ClampMin = "0.5", ClampMax = "30.0"))

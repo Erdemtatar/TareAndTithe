@@ -221,6 +221,7 @@ private:
 	void FitClampJawToActiveMonolith();
 	UMaterialInterface* ResolveEffectiveOuterMaterial(const UMonolithContractDataAsset* Contract = nullptr) const;
 	UMaterialInterface* ResolveEffectiveCutCapMaterial(const UMonolithContractDataAsset* Contract = nullptr) const;
+	UMaterialInterface* PrepareRemainderCutCapMaterial(const UMonolithContractDataAsset* Contract, float InCutSpawnTimeSeconds);
 	FVector TransformRemainderCoMToMountLocal(const FVector& RemainderLocalCoMCm) const;
 	float QueryCurrentRemainderMassKg() const;
 	FVector QueryRigWorldLocation() const;
@@ -262,6 +263,12 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> FallbackCutCapMID;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> CachedRemainderCutCapParent;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> RemainderCutCapMID;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> ClampJawMID;

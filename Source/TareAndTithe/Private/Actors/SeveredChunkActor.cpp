@@ -241,12 +241,14 @@ void ASeveredChunkActor::ActivateFromSlice(
 
 		UMaterialInterface* EffectiveOuterMat = IsValid(OuterMaterial) ? OuterMaterial : FallbackChunkOuterMID.Get();
 		UMaterialInterface* EffectiveCutCapMat = IsValid(CutCapMaterial) ? CutCapMaterial : FallbackChunkCutCapMID.Get();
+		const float SpawnWorldTime = IsValid(GetWorld()) ? static_cast<float>(GetWorld()->GetTimeSeconds()) : 0.0f;
+		UMaterialInterface* StampedCutCapMat = PrepareActiveChunkCutCapMaterial(EffectiveCutCapMat, SpawnWorldTime);
 
 		if (UDynamicMesh* DynMesh = ChunkMeshComponent->GetDynamicMesh())
 		{
 			const int32 SourceTriCount = InCenteredMesh.TriangleCount();
 			DynMesh->SetMesh(MoveTemp(InCenteredMesh));
-			ChunkMeshComponent->ConfigureMaterialSet({EffectiveOuterMat, EffectiveCutCapMat});
+			ChunkMeshComponent->ConfigureMaterialSet({EffectiveOuterMat, StampedCutCapMat});
 			ChunkMeshComponent->SetComplexAsSimpleCollisionEnabled(false, false);
 
 			// Phase 12-FIX5: Sculpted Rodin chunks (> 48 tris on Contracts 04/05/06, including corner cuts) cook a single
@@ -283,7 +285,7 @@ void ASeveredChunkActor::ActivateFromSlice(
 		}
 		else
 		{
-			ChunkMeshComponent->ConfigureMaterialSet({EffectiveOuterMat, EffectiveCutCapMat});
+			ChunkMeshComponent->ConfigureMaterialSet({EffectiveOuterMat, StampedCutCapMat});
 			ChunkMeshComponent->SetComplexAsSimpleCollisionEnabled(false, false);
 		}
 
@@ -336,6 +338,61 @@ bool ASeveredChunkActor::TryRearmWatchdogIfActivelyFalling(float MaxDownwardVelo
 	return false;
 }
 
+void ASeveredChunkActor::ConfigureCutCapThermalCooling(
+	bool bEnableCooling,
+	float InCoolingDurationSeconds,
+	float InSpawnWorldTimeSeconds)
+{
+	if (IsValid(ActiveChunkCutCapMID))
+	{
+		ActiveChunkCutCapMID->SetScalarParameterValue(TEXT("CoolingCurveEnabled"), bEnableCooling ? 1.0f : 0.0f);
+		ActiveChunkCutCapMID->SetScalarParameterValue(
+			TEXT("CoolingDurationSeconds"),
+			FMath::Clamp(InCoolingDurationSeconds, 0.50f, 8.00f));
+		ActiveChunkCutCapMID->SetScalarParameterValue(TEXT("CutSpawnTimeSeconds"), InSpawnWorldTimeSeconds);
+	}
+}
+
+UMaterialInterface* ASeveredChunkActor::PrepareActiveChunkCutCapMaterial(
+	UMaterialInterface* BaseCutCapMat,
+	float InSpawnWorldTimeSeconds)
+{
+	if (!IsValid(BaseCutCapMat))
+	{
+		return nullptr;
+	}
+	if (BaseCutCapMat == FallbackChunkCutCapMID.Get())
+	{
+		FallbackChunkCutCapMID->SetScalarParameterValue(TEXT("CutSpawnTimeSeconds"), InSpawnWorldTimeSeconds);
+		return FallbackChunkCutCapMID.Get();
+	}
+
+	UMaterialInterface* ResolvedParent = BaseCutCapMat;
+	if (const UMaterialInstanceDynamic* ExistingMID = Cast<UMaterialInstanceDynamic>(BaseCutCapMat))
+	{
+		if (IsValid(ExistingMID->Parent))
+		{
+			ResolvedParent = ExistingMID->Parent;
+		}
+	}
+
+	if (!IsValid(ActiveChunkCutCapMID) || CachedCutCapParentMaterial != ResolvedParent)
+	{
+		ActiveChunkCutCapMID = UMaterialInstanceDynamic::Create(ResolvedParent, this);
+		CachedCutCapParentMaterial = ResolvedParent;
+	}
+
+	if (IsValid(ActiveChunkCutCapMID))
+	{
+		ActiveChunkCutCapMID->SetScalarParameterValue(TEXT("CoolingCurveEnabled"), 1.0f);
+		ActiveChunkCutCapMID->SetScalarParameterValue(TEXT("CoolingDurationSeconds"), 3.85f);
+		ActiveChunkCutCapMID->SetScalarParameterValue(TEXT("CutSpawnTimeSeconds"), InSpawnWorldTimeSeconds);
+		return ActiveChunkCutCapMID.Get();
+	}
+
+	return BaseCutCapMat;
+}
+
 void ASeveredChunkActor::DeactivateToPool()
 {
 	ClearInFlightWatchdog();
@@ -346,6 +403,11 @@ void ASeveredChunkActor::DeactivateToPool()
 	AnalyticalMassKg = 0.0f;
 	bVolatileContaminated = false;
 	bHasRearmedWatchdogOnce = false;
+
+	if (IsValid(ActiveChunkCutCapMID))
+	{
+		ActiveChunkCutCapMID->SetScalarParameterValue(TEXT("CutSpawnTimeSeconds"), -100.0f);
+	}
 
 	if (IsValid(ChunkMeshComponent))
 	{

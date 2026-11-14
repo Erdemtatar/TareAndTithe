@@ -117,6 +117,9 @@ private:
 	TObjectPtr<UStaticMesh> GreyboxCellCubeMesh;
 
 	UPROPERTY()
+	TObjectPtr<UStaticMesh> GreyboxCellCylinderMesh;
+
+	UPROPERTY()
 	TObjectPtr<UMaterialInterface> GreyboxCellBaseMaterial;
 
 	TWeakObjectPtr<ACellFramingArchitectureActor> ActiveOuterFramingActor;

@@ -53,6 +53,12 @@ ATareTitheGameMode::ATareTitheGameMode()
 		GreyboxCellCubeMesh = CubeMeshFinder.Object;
 	}
 
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderMeshFinder(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	if (CylinderMeshFinder.Succeeded())
+	{
+		GreyboxCellCylinderMesh = CylinderMeshFinder.Object;
+	}
+
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> FlattenMatFinder(
 		TEXT("/Engine/EngineMaterials/FlattenMaterial.FlattenMaterial"));
 	if (FlattenMatFinder.Succeeded())
@@ -493,6 +499,21 @@ void ATareTitheGameMode::SpawnGreyboxPitEnclosureAndLighting(UWorld* World)
 	const FCellAtmosphereConfig AtmosCfg = IsValid(PresentationData)
 		? PresentationData->AtmosphereConfig
 		: FCellAtmosphereConfig();
+	const FPhase12DPresentationPolishConfig Phase12DCfg = IsValid(PresentationData)
+		? PresentationData->Phase12DPolishConfig.GetSanitized()
+		: FPhase12DPresentationPolishConfig();
+
+	if (Phase12DCfg.bEnableRearGridLuminanceSuppression)
+	{
+		RigCfg.MidgroundWashSpot.Intensity *= Phase12DCfg.MidgroundWashIntensityMultiplier;
+		const float WashLum = (0.2126f * RigCfg.MidgroundWashSpot.LightColor.R)
+			+ (0.7152f * RigCfg.MidgroundWashSpot.LightColor.G)
+			+ (0.0722f * RigCfg.MidgroundWashSpot.LightColor.B);
+		RigCfg.MidgroundWashSpot.LightColor = FMath::Lerp(
+			RigCfg.MidgroundWashSpot.LightColor,
+			FLinearColor(WashLum, WashLum, WashLum, 1.0f),
+			Phase12DCfg.MidgroundWashChromaDesaturation);
+	}
 
 	// Recessed central Industrial Foundry Grate Shaft & heavy vertical mechanical columns in 2 zero-shadow, zero-collision Rodin PBR ISM batches (X in [430, 465] cm).
 	if (AtmosCfg.bSpawnMidgroundArchitectureRelief && IsValid(PresentationData))
@@ -571,6 +592,43 @@ void ATareTitheGameMode::SpawnGreyboxPitEnclosureAndLighting(UWorld* World)
 					GrateSlot,
 					PresentationData->CellFloorMaterial.Get()))
 				{
+					if (UMaterialInterface* GrateBaseMat = GrateShaftISM->GetMaterial(0))
+					{
+						if (UMaterialInstanceDynamic* FoundryRearGridMID = UMaterialInstanceDynamic::Create(GrateBaseMat, FoundryShaftHostActor))
+						{
+							FLinearColor BaseAlbedo(1.64f, 1.68f, 1.74f, 1.0f);
+							FLinearColor BaseF0(0.19f, 0.20f, 0.22f, 1.0f);
+							float BaseSpec = 0.72f;
+							GrateBaseMat->GetVectorParameterValue(FMaterialParameterInfo(TEXT("AlbedoTint")), BaseAlbedo);
+							GrateBaseMat->GetVectorParameterValue(FMaterialParameterInfo(TEXT("ConductorMinF0")), BaseF0);
+							GrateBaseMat->GetScalarParameterValue(FMaterialParameterInfo(TEXT("SpecularScale")), BaseSpec);
+
+							const float AlbedoMult = Phase12DCfg.bEnableRearGridLuminanceSuppression ? Phase12DCfg.RearGridAlbedoMultiplier : 1.0f;
+							const float F0Mult = Phase12DCfg.bEnableRearGridLuminanceSuppression ? Phase12DCfg.RearGridConductorF0Multiplier : 1.0f;
+							const float SpecMult = Phase12DCfg.bEnableRearGridLuminanceSuppression ? Phase12DCfg.RearGridSpecularMultiplier : 1.0f;
+
+							FoundryRearGridMID->SetVectorParameterValue(
+								TEXT("AlbedoTint"),
+								FLinearColor(BaseAlbedo.R * AlbedoMult, BaseAlbedo.G * AlbedoMult, BaseAlbedo.B * AlbedoMult, 1.0f));
+							FoundryRearGridMID->SetVectorParameterValue(
+								TEXT("ConductorMinF0"),
+								FLinearColor(BaseF0.R * F0Mult, BaseF0.G * F0Mult, BaseF0.B * F0Mult, 1.0f));
+							FoundryRearGridMID->SetScalarParameterValue(TEXT("SpecularScale"), BaseSpec * SpecMult);
+							if (Phase12DCfg.bEnableRearGridLuminanceSuppression)
+							{
+								FoundryRearGridMID->SetScalarParameterValue(TEXT("RoughnessMin"), 0.34f);
+								FoundryRearGridMID->SetScalarParameterValue(TEXT("RoughnessMax"), 0.58f);
+							}
+							FoundryRearGridMID->SetScalarParameterValue(
+								TEXT("ProceduralWearWeight"),
+								Phase12DCfg.bEnableProceduralStationWear ? Phase12DCfg.RearGridProceduralWearWeight : 0.0f);
+							FoundryRearGridMID->SetScalarParameterValue(
+								TEXT("RearGridMacroSootWeight"),
+								Phase12DCfg.bEnableRearGridLuminanceSuppression ? Phase12DCfg.RearGridMacroSootWeight : 0.0f);
+							GrateShaftISM->SetMaterial(0, FoundryRearGridMID);
+						}
+					}
+
 					const FBox GrateLocalBox = GrateSlot.Mesh->GetBoundingBox();
 					const FVector GrateLocalSize = GrateLocalBox.GetSize();
 					const FVector GrateLocalCenter = GrateLocalBox.GetCenter();
@@ -638,6 +696,18 @@ void ATareTitheGameMode::SpawnGreyboxPitEnclosureAndLighting(UWorld* World)
 							ModuleHeightZ / FMath::Max(1.0, ColLocalSize.Z));
 
 						const double ColumnAbsY = FMath::Max(120.0, static_cast<double>(FoundryColumnOffsetYCm));
+						if (!Phase12DCfg.bEnableProceduralStationWear)
+						{
+							if (UMaterialInterface* ColBaseMat = FlankColumnISM->GetMaterial(0))
+							{
+								if (UMaterialInstanceDynamic* FlankColMID = UMaterialInstanceDynamic::Create(ColBaseMat, FoundryShaftHostActor))
+								{
+									FlankColMID->SetScalarParameterValue(TEXT("ProceduralWearWeight"), 0.0f);
+									FlankColMID->SetScalarParameterValue(TEXT("RearGridMacroSootWeight"), 0.0f);
+									FlankColumnISM->SetMaterial(0, FlankColMID);
+								}
+							}
+						}
 						for (const double SideSign : { -1.0, 1.0 })
 						{
 							const double ColumnCenterY = DropY + (SideSign * ColumnAbsY);
@@ -648,6 +718,115 @@ void ATareTitheGameMode::SpawnGreyboxPitEnclosureAndLighting(UWorld* World)
 								const FVector PivotCompensatedTranslation =
 									DesiredWorldCenter - ColumnQuat.RotateVector(ColumnInstanceScale * ColLocalCenter);
 								FlankColumnISM->AddInstance(FTransform(ColumnQuat, PivotCompensatedTranslation, ColumnInstanceScale), true);
+							}
+						}
+					}
+				}
+
+				// 3. Safeguard 4: 3 asymmetric vertical industrial risers + flange collars (X in [420.5, 438.0] cm, Z in [-66.0, +210.0] cm)
+				// breaking up the rear grate repetition in 1 zero-shadow, zero-collision dark soot-iron ISM batch.
+				if (Phase12DCfg.bEnableRearShaftHeavyConduits && IsValid(GreyboxCellCylinderMesh))
+				{
+					if (UInstancedStaticMeshComponent* ConduitISM = NewObject<UInstancedStaticMeshComponent>(
+						FoundryShaftHostActor,
+						TEXT("FoundryRearConduitISM")))
+					{
+						ConduitISM->PrimaryComponentTick.bCanEverTick = false;
+						ConduitISM->SetMobility(EComponentMobility::Movable);
+						ConduitISM->SetupAttachment(FoundryShaftHostActor->GetRootComponent());
+						ConduitISM->SetStaticMesh(GreyboxCellCylinderMesh);
+						ConduitISM->SetSimulatePhysics(false);
+						ConduitISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+						ConduitISM->SetGenerateOverlapEvents(false);
+						ConduitISM->SetCanEverAffectNavigation(false);
+						ConduitISM->SetCastShadow(false);
+						ConduitISM->bReceivesDecals = false;
+
+						UMaterialInterface* ConduitParentMat = nullptr;
+						if (PresentationData->TareChuteMeshSlot.MaterialOverrides.Num() > 0 &&
+							IsValid(PresentationData->TareChuteMeshSlot.MaterialOverrides[0]))
+						{
+							ConduitParentMat = PresentationData->TareChuteMeshSlot.MaterialOverrides[0].Get();
+						}
+						else if (IsValid(PresentationData->DarkGunmetalMaterial))
+						{
+							ConduitParentMat = PresentationData->DarkGunmetalMaterial.Get();
+						}
+						else
+						{
+							ConduitParentMat = GreyboxCellBaseMaterial.Get();
+						}
+
+						if (IsValid(ConduitParentMat))
+						{
+							if (UMaterialInstanceDynamic* FoundryRearConduitMID = UMaterialInstanceDynamic::Create(ConduitParentMat, FoundryShaftHostActor))
+							{
+								FoundryRearConduitMID->SetVectorParameterValue(TEXT("AlbedoTint"), Phase12DCfg.ConduitAlbedoTint);
+								FoundryRearConduitMID->SetVectorParameterValue(TEXT("ConductorMinF0"), Phase12DCfg.ConduitConductorMinF0);
+								FoundryRearConduitMID->SetScalarParameterValue(TEXT("RoughnessMin"), Phase12DCfg.ConduitRoughnessMin);
+								FoundryRearConduitMID->SetScalarParameterValue(TEXT("RoughnessMax"), Phase12DCfg.ConduitRoughnessMax);
+								FoundryRearConduitMID->SetScalarParameterValue(TEXT("SpecularScale"), Phase12DCfg.ConduitSpecularScale);
+								FoundryRearConduitMID->SetScalarParameterValue(TEXT("MetallicScale"), 1.0f);
+								FoundryRearConduitMID->SetScalarParameterValue(TEXT("MetallicMin"), 0.44f);
+								FoundryRearConduitMID->SetScalarParameterValue(TEXT("MetallicMax"), 0.60f);
+								FoundryRearConduitMID->SetScalarParameterValue(TEXT("AOStrength"), 0.82f);
+								FoundryRearConduitMID->SetScalarParameterValue(TEXT("NormalStrength"), 1.35f);
+								FoundryRearConduitMID->SetScalarParameterValue(
+									TEXT("ProceduralWearWeight"),
+									Phase12DCfg.bEnableProceduralStationWear ? Phase12DCfg.ConduitProceduralWearWeight : 0.0f);
+								FoundryRearConduitMID->SetScalarParameterValue(TEXT("RearGridMacroSootWeight"), 0.0f);
+								FoundryRearConduitMID->SetVectorParameterValue(TEXT("BaseColorConst"), FLinearColor(0.045f, 0.048f, 0.052f, 1.0f));
+								FoundryRearConduitMID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.56f);
+								FoundryRearConduitMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.52f);
+								FoundryRearConduitMID->SetScalarParameterValue(TEXT("SpecularConst"), Phase12DCfg.ConduitSpecularScale);
+								ConduitISM->SetMaterial(0, FoundryRearConduitMID);
+							}
+						}
+
+						ConduitISM->RegisterComponent();
+
+						const FBox CylBox = GreyboxCellCylinderMesh->GetBoundingBox();
+						const FVector CylSize = CylBox.GetSize();
+						const FVector CylCenter = CylBox.GetCenter();
+
+						auto AddVerticalCylinderCm = [&](double CenterX, double CenterY, double CenterZ, double RadiusCm, double HeightZCm)
+						{
+							const double DiameterCm = 2.0 * RadiusCm;
+							const FVector Scale(
+								DiameterCm / FMath::Max(1.0, CylSize.X),
+								DiameterCm / FMath::Max(1.0, CylSize.Y),
+								HeightZCm / FMath::Max(1.0, CylSize.Z));
+							const FVector PivotWorld = FVector(CenterX, CenterY, CenterZ) - (Scale * CylCenter);
+							ConduitISM->AddInstance(FTransform(FQuat::Identity, PivotWorld, Scale), true);
+						};
+
+						struct FConduitRiserSpec
+						{
+							double WorldX;
+							double OffsetY;
+							double PipeRadiusCm;
+							double CollarRadiusCm;
+						};
+
+						const FConduitRiserSpec RiserSpecs[3] = {
+							{ 429.5, -92.0, 6.5, 8.0 },
+							{ 433.0, -110.0, 3.8, 5.0 },
+							{ 429.0, +98.0, 7.0, 8.5 }
+						};
+						constexpr double RiserBottomZ = -66.0;
+						constexpr double RiserTopZ = 210.0;
+						constexpr double RiserCenterZ = 0.5 * (RiserBottomZ + RiserTopZ);
+						constexpr double RiserHeightZ = RiserTopZ - RiserBottomZ;
+						constexpr double CollarHeightZ = 5.5;
+						const double CollarCentersZ[3] = { 16.0, 96.0, 176.0 };
+
+						for (const FConduitRiserSpec& Spec : RiserSpecs)
+						{
+							const double ConduitWorldY = DropY + Spec.OffsetY;
+							AddVerticalCylinderCm(Spec.WorldX, ConduitWorldY, RiserCenterZ, Spec.PipeRadiusCm, RiserHeightZ);
+							for (const double CollarZ : CollarCentersZ)
+							{
+								AddVerticalCylinderCm(Spec.WorldX, ConduitWorldY, CollarZ, Spec.CollarRadiusCm, CollarHeightZ);
 							}
 						}
 					}

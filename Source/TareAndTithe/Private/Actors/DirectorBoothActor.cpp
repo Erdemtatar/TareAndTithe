@@ -185,6 +185,18 @@ ADirectorBoothActor::ADirectorBoothActor()
 		DirectorSilhouetteCylindersISM->SetMaterial(0, BaseGreyboxShapeMaterial);
 	}
 
+	DirectorOpticalGlintsISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("DirectorOpticalGlintsISM"));
+	DirectorOpticalGlintsISM->SetupAttachment(BoothRoot);
+	EnforceZeroCostPresentationFlags(DirectorOpticalGlintsISM);
+	if (IsValid(BasicCubeMesh))
+	{
+		DirectorOpticalGlintsISM->SetStaticMesh(BasicCubeMesh);
+	}
+	if (IsValid(BaseGreyboxShapeMaterial))
+	{
+		DirectorOpticalGlintsISM->SetMaterial(0, BaseGreyboxShapeMaterial);
+	}
+
 	// Towering Central Command Bay (World X=[406.6,441.4], Y=[-110.2,+110.2], Z=[212.0,382.0]; rises +106 cm above clamp housing).
 	CenterBayPivot = CreateDefaultSubobject<USceneComponent>(TEXT("CenterBayPivot"));
 	CenterBayPivot->SetupAttachment(BoothRoot);
@@ -825,7 +837,7 @@ void ADirectorBoothActor::HandleShiftVerdict(EShiftVerdictType Verdict, EContrac
 		bUseFastFaultShutterSlam = false;
 		SetShutterTargetOpenAlpha(1.0f, false);
 		SetPanopticonLampState(FLinearColor(1.00f, 0.78f, 0.16f, 1.0f), 1.45f);
-		SetWindowGlowCardsState(SurvCfg.IdleWindowCardBaseColor, SurvCfg.IdleWindowCardEmissive);
+		SetWindowGlowCardsState(SurvCfg.IdleWindowCardBaseColor, SurvCfg.IdleWindowCardEmissive, true);
 		RefreshDirectorIntercomWingReadout();
 		break;
 	}
@@ -834,7 +846,7 @@ void ADirectorBoothActor::HandleShiftVerdict(EShiftVerdictType Verdict, EContrac
 		bUseFastFaultShutterSlam = false;
 		SetShutterTargetOpenAlpha(1.0f, false);
 		SetPanopticonLampState(VerdictApprovedLampColor, 1.0f);
-		SetWindowGlowCardsState(SurvCfg.IdleWindowCardBaseColor, SurvCfg.IdleWindowCardEmissive);
+		SetWindowGlowCardsState(SurvCfg.IdleWindowCardBaseColor, SurvCfg.IdleWindowCardEmissive, true);
 		RefreshDirectorIntercomWingReadout();
 		break;
 	}
@@ -843,7 +855,7 @@ void ADirectorBoothActor::HandleShiftVerdict(EShiftVerdictType Verdict, EContrac
 		bUseFastFaultShutterSlam = false;
 		SetShutterTargetOpenAlpha(0.0f, false);
 		SetPanopticonLampState(VerdictApprovedLampColor, 1.0f);
-		SetWindowGlowCardsState(SurvCfg.IdleWindowCardBaseColor, SurvCfg.IdleWindowCardEmissive);
+		SetWindowGlowCardsState(SurvCfg.IdleWindowCardBaseColor, SurvCfg.IdleWindowCardEmissive, true);
 		RefreshDirectorIntercomWingReadout();
 		break;
 	}
@@ -852,7 +864,7 @@ void ADirectorBoothActor::HandleShiftVerdict(EShiftVerdictType Verdict, EContrac
 		bUseFastFaultShutterSlam = false;
 		SetShutterTargetOpenAlpha(1.0f, false);
 		SetPanopticonLampState(FLinearColor(1.00f, 0.82f, 0.22f, 1.0f), 1.50f);
-		SetWindowGlowCardsState(SurvCfg.IdleWindowCardBaseColor, SurvCfg.IdleWindowCardEmissive);
+		SetWindowGlowCardsState(SurvCfg.IdleWindowCardBaseColor, SurvCfg.IdleWindowCardEmissive, true);
 		RefreshDirectorIntercomWingReadout();
 		break;
 	}
@@ -931,7 +943,7 @@ void ADirectorBoothActor::HandleShiftPhaseChanged(EShiftPhase NewPhase)
 		bUseFastFaultShutterSlam = false;
 		SetShutterTargetOpenAlpha(1.0f, false);
 		SetPanopticonLampState(ActiveInspectionLampColor, 1.0f);
-		SetWindowGlowCardsState(SurvCfg.IdleWindowCardBaseColor, SurvCfg.IdleWindowCardEmissive);
+		SetWindowGlowCardsState(SurvCfg.IdleWindowCardBaseColor, SurvCfg.IdleWindowCardEmissive, true);
 		RefreshDirectorIntercomWingReadout();
 	}
 	else if (NewPhase == EShiftPhase::FaultResetDelay)
@@ -1273,23 +1285,47 @@ int32 ADirectorBoothActor::GetDirectorSilhouetteInstanceCount() const
 	return CubeCount + CylCount;
 }
 
-void ADirectorBoothActor::SetWindowGlowCardsState(const FLinearColor& BaseColor, const FLinearColor& EmissiveColor)
+void ADirectorBoothActor::SetWindowGlowCardsState(
+	const FLinearColor& BaseColor,
+	const FLinearColor& EmissiveColor,
+	bool bApplyRightBaySurveillanceLift)
 {
-	UMaterialInstanceDynamic* const CardMIDs[3] = {
-		LeftWindowGlowCardMID,
-		CenterWindowGlowCardMID,
-		RightWindowGlowCardMID
-	};
-	for (UMaterialInstanceDynamic* MID : CardMIDs)
+	const FPhase12DPresentationPolishConfig Phase12DCfg = IsValid(PresentationData)
+		? PresentationData->Phase12DPolishConfig.GetSanitized()
+		: FPhase12DPresentationPolishConfig();
+
+	auto ApplyCardColors = [](UMaterialInstanceDynamic* MID, const FLinearColor& CardBase, const FLinearColor& CardEmissive)
 	{
 		if (IsValid(MID))
 		{
-			MID->SetVectorParameterValue(TEXT("BaseColorConst"), BaseColor);
-			MID->SetVectorParameterValue(TEXT("Color"), BaseColor);
-			MID->SetVectorParameterValue(TEXT("EmissiveColorConst"), EmissiveColor);
+			MID->SetVectorParameterValue(TEXT("BaseColorConst"), CardBase);
+			MID->SetVectorParameterValue(TEXT("Color"), CardBase);
+			MID->SetVectorParameterValue(TEXT("EmissiveColorConst"), CardEmissive);
 			MID->SetScalarParameterValue(TEXT("EmissiveScale"), 1.0f);
 		}
+	};
+
+	ApplyCardColors(LeftWindowGlowCardMID, BaseColor, EmissiveColor);
+	ApplyCardColors(CenterWindowGlowCardMID, BaseColor, EmissiveColor);
+
+	FLinearColor RightBase = BaseColor;
+	FLinearColor RightEmissive = EmissiveColor;
+	if (bApplyRightBaySurveillanceLift && Phase12DCfg.bEnableRightPanopticonContrastLift)
+	{
+		const float BM = Phase12DCfg.RightBayWindowBaseColorMultiplier;
+		const float EM = Phase12DCfg.RightBayWindowEmissiveMultiplier;
+		RightBase = FLinearColor(
+			FMath::Clamp(BaseColor.R * BM, 0.0f, 1.0f),
+			FMath::Clamp(BaseColor.G * BM, 0.0f, 1.0f),
+			FMath::Clamp(BaseColor.B * BM, 0.0f, 1.0f),
+			1.0f);
+		RightEmissive = FLinearColor(
+			FMath::Clamp(EmissiveColor.R * EM, 0.0f, 1.55f),
+			FMath::Clamp(EmissiveColor.G * EM, 0.0f, 1.55f),
+			FMath::Clamp(EmissiveColor.B * EM, 0.0f, 1.55f),
+			1.0f);
 	}
+	ApplyCardColors(RightWindowGlowCardMID, RightBase, RightEmissive);
 }
 
 void ADirectorBoothActor::RebuildPanopticonSurveillanceVisuals()
@@ -1301,10 +1337,14 @@ void ADirectorBoothActor::RebuildPanopticonSurveillanceVisuals()
 	EnforceZeroCostPresentationFlags(PanopticonLouverSlatsISM);
 	EnforceZeroCostPresentationFlags(DirectorSilhouetteCubesISM);
 	EnforceZeroCostPresentationFlags(DirectorSilhouetteCylindersISM);
+	EnforceZeroCostPresentationFlags(DirectorOpticalGlintsISM);
 
 	const FPanopticonSurveillanceConfig SurvCfg = IsValid(PresentationData)
 		? PresentationData->PanopticonSurveillance.GetSanitized()
 		: FPanopticonSurveillanceConfig();
+	const FPhase12DPresentationPolishConfig Phase12DCfg = IsValid(PresentationData)
+		? PresentationData->Phase12DPolishConfig.GetSanitized()
+		: FPhase12DPresentationPolishConfig();
 
 	// 1. Reposition bay lights forward of shutters (eliminating 0.95 cm specular singularity while keeping N.L > 0 on slammed shutters).
 	if (IsValid(StatusPointLight))
@@ -1369,6 +1409,8 @@ void ADirectorBoothActor::RebuildPanopticonSurveillanceVisuals()
 			BoothFrameMID->SetScalarParameterValue(TEXT("SpecularScale"), SurvCfg.BoothFrameSpecularScale);
 			BoothFrameMID->SetScalarParameterValue(TEXT("RoughnessMin"), 0.38f);
 			BoothFrameMID->SetScalarParameterValue(TEXT("RoughnessMax"), 0.62f);
+			BoothFrameMID->SetScalarParameterValue(TEXT("ProceduralWearWeight"), Phase12DCfg.bEnableProceduralStationWear ? 0.75f : 0.0f);
+			BoothFrameMID->SetScalarParameterValue(TEXT("RearGridMacroSootWeight"), 0.0f);
 
 			UStaticMeshComponent* const FrameComps[3] = { BoothFrameVisual, LeftBoothFrameVisual, RightBoothFrameVisual };
 			for (UStaticMeshComponent* Comp : FrameComps)
@@ -1392,6 +1434,8 @@ void ADirectorBoothActor::RebuildPanopticonSurveillanceVisuals()
 			DirectorShutterMID->SetScalarParameterValue(TEXT("SpecularScale"), SurvCfg.BoothShutterSpecularScale);
 			DirectorShutterMID->SetScalarParameterValue(TEXT("RoughnessMin"), 0.40f);
 			DirectorShutterMID->SetScalarParameterValue(TEXT("RoughnessMax"), 0.64f);
+			DirectorShutterMID->SetScalarParameterValue(TEXT("ProceduralWearWeight"), Phase12DCfg.bEnableProceduralStationWear ? 0.75f : 0.0f);
+			DirectorShutterMID->SetScalarParameterValue(TEXT("RearGridMacroSootWeight"), 0.0f);
 
 			UStaticMeshComponent* const ShutterComps[3] = { BlastShutterVisual, LeftBlastShutterVisual, RightBlastShutterVisual };
 			for (UStaticMeshComponent* Comp : ShutterComps)
@@ -1484,6 +1528,9 @@ void ADirectorBoothActor::RebuildPanopticonSurveillanceVisuals()
 			LouverSlatMID->SetScalarParameterValue(TEXT("RoughnessMin"), 0.68f);
 			LouverSlatMID->SetScalarParameterValue(TEXT("RoughnessMax"), 0.82f);
 			LouverSlatMID->SetScalarParameterValue(TEXT("NormalStrength"), 0.15f);
+			LouverSlatMID->SetScalarParameterValue(TEXT("ProceduralWearWeight"), 0.0f);
+			LouverSlatMID->SetScalarParameterValue(TEXT("RearGridMacroSootWeight"), 0.0f);
+			LouverSlatMID->SetVectorParameterValue(TEXT("EmissiveTint"), FLinearColor::Black);
 			LouverSlatMID->SetVectorParameterValue(TEXT("BaseColorConst"), FLinearColor(0.015f, 0.019f, 0.025f, 1.0f));
 			LouverSlatMID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.76f);
 			LouverSlatMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.76f);
@@ -1509,6 +1556,9 @@ void ADirectorBoothActor::RebuildPanopticonSurveillanceVisuals()
 			DirectorSilhouetteMID->SetScalarParameterValue(TEXT("RoughnessMax"), 0.85f);
 			DirectorSilhouetteMID->SetScalarParameterValue(TEXT("NormalStrength"), 0.0f);
 			DirectorSilhouetteMID->SetScalarParameterValue(TEXT("AOStrength"), 1.0f);
+			DirectorSilhouetteMID->SetScalarParameterValue(TEXT("ProceduralWearWeight"), 0.0f);
+			DirectorSilhouetteMID->SetScalarParameterValue(TEXT("RearGridMacroSootWeight"), 0.0f);
+			DirectorSilhouetteMID->SetVectorParameterValue(TEXT("EmissiveTint"), FLinearColor::Black);
 			DirectorSilhouetteMID->SetVectorParameterValue(TEXT("BaseColorConst"), SootBlackF0);
 			DirectorSilhouetteMID->SetVectorParameterValue(TEXT("Color"), SootBlackF0);
 			DirectorSilhouetteMID->SetScalarParameterValue(TEXT("SpecularConst"), 0.01f);
@@ -1523,6 +1573,36 @@ void ADirectorBoothActor::RebuildPanopticonSurveillanceVisuals()
 			if (IsValid(DirectorSilhouetteCylindersISM))
 			{
 				DirectorSilhouetteCylindersISM->SetMaterial(0, DirectorSilhouetteMID);
+			}
+		}
+
+		// Safeguard 3: Cook-safe ISM optical lens glint MID (cold cyan-white < 1.65f BloomThreshold; zero red REC light).
+		DirectorOpticalGlintMID = UMaterialInstanceDynamic::Create(IsmPbrBaseMat, this);
+		if (IsValid(DirectorOpticalGlintMID))
+		{
+			const FLinearColor ColdGlassBase(0.04f, 0.08f, 0.10f, 1.0f);
+			DirectorOpticalGlintMID->SetVectorParameterValue(TEXT("AlbedoTint"), ColdGlassBase);
+			DirectorOpticalGlintMID->SetVectorParameterValue(TEXT("ConductorMinF0"), ColdGlassBase);
+			DirectorOpticalGlintMID->SetScalarParameterValue(TEXT("SpecularScale"), 0.35f);
+			DirectorOpticalGlintMID->SetScalarParameterValue(TEXT("MetallicScale"), 1.0f);
+			DirectorOpticalGlintMID->SetScalarParameterValue(TEXT("MetallicMin"), 0.20f);
+			DirectorOpticalGlintMID->SetScalarParameterValue(TEXT("MetallicMax"), 0.30f);
+			DirectorOpticalGlintMID->SetScalarParameterValue(TEXT("RoughnessMin"), 0.18f);
+			DirectorOpticalGlintMID->SetScalarParameterValue(TEXT("RoughnessMax"), 0.22f);
+			DirectorOpticalGlintMID->SetScalarParameterValue(TEXT("NormalStrength"), 0.0f);
+			DirectorOpticalGlintMID->SetScalarParameterValue(TEXT("AOStrength"), 0.0f);
+			DirectorOpticalGlintMID->SetScalarParameterValue(TEXT("ProceduralWearWeight"), 0.0f);
+			DirectorOpticalGlintMID->SetScalarParameterValue(TEXT("RearGridMacroSootWeight"), 0.0f);
+			DirectorOpticalGlintMID->SetVectorParameterValue(TEXT("EmissiveTint"), Phase12DCfg.OpticalLensGlintEmissive);
+			DirectorOpticalGlintMID->SetVectorParameterValue(TEXT("BaseColorConst"), ColdGlassBase);
+			DirectorOpticalGlintMID->SetVectorParameterValue(TEXT("Color"), ColdGlassBase);
+			DirectorOpticalGlintMID->SetVectorParameterValue(TEXT("EmissiveColorConst"), Phase12DCfg.OpticalLensGlintEmissive);
+			DirectorOpticalGlintMID->SetScalarParameterValue(TEXT("EmissiveScale"), 1.0f);
+			DirectorOpticalGlintMID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.20f);
+			DirectorOpticalGlintMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.24f);
+			if (IsValid(DirectorOpticalGlintsISM))
+			{
+				DirectorOpticalGlintsISM->SetMaterial(0, DirectorOpticalGlintMID);
 			}
 		}
 	}
@@ -1605,6 +1685,10 @@ void ADirectorBoothActor::RebuildPanopticonSurveillanceVisuals()
 	if (IsValid(DirectorSilhouetteCylindersISM))
 	{
 		DirectorSilhouetteCylindersISM->ClearInstances();
+	}
+	if (IsValid(DirectorOpticalGlintsISM))
+	{
+		DirectorOpticalGlintsISM->ClearInstances();
 	}
 
 	if (SurvCfg.bEnableWatchingDirectorSilhouette && IsValid(BasicCubeMesh) && IsValid(BasicCylinderMesh) &&
@@ -1695,6 +1779,33 @@ void ADirectorBoothActor::RebuildPanopticonSurveillanceVisuals()
 		AddClampedSilhouettePart(DirectorSilhouetteCubesISM, BasicCubeMesh, FVector(MidX - 0.45, BaseY - 0.35 * S, 13.30 * S), FVector(2.50, 9.60 * S, 1.10 * S), FRotator(10.0f, InwardTurnDeg, 0.0f));
 		AddClampedSilhouettePart(DirectorSilhouetteCubesISM, BasicCubeMesh, FVector(MidX - 0.15, BaseY, 15.65 * S), FVector(2.40, 12.20 * S, 3.20 * S), FRotator(5.0f, InwardTurnDeg, 0.0f));
 
+		// Safeguard 3: Twin Nyquist-safe cold cyan-white optical lens glints ((0.45, 1.65, 1.15) cm, Z=+11.05 cm, +-1.85 cm ocular spacing along FigRot).
+		if (Phase12DCfg.bEnableRightPanopticonContrastLift && IsValid(DirectorOpticalGlintsISM))
+		{
+			DirectorOpticalGlintsISM->SetStaticMesh(BasicCubeMesh);
+			const FQuat FigQuat = FigRot.Quaternion();
+			const FVector OcularForwardAxis = -FigQuat.GetAxisX();
+			const FVector OcularRightAxis = FigQuat.GetAxisY();
+			const FVector OcularBridgeCenter =
+				FVector(MidX, BaseY, static_cast<double>(Phase12DCfg.OpticalLensGlintBoothLocalZ) * S)
+				+ (OcularForwardAxis * static_cast<double>(Phase12DCfg.OpticalLensGlintForwardOffsetCm));
+			const double LateralHalfSpacingCm = static_cast<double>(Phase12DCfg.OpticalLensGlintHalfSpacingCm) * S;
+
+			AddClampedSilhouettePart(
+				DirectorOpticalGlintsISM,
+				BasicCubeMesh,
+				OcularBridgeCenter - (OcularRightAxis * LateralHalfSpacingCm),
+				Phase12DCfg.OpticalLensGlintSizeCm,
+				FigRot);
+			AddClampedSilhouettePart(
+				DirectorOpticalGlintsISM,
+				BasicCubeMesh,
+				OcularBridgeCenter + (OcularRightAxis * LateralHalfSpacingCm),
+				Phase12DCfg.OpticalLensGlintSizeCm,
+				FigRot);
+			DirectorOpticalGlintsISM->MarkRenderStateDirty();
+		}
+
 		DirectorSilhouetteCubesISM->MarkRenderStateDirty();
 		DirectorSilhouetteCylindersISM->MarkRenderStateDirty();
 	}
@@ -1703,12 +1814,12 @@ void ADirectorBoothActor::RebuildPanopticonSurveillanceVisuals()
 	if (CachedShiftPhase == EShiftPhase::FaultResetDelay)
 	{
 		SetPanopticonLampState(FaultSlamLampColor, SurvCfg.FaultStrobePeakMultiplier);
-		SetWindowGlowCardsState(SurvCfg.FaultWindowCardBaseColor, SurvCfg.FaultWindowCardEmissive);
+		SetWindowGlowCardsState(SurvCfg.FaultWindowCardBaseColor, SurvCfg.FaultWindowCardEmissive, false);
 	}
 	else
 	{
 		SetPanopticonLampState(ActiveInspectionLampColor, 1.0f);
-		SetWindowGlowCardsState(SurvCfg.IdleWindowCardBaseColor, SurvCfg.IdleWindowCardEmissive);
+		SetWindowGlowCardsState(SurvCfg.IdleWindowCardBaseColor, SurvCfg.IdleWindowCardEmissive, true);
 	}
 }
 

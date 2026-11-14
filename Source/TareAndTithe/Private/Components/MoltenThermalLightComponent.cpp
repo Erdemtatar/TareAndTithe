@@ -28,7 +28,7 @@ void UMoltenThermalLightComponent::ConfigureLightParameters(
 	float InFlashDecayDurationSeconds,
 	float InSteadyInterpSpeed)
 {
-	FlashDecayDurationSeconds = FMath::Clamp(InFlashDecayDurationSeconds, 0.10f, 4.0f);
+	FlashDecayDurationSeconds = FMath::Clamp(InFlashDecayDurationSeconds, 0.10f, 8.0f);
 	SteadyInterpSpeed = FMath::Clamp(InSteadyInterpSpeed, 0.5f, 30.0f);
 
 	if (IsValid(TargetLight))

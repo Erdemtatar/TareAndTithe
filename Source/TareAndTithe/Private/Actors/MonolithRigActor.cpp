@@ -572,13 +572,32 @@ FSliceResultSummary AMonolithRigActor::CommitSlicePlane_Implementation(
 			VeinRemainderBoundsToleranceCm);
 	}
 
-	if (Summary.Outcome == ECommitSliceOutcome::Success && IsValid(RemainderMeshComponent))
+	if (Summary.Outcome == ECommitSliceOutcome::Success)
 	{
-		UMaterialInterface* ExpectedOuter = ResolveEffectiveOuterMaterial(CachedLoadedContract);
-		UMaterialInterface* ExpectedCap = ResolveEffectiveCutCapMaterial(CachedLoadedContract);
-		if (RemainderMeshComponent->GetMaterial(0) != ExpectedOuter || RemainderMeshComponent->GetMaterial(1) != ExpectedCap)
+		const FPhase12DPresentationPolishConfig Phase12DCfg = IsValid(PresentationData)
+			? PresentationData->Phase12DPolishConfig.GetSanitized()
+			: FPhase12DPresentationPolishConfig();
+		const float SliceWorldTime = IsValid(GetWorld()) ? static_cast<float>(GetWorld()->GetTimeSeconds()) : 0.0f;
+
+		for (ASeveredChunkActor* SpawnedChunk : SpawnedChunks)
 		{
-			RemainderMeshComponent->ConfigureMaterialSet({ExpectedOuter, ExpectedCap});
+			if (IsValid(SpawnedChunk))
+			{
+				SpawnedChunk->ConfigureCutCapThermalCooling(
+					Phase12DCfg.bEnableCutCapThermalCooling,
+					Phase12DCfg.CutCapCoolingDurationSeconds,
+					SliceWorldTime);
+			}
+		}
+
+		if (IsValid(RemainderMeshComponent))
+		{
+			UMaterialInterface* ExpectedOuter = ResolveEffectiveOuterMaterial(CachedLoadedContract);
+			UMaterialInterface* ExpectedCap = PrepareRemainderCutCapMaterial(CachedLoadedContract, SliceWorldTime);
+			if (RemainderMeshComponent->GetMaterial(0) != ExpectedOuter || RemainderMeshComponent->GetMaterial(1) != ExpectedCap)
+			{
+				RemainderMeshComponent->ConfigureMaterialSet({ExpectedOuter, ExpectedCap});
+			}
 		}
 	}
 
@@ -613,6 +632,9 @@ FSliceResultSummary AMonolithRigActor::CommitSlicePlane_Implementation(
 		const FMoltenBounceLightConfig MoltenCfg = IsValid(PresentationData)
 			? PresentationData->MoltenBounceConfig
 			: FMoltenBounceLightConfig();
+		const FPhase12DPresentationPolishConfig Phase12DCfg = IsValid(PresentationData)
+			? PresentationData->Phase12DPolishConfig.GetSanitized()
+			: FPhase12DPresentationPolishConfig();
 		if (IsValid(MoltenCutBounceLight) && IsValid(MonolithSliceComponent))
 		{
 			const FBox RemWorldBounds = MonolithSliceComponent->GetRemainderWorldBounds();
@@ -623,8 +645,11 @@ FSliceResultSummary AMonolithRigActor::CommitSlicePlane_Implementation(
 				MoltenCutBounceLight->SetRelativeLocation(MountLocalBottom + MoltenCfg.CutLightLocalOffset);
 			}
 		}
+		const float CooledBounceMult = Phase12DCfg.bEnableCutCapThermalCooling
+			? Phase12DCfg.CutCapCooledBounceMultiplier
+			: 1.0f;
 		const float NewSteady = (Summary.NewRemainderMassKg > KINDA_SMALL_NUMBER)
-			? MoltenCfg.CutSteadyRemainderIntensity
+			? (MoltenCfg.CutSteadyRemainderIntensity * CooledBounceMult)
 			: 0.0f;
 		MoltenThermalLightComponent->TriggerThermalFlash(MoltenCfg.CutFlashPeakIntensity, NewSteady);
 	}
@@ -800,7 +825,7 @@ bool AMonolithRigActor::LoadContractOnRig(
 
 	RemainderMeshComponent->ConfigureMaterialSet({
 		ResolveEffectiveOuterMaterial(Contract),
-		ResolveEffectiveCutCapMaterial(Contract)
+		PrepareRemainderCutCapMaterial(Contract, -100.0f)
 	});
 
 	// Align actual upper grip cross-section centroid plus any contract eccentric grip offset directly under TiltingMountComponent (0, 0)
@@ -859,16 +884,22 @@ void AMonolithRigActor::ApplyPresentationData(const UTareTithePresentationDataAs
 	const FMoltenBounceLightConfig MoltenCfg = IsValid(PresentationData)
 		? PresentationData->MoltenBounceConfig
 		: FMoltenBounceLightConfig();
+	const FPhase12DPresentationPolishConfig Phase12DCfg = IsValid(PresentationData)
+		? PresentationData->Phase12DPolishConfig.GetSanitized()
+		: FPhase12DPresentationPolishConfig();
 	if (IsValid(MoltenCutBounceLight))
 	{
 		MoltenCutBounceLight->SetRelativeLocation(MoltenCfg.CutLightLocalOffset);
 	}
 	if (IsValid(MoltenThermalLightComponent))
 	{
+		const float EffectiveDecaySeconds = Phase12DCfg.bEnableCutCapThermalCooling
+			? Phase12DCfg.CutCapThermalDecayDurationSeconds
+			: MoltenCfg.FlashDecayDurationSeconds;
 		MoltenThermalLightComponent->ConfigureLightParameters(
 			MoltenCfg.BounceColor,
 			MoltenCfg.CutAttenuationRadiusCm,
-			MoltenCfg.FlashDecayDurationSeconds,
+			EffectiveDecaySeconds,
 			MoltenCfg.SteadyInterpSpeed);
 	}
 
@@ -884,11 +915,11 @@ void AMonolithRigActor::ApplyPresentationData(const UTareTithePresentationDataAs
 			ResolveEffectiveCutCapMaterial(nullptr));
 		MonolithSliceComponent->RefreshActiveMaterials();
 	}
-	else if (IsValid(RemainderMeshComponent))
+	if (IsValid(RemainderMeshComponent))
 	{
 		RemainderMeshComponent->ConfigureMaterialSet({
 			ResolveEffectiveOuterMaterial(CachedLoadedContract),
-			ResolveEffectiveCutCapMaterial(CachedLoadedContract)
+			PrepareRemainderCutCapMaterial(CachedLoadedContract, -100.0f)
 		});
 	}
 
@@ -1133,6 +1164,55 @@ UMaterialInterface* AMonolithRigActor::ResolveEffectiveCutCapMaterial(const UMon
 		return AutoResolvedCutCapMasterMaterial.Get();
 	}
 	return FallbackCutCapMID.Get();
+}
+
+UMaterialInterface* AMonolithRigActor::PrepareRemainderCutCapMaterial(
+	const UMonolithContractDataAsset* Contract,
+	float InCutSpawnTimeSeconds)
+{
+	UMaterialInterface* BaseCapMat = ResolveEffectiveCutCapMaterial(Contract);
+	if (!IsValid(BaseCapMat))
+	{
+		return nullptr;
+	}
+	if (BaseCapMat == FallbackCutCapMID.Get())
+	{
+		FallbackCutCapMID->SetScalarParameterValue(TEXT("CutSpawnTimeSeconds"), InCutSpawnTimeSeconds);
+		return FallbackCutCapMID.Get();
+	}
+
+	const FPhase12DPresentationPolishConfig Phase12DCfg = IsValid(PresentationData)
+		? PresentationData->Phase12DPolishConfig.GetSanitized()
+		: FPhase12DPresentationPolishConfig();
+
+	UMaterialInterface* ResolvedParent = BaseCapMat;
+	if (const UMaterialInstanceDynamic* ExistingMID = Cast<UMaterialInstanceDynamic>(BaseCapMat))
+	{
+		if (IsValid(ExistingMID->Parent))
+		{
+			ResolvedParent = ExistingMID->Parent;
+		}
+	}
+
+	if (!IsValid(RemainderCutCapMID) || CachedRemainderCutCapParent != ResolvedParent)
+	{
+		RemainderCutCapMID = UMaterialInstanceDynamic::Create(ResolvedParent, this);
+		CachedRemainderCutCapParent = ResolvedParent;
+	}
+
+	if (IsValid(RemainderCutCapMID))
+	{
+		RemainderCutCapMID->SetScalarParameterValue(
+			TEXT("CoolingCurveEnabled"),
+			Phase12DCfg.bEnableCutCapThermalCooling ? 1.0f : 0.0f);
+		RemainderCutCapMID->SetScalarParameterValue(
+			TEXT("CoolingDurationSeconds"),
+			Phase12DCfg.CutCapCoolingDurationSeconds);
+		RemainderCutCapMID->SetScalarParameterValue(TEXT("CutSpawnTimeSeconds"), InCutSpawnTimeSeconds);
+		return RemainderCutCapMID.Get();
+	}
+
+	return BaseCapMat;
 }
 
 FVector AMonolithRigActor::TransformRemainderCoMToMountLocal(const FVector& RemainderLocalCoMCm) const

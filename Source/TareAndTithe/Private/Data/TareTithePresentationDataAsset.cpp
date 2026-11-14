@@ -226,3 +226,39 @@ FLaserSheetPresentationConfig FLaserSheetPresentationConfig::GetSanitized() cons
 	Out.OvershootEmissiveGain = FMath::Clamp(Out.OvershootEmissiveGain, 1.00f, 1.65f);
 	return Out;
 }
+
+FPhase12DPresentationPolishConfig FPhase12DPresentationPolishConfig::GetSanitized() const
+{
+	FPhase12DPresentationPolishConfig Out = *this;
+	Out.MidgroundWashIntensityMultiplier = FMath::Clamp(Out.MidgroundWashIntensityMultiplier, 0.40f, 1.20f);
+	Out.MidgroundWashChromaDesaturation = FMath::Clamp(Out.MidgroundWashChromaDesaturation, 0.00f, 0.50f);
+	Out.RearGridAlbedoMultiplier = FMath::Clamp(Out.RearGridAlbedoMultiplier, 0.45f, 1.15f);
+	Out.RearGridConductorF0Multiplier = FMath::Clamp(Out.RearGridConductorF0Multiplier, 0.40f, 1.15f);
+	Out.RearGridSpecularMultiplier = FMath::Clamp(Out.RearGridSpecularMultiplier, 0.35f, 1.15f);
+	Out.RearGridProceduralWearWeight = FMath::Clamp(Out.RearGridProceduralWearWeight, 0.00f, 1.00f);
+	Out.RearGridMacroSootWeight = FMath::Clamp(Out.RearGridMacroSootWeight, 0.00f, 1.00f);
+
+	Out.ConduitRoughnessMin = FMath::Clamp(Out.ConduitRoughnessMin, 0.20f, 0.80f);
+	Out.ConduitRoughnessMax = FMath::Clamp(Out.ConduitRoughnessMax, FMath::Max(0.30f, Out.ConduitRoughnessMin), 0.85f);
+	Out.ConduitSpecularScale = FMath::Clamp(Out.ConduitSpecularScale, 0.10f, 1.00f);
+	Out.ConduitProceduralWearWeight = FMath::Clamp(Out.ConduitProceduralWearWeight, 0.00f, 1.00f);
+
+	Out.RightBayWindowEmissiveMultiplier = FMath::Clamp(Out.RightBayWindowEmissiveMultiplier, 1.00f, 4.00f);
+	Out.RightBayWindowBaseColorMultiplier = FMath::Clamp(Out.RightBayWindowBaseColorMultiplier, 1.00f, 2.50f);
+	// Strictly clamp optical lens glint emissive below 1.65f BloomThreshold and zero red Dominance (cold cyan-white only).
+	Out.OpticalLensGlintEmissive.R = FMath::Clamp(Out.OpticalLensGlintEmissive.R, 0.00f, 1.55f);
+	Out.OpticalLensGlintEmissive.G = FMath::Clamp(Out.OpticalLensGlintEmissive.G, 0.00f, 1.58f);
+	Out.OpticalLensGlintEmissive.B = FMath::Clamp(Out.OpticalLensGlintEmissive.B, 0.00f, 1.60f);
+	Out.OpticalLensGlintEmissive.A = 1.0f;
+	Out.OpticalLensGlintSizeCm.X = FMath::Clamp(Out.OpticalLensGlintSizeCm.X, 0.25, 1.20);
+	Out.OpticalLensGlintSizeCm.Y = FMath::Clamp(Out.OpticalLensGlintSizeCm.Y, 1.10, 2.60);
+	Out.OpticalLensGlintSizeCm.Z = FMath::Clamp(Out.OpticalLensGlintSizeCm.Z, 0.95, 2.00);
+	Out.OpticalLensGlintBoothLocalZ = FMath::Clamp(Out.OpticalLensGlintBoothLocalZ, 9.80f, 12.00f);
+	Out.OpticalLensGlintHalfSpacingCm = FMath::Clamp(Out.OpticalLensGlintHalfSpacingCm, 1.20f, 2.80f);
+	Out.OpticalLensGlintForwardOffsetCm = FMath::Clamp(Out.OpticalLensGlintForwardOffsetCm, 1.10f, 2.20f);
+
+	Out.CutCapCoolingDurationSeconds = FMath::Clamp(Out.CutCapCoolingDurationSeconds, 0.75f, 8.00f);
+	Out.CutCapCooledBounceMultiplier = FMath::Clamp(Out.CutCapCooledBounceMultiplier, 0.00f, 1.00f);
+	Out.CutCapThermalDecayDurationSeconds = FMath::Clamp(Out.CutCapThermalDecayDurationSeconds, 0.50f, 8.00f);
+	return Out;
+}

@@ -656,6 +656,116 @@ struct TAREANDTITHE_API FClampGroanAudioConfig
 };
 
 /**
+ * Phase 12D Industrial Material Wear, Rear Foundry Luminance Suppression,
+ * Right Panopticon Surveillance Contrast Lift & Molten Cut-Cap Thermal Cooling Configuration.
+ * Pure C++ defaults preserve zero binary diff on DA_Presentation.uasset.
+ */
+USTRUCT(BlueprintType)
+struct TAREANDTITHE_API FPhase12DPresentationPolishConfig
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12DPolish|Toggles")
+	bool bEnableProceduralStationWear = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12DPolish|Toggles")
+	bool bEnableRearGridLuminanceSuppression = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12DPolish|Toggles")
+	bool bEnableRearShaftHeavyConduits = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12DPolish|Toggles")
+	bool bEnableRightPanopticonContrastLift = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12DPolish|Toggles")
+	bool bEnableCutCapThermalCooling = true;
+
+	/** Attenuates +X warm foundry shaft spot intensity (5700 * 0.80 = 4560 lm) so hero monolith & scale dominate ROI luminance. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12DPolish|RearFoundry", meta = (ClampMin = "0.40", ClampMax = "1.20"))
+	float MidgroundWashIntensityMultiplier = 0.80f;
+
+	/** Pulls excessive orange saturation slightly toward warm soot-ash luminance (0.12f). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12DPolish|RearFoundry", meta = (ClampMin = "0.00", ClampMax = "0.50"))
+	float MidgroundWashChromaDesaturation = 0.12f;
+
+	/** Scales FoundryGrateShaftISM AlbedoTint (0.80 wash * 0.88 albedo = 0.704 -> -29.6% combined rear grid luminance reduction). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12DPolish|RearFoundry", meta = (ClampMin = "0.45", ClampMax = "1.15"))
+	float RearGridAlbedoMultiplier = 0.88f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12DPolish|RearFoundry", meta = (ClampMin = "0.40", ClampMax = "1.15"))
+	float RearGridConductorF0Multiplier = 0.85f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12DPolish|RearFoundry", meta = (ClampMin = "0.35", ClampMax = "1.15"))
+	float RearGridSpecularMultiplier = 0.78f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12DPolish|RearFoundry", meta = (ClampMin = "0.00", ClampMax = "1.00"))
+	float RearGridProceduralWearWeight = 0.30f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12DPolish|RearFoundry", meta = (ClampMin = "0.00", ClampMax = "1.00"))
+	float RearGridMacroSootWeight = 1.00f;
+
+	/** Safeguard 4 dark soot-iron parameters on FoundryRearConduitISM framing the suppressed rear grid. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12DPolish|RearConduits")
+	FLinearColor ConduitAlbedoTint = FLinearColor(0.52f, 0.55f, 0.60f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12DPolish|RearConduits")
+	FLinearColor ConduitConductorMinF0 = FLinearColor(0.08f, 0.09f, 0.10f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12DPolish|RearConduits", meta = (ClampMin = "0.20", ClampMax = "0.80"))
+	float ConduitRoughnessMin = 0.40f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12DPolish|RearConduits", meta = (ClampMin = "0.30", ClampMax = "0.85"))
+	float ConduitRoughnessMax = 0.68f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12DPolish|RearConduits", meta = (ClampMin = "0.10", ClampMax = "1.00"))
+	float ConduitSpecularScale = 0.42f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12DPolish|RearConduits", meta = (ClampMin = "0.00", ClampMax = "1.00"))
+	float ConduitProceduralWearWeight = 0.65f;
+
+	/** Lifts ONLY RightWindowGlowCardMID during active surveillance so the matte-black Director silhouette cuts sharply against frosted cyan-slate glass. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12DPolish|Panopticon", meta = (ClampMin = "1.00", ClampMax = "4.00"))
+	float RightBayWindowEmissiveMultiplier = 2.45f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12DPolish|Panopticon", meta = (ClampMin = "1.00", ClampMax = "2.50"))
+	float RightBayWindowBaseColorMultiplier = 1.15f;
+
+	/** Safeguard 3 cold cyan-white ocular lens glint emissive (< 1.65f BloomThreshold; zero red REC light). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12DPolish|Panopticon")
+	FLinearColor OpticalLensGlintEmissive = FLinearColor(0.85f, 1.28f, 1.48f, 1.0f);
+
+	/** Safeguard 3 Nyquist-safe twin cold optical lens dimensions (cm): >= 2.05 TSR internal pixels vertically at 85% TSR. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12DPolish|Panopticon")
+	FVector OpticalLensGlintSizeCm = FVector(0.45, 1.65, 1.15);
+
+	/** Booth-local Z (+11.05 cm): +1.11 cm clear above Slat 3 ray shadow, +0.90 cm clear below officer visor brim. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12DPolish|Panopticon", meta = (ClampMin = "9.80", ClampMax = "12.00"))
+	float OpticalLensGlintBoothLocalZ = 11.05f;
+
+	/** Lateral ocular half-spacing (+-1.85 cm) along FigRot -> 2.05 cm dark bridge gap between lenses. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12DPolish|Panopticon", meta = (ClampMin = "1.20", ClampMax = "2.80"))
+	float OpticalLensGlintHalfSpacingCm = 1.85f;
+
+	/** Forward offset along -FigRot.AxisX from (MidX, BaseY) placing lenses cleanly ahead of cranium and behind SafeMinX. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12DPolish|Panopticon", meta = (ClampMin = "1.10", ClampMax = "2.20"))
+	float OpticalLensGlintForwardOffsetCm = 1.44f;
+
+	/** GPU Time shader cooling duration (3.85s) from white-gold incandescent plasma to dark cherry-ember crust. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12DPolish|CutCapCooling", meta = (ClampMin = "0.75", ClampMax = "8.00"))
+	float CutCapCoolingDurationSeconds = 3.85f;
+
+	/** Residual steady MoltenCutBounceLight multiplier (0.15f) once the freshly severed cut cap cools into dark slag crust. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12DPolish|CutCapCooling", meta = (ClampMin = "0.00", ClampMax = "1.00"))
+	float CutCapCooledBounceMultiplier = 0.15f;
+
+	/** Synchronized MoltenThermalLightComponent flash decay duration (3.60s) matching GPU cut-cap thermal dissipation. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12DPolish|CutCapCooling", meta = (ClampMin = "0.50", ClampMax = "8.00"))
+	float CutCapThermalDecayDurationSeconds = 3.60f;
+
+	FPhase12DPresentationPolishConfig GetSanitized() const;
+};
+
+/**
  * Phase 12C OBB-Masked Incandescent Contact Seam, 5-State Palette Separation & Plasma Scanline Configuration.
  */
 USTRUCT(BlueprintType)
@@ -899,6 +1009,13 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Progression")
 	TObjectPtr<UShiftProgressionDataAsset> ShiftProgressionOverride = nullptr;
+
+	// ============================================================================
+	// Phase 12D Industrial Material Wear, Rear Foundry & Panopticon Contrast Polish
+	// ============================================================================
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12DPolish")
+	FPhase12DPresentationPolishConfig Phase12DPolishConfig;
 
 	virtual FPrimaryAssetId GetPrimaryAssetId() const override;
 };

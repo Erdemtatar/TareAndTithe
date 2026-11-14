@@ -115,6 +115,9 @@ void ACellFramingArchitectureActor::ConfigureFraming(const UTareTithePresentatio
 	const FOuterEdgeFramingConfig Cfg = IsValid(InPresentationData)
 		? InPresentationData->OuterEdgeFraming.GetSanitized()
 		: FOuterEdgeFramingConfig();
+	const FPhase12DPresentationPolishConfig Phase12DCfg = IsValid(InPresentationData)
+		? InPresentationData->Phase12DPolishConfig.GetSanitized()
+		: FPhase12DPresentationPolishConfig();
 
 	RebuildOptionalDedicatedRimLights(Cfg);
 
@@ -158,7 +161,7 @@ void ACellFramingArchitectureActor::ConfigureFraming(const UTareTithePresentatio
 		PipeBaseMat = ColumnBaseMat;
 	}
 
-	auto ApplyDarkOiledCastIronParams = [&Cfg](UMaterialInstanceDynamic* TargetMID)
+	auto ApplyDarkOiledCastIronParams = [&Cfg, &Phase12DCfg](UMaterialInstanceDynamic* TargetMID)
 	{
 		if (!IsValid(TargetMID))
 		{
@@ -178,6 +181,8 @@ void ACellFramingArchitectureActor::ConfigureFraming(const UTareTithePresentatio
 		TargetMID->SetScalarParameterValue(TEXT("MetallicMax"), Cfg.OuterMetalMetallic);
 		TargetMID->SetScalarParameterValue(TEXT("SpecularScale"), Cfg.OuterMetalSpecularScale);
 		TargetMID->SetScalarParameterValue(TEXT("NormalStrength"), Cfg.OuterMetalNormalStrength);
+		TargetMID->SetScalarParameterValue(TEXT("ProceduralWearWeight"), Phase12DCfg.bEnableProceduralStationWear ? 0.55f : 0.0f);
+		TargetMID->SetScalarParameterValue(TEXT("RearGridMacroSootWeight"), 0.0f);
 		TargetMID->SetVectorParameterValue(TEXT("BaseColorConst"), FLinearColor(0.055f * MS, 0.064f * MS, 0.075f * MS, 1.0f));
 		TargetMID->SetScalarParameterValue(TEXT("RoughnessConst"), Cfg.OuterMetalRoughnessMax);
 		TargetMID->SetScalarParameterValue(TEXT("MetallicConst"), Cfg.OuterMetalMetallic);
@@ -206,6 +211,8 @@ void ACellFramingArchitectureActor::ConfigureFraming(const UTareTithePresentatio
 			OuterDarkSoffitMID->SetScalarParameterValue(TEXT("MetallicMax"), 0.55f);
 			OuterDarkSoffitMID->SetScalarParameterValue(TEXT("SpecularScale"), 0.05f);
 			OuterDarkSoffitMID->SetScalarParameterValue(TEXT("NormalStrength"), 0.25f);
+			OuterDarkSoffitMID->SetScalarParameterValue(TEXT("ProceduralWearWeight"), 0.0f);
+			OuterDarkSoffitMID->SetScalarParameterValue(TEXT("RearGridMacroSootWeight"), 0.0f);
 			OuterDarkSoffitMID->SetVectorParameterValue(TEXT("BaseColorConst"), FLinearColor(0.008f, 0.010f, 0.014f, 1.0f));
 			OuterDarkSoffitMID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.85f);
 			OuterDarkSoffitMID->SetScalarParameterValue(TEXT("SpecularConst"), 0.05f);

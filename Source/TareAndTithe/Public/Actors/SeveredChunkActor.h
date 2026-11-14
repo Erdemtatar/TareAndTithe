@@ -46,6 +46,8 @@ public:
 
 	bool TryRearmWatchdogIfActivelyFalling(float MaxDownwardVelocityZCmPerSec = -25.0f, float MinCellFloorZCm = -75.0f);
 
+	void ConfigureCutCapThermalCooling(bool bEnableCooling, float InCoolingDurationSeconds, float InSpawnWorldTimeSeconds);
+
 	void DeactivateToPool();
 
 	UDynamicMeshComponent* GetChunkMeshComponent() const { return ChunkMeshComponent; }
@@ -91,6 +93,7 @@ private:
 		const FHitResult& Hit);
 
 	void EnsureFallbackChunkMaterialsInitialized();
+	UMaterialInterface* PrepareActiveChunkCutCapMaterial(UMaterialInterface* BaseCutCapMat, float InSpawnWorldTimeSeconds);
 	void StartInFlightWatchdog(float DurationSeconds);
 	void ClearInFlightWatchdog();
 	void HandleWatchdogExpired();
@@ -105,6 +108,12 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> FallbackChunkCutCapMID;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> CachedCutCapParentMaterial;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> ActiveChunkCutCapMID;
 
 	TWeakObjectPtr<AActor> CurrentScaleSupportReceiver;
 

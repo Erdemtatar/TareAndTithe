@@ -69,3 +69,11 @@ Do NOT default to ticking every component, and NEVER disguise continuous per-fra
 2. **Hard Submission-Zip Gate Before DLSS Integration:** **STRICT RULE — ZERO DLSS / third-party upscaling plugin integration, `.uproject` / `.Build.cs` plugin dependencies, or DLSS UI controls may begin until a submission-ready, verified `< 950 MB` standalone `.zip` package has been built and archived from `main`.** Only AFTER the submission-ready baseline `.zip` exists may UE 5.8 DLSS integration (for the RTX award category) proceed, and it MUST be executed exclusively on a dedicated isolated git branch (e.g., `feat/rtx-dlss`) so the verified baseline submission package is never put at risk.
 3. **100% English Only:** All C++ identifiers, comments, `UE_LOG` messages, DataAsset descriptions, and user-facing `FText` strings must remain 100% in clear English.
 4. **Baseline Trademark Cleanliness:** Keep `main` free of third-party AI/vendor brand names in in-game UI; any required RTX/DLSS option nomenclature belongs strictly to the post-baseline isolated `feat/rtx-dlss` branch after the baseline `.zip` is secured.
+
+---
+
+## 7. BUILD, AUTOMATION & ZERO-RETRY-LOOP DISCIPLINE
+1. **Strict Ban on Disposable `Verify*Live.py` PIE Automation:** Never author, propose, or execute `Verify*Live.py` PIE gameplay, slice-search, or screenshot-loop scripts unless explicitly requested by exact filename by the developer.
+2. **Single Cold UBT Gate:** C++ verification consists of one cold UBT compile (`-WaitMutex -NoHotReloadFromIDE`) achieving `0` errors and `0` warnings, paired with `git status` binary-lock verification on frozen `.umap` / `.uasset` files.
+3. **Single-Pass Headless Asset Execution:** When Python material or asset generation is approved, invoke `UnrealEditor-Cmd.exe` at most once (`<= 90s` wall-clock) to build, compile shader maps, save target assets deterministically, and exit immediately.
+4. **Hard Two-Strike Circuit Breaker:** Never enter autonomous retry or editor-relaunch loops. If any build or headless command fails twice consecutively, halt immediately and report exact diagnostics to the developer.
