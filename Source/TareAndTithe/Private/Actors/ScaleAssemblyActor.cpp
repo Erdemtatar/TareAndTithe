@@ -807,8 +807,9 @@ void AScaleAssemblyActor::ConfigureForContract(const UMonolithContractDataAsset*
 
 	if (IsValid(DiverterGateComponent))
 	{
-		const bool bAllowToggle = IsValid(Contract) ? Contract->bAllowDiverterToggle : true;
-		DiverterGateComponent->ConfigureForContract(bAllowToggle, InitialRoute);
+		// Phase 12-FIX5: Unlock [SPACE] diverter routing unconditionally from Contract 01 onward
+		// while keeping DA_Contract_01.uasset binary-locked at 0 bytes diff.
+		DiverterGateComponent->ConfigureForContract(true, InitialRoute);
 	}
 
 	if (IsValid(Contract))

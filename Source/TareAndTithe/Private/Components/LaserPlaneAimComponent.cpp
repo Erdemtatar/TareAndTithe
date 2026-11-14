@@ -365,6 +365,10 @@ void ULaserPlaneAimComponent::ResetAimAndOrientation()
 void ULaserPlaneAimComponent::ForceRefreshPreview()
 {
 	bPlaneStateDirty = true;
+	if (!bIsAimingEnabled)
+	{
+		return;
+	}
 	RecomputePlaneAndDispatchPreview();
 }
 

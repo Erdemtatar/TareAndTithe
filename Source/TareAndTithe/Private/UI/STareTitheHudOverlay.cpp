@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "UI/STareTitheHudOverlay.h"
+#include "HAL/IConsoleManager.h"
 #include "Layout/ArrangedChildren.h"
 #include "Layout/Geometry.h"
 #include "Rendering/DrawElements.h"
@@ -10,6 +11,15 @@
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/SOverlay.h"
 #include "Widgets/Text/STextBlock.h"
+
+namespace
+{
+	TAutoConsoleVariable<FString> CVarDiagControlsCardJson(
+		TEXT("TareTithe.Diag.ControlsCardJson"),
+		TEXT("{}"),
+		TEXT("Read-only Phase 12-FIX5 Controls Card typography/width JSON"),
+		ECVF_Default);
+}
 
 namespace TareTitheHudPaint
 {
@@ -417,15 +427,22 @@ private:
 // 2. TOP-RIGHT DIRECTOR OVERLOOK PANEL (+50% EXPANDED, PROPORTIONAL TYPOGRAPHY)
 // ============================================================================
 // ============================================================================
-// 1B. FAR-LEFT COMPACT CONTROLS CARD (WIDTH <= 245 PX, [H] TOGGLE MICRO-PILL)
+// 1B. FAR-LEFT READABILITY CONTROLS CARD (326 PX @ 1080P, U_RIGHT <= 0.180, [H] MICRO-PILL)
 // ============================================================================
 class SLeftControlsCard : public SCompoundWidget
 {
 public:
-	static constexpr float PadLeftPx = 10.0f;
-	static constexpr float PadTopPx = 7.0f;
-	static constexpr float PadRightPx = 10.0f;
-	static constexpr float PadBottomPx = 7.0f;
+	static constexpr float PadLeftPx = 13.0f;
+	static constexpr float PadTopPx = 10.0f;
+	static constexpr float PadRightPx = 13.0f;
+	static constexpr float PadBottomPx = 10.0f;
+
+	static FSlateFontInfo MakeControlsFont(const ANSICHAR* StyleName, float PointSize)
+	{
+		FSlateFontInfo Font = FCoreStyle::GetDefaultFontStyle(StyleName, FMath::RoundToInt32(PointSize));
+		Font.Size = PointSize;
+		return Font;
+	}
 
 	SLATE_BEGIN_ARGS(SLeftControlsCard)
 	{
@@ -437,10 +454,10 @@ public:
 	{
 		SetVisibility(EVisibility::HitTestInvisible);
 
-		const FSlateFontInfo HeaderFont = FCoreStyle::GetDefaultFontStyle("Bold", 9);
-		const FSlateFontInfo ToggleHintFont = FCoreStyle::GetDefaultFontStyle("Bold", 8);
-		const FSlateFontInfo KeyFont = FCoreStyle::GetDefaultFontStyle("Bold", 8);
-		const FSlateFontInfo ActionFont = FCoreStyle::GetDefaultFontStyle("Regular", 8);
+		const FSlateFontInfo HeaderFont = MakeControlsFont("Bold", 11.0f);
+		const FSlateFontInfo ToggleHintFont = MakeControlsFont("Bold", 9.5f);
+		const FSlateFontInfo KeyFont = MakeControlsFont("Bold", 11.0f);
+		const FSlateFontInfo ActionFont = MakeControlsFont("Regular", 10.5f);
 
 		struct FControlRowSpec
 		{
@@ -464,10 +481,12 @@ public:
 		{
 			TSharedPtr<STextBlock> KeyBlock;
 			TSharedPtr<STextBlock> ActionBlock;
+			SVerticalBox::FSlot* RowSlotPtr = nullptr;
 
 			RowsList->AddSlot()
+			.Expose(RowSlotPtr)
 			.AutoHeight()
-			.Padding(0.0f, (Idx == 0) ? 4.0f : 2.0f, 0.0f, 0.0f)
+			.Padding(0.0f, (Idx == 0) ? 5.5f : 3.5f, 0.0f, 0.0f)
 			[
 				SNew(SHorizontalBox)
 				.Visibility(EVisibility::HitTestInvisible)
@@ -489,7 +508,7 @@ public:
 				.FillWidth(1.0f)
 				.HAlign(HAlign_Right)
 				.VAlign(VAlign_Center)
-				.Padding(4.0f, 0.0f, 0.0f, 0.0f)
+				.Padding(6.0f, 0.0f, 0.0f, 0.0f)
 				[
 					SAssignNew(ActionBlock, STextBlock)
 					.Visibility(EVisibility::HitTestInvisible)
@@ -502,6 +521,7 @@ public:
 				]
 			];
 
+			RowSlots.Add(RowSlotPtr);
 			KeyBlocks.Add(KeyBlock);
 			ActionBlocks.Add(ActionBlock);
 		}
@@ -523,7 +543,7 @@ public:
 
 					+ SVerticalBox::Slot()
 					.AutoHeight()
-					.Padding(0.0f, 0.0f, 0.0f, 3.0f)
+					.Padding(0.0f, 0.0f, 0.0f, 4.0f)
 					[
 						SNew(SHorizontalBox)
 						.Visibility(EVisibility::HitTestInvisible)
@@ -544,7 +564,7 @@ public:
 						+ SHorizontalBox::Slot()
 						.AutoWidth()
 						.VAlign(VAlign_Center)
-						.Padding(4.0f, 0.0f, 0.0f, 0.0f)
+						.Padding(6.0f, 0.0f, 0.0f, 0.0f)
 						[
 							SAssignNew(HideHintBlock, STextBlock)
 							.Visibility(EVisibility::HitTestInvisible)
@@ -569,7 +589,7 @@ public:
 			[
 				SAssignNew(CollapsedPillContainer, SBox)
 				.Visibility(EVisibility::Collapsed)
-				.Padding(FMargin(9.0f, 4.0f, 9.0f, 4.0f))
+				.Padding(FMargin(11.0f, 5.0f, 11.0f, 5.0f))
 				[
 					SAssignNew(CollapsedPillTextBlock, STextBlock)
 					.Visibility(EVisibility::HitTestInvisible)
@@ -606,31 +626,57 @@ public:
 
 	void UpdateResponsiveTypography(float EffectiveCardWidth)
 	{
-		const bool bCompact = (EffectiveCardWidth < 212.0f);
-		const int32 HeaderPt = bCompact ? 8 : 9;
-		const int32 HintPt = bCompact ? 7 : 8;
-		const int32 RowPt = bCompact ? 7 : 8;
-		if (HeaderPt == CachedHeaderPt && RowPt == CachedRowPt)
+		const bool bCompact = (EffectiveCardWidth < 250.0f);
+		const float HeaderPt = bCompact ? 9.5f : 11.0f;
+		const float HintPt = bCompact ? 8.5f : 9.5f;
+		const float KeyPt = bCompact ? 9.0f : 11.0f;
+		const float ActionPt = bCompact ? 9.0f : 10.5f;
+
+		const FString DiagJson = FString::Printf(
+			TEXT("{\"width\":%.2f,\"compact\":%s,\"header_pt\":%.1f,\"hint_pt\":%.1f,\"key_pt\":%.1f,\"action_pt\":%.1f,\"pad_x\":%.1f,\"pad_y\":%.1f}"),
+			EffectiveCardWidth,
+			bCompact ? TEXT("true") : TEXT("false"),
+			HeaderPt,
+			HintPt,
+			KeyPt,
+			ActionPt,
+			PadLeftPx,
+			PadTopPx);
+		CVarDiagControlsCardJson->Set(*DiagJson, ECVF_SetByCode);
+
+		if (FMath::IsNearlyEqual(HeaderPt, CachedHeaderPt) && FMath::IsNearlyEqual(KeyPt, CachedRowPt))
 		{
 			return;
 		}
 		CachedHeaderPt = HeaderPt;
-		CachedRowPt = RowPt;
+		CachedRowPt = KeyPt;
 
 		if (HeaderTitleBlock.IsValid())
 		{
-			HeaderTitleBlock->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", HeaderPt));
+			HeaderTitleBlock->SetFont(MakeControlsFont("Bold", HeaderPt));
 		}
 		if (HideHintBlock.IsValid())
 		{
-			HideHintBlock->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", HintPt));
+			HideHintBlock->SetFont(MakeControlsFont("Bold", HintPt));
 		}
 		if (CollapsedPillTextBlock.IsValid())
 		{
-			CollapsedPillTextBlock->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", HintPt));
+			CollapsedPillTextBlock->SetFont(MakeControlsFont("Bold", HintPt));
 		}
-		const FSlateFontInfo KeyFont = FCoreStyle::GetDefaultFontStyle("Bold", RowPt);
-		const FSlateFontInfo ActionFont = FCoreStyle::GetDefaultFontStyle("Regular", RowPt);
+
+		for (int32 Idx = 0; Idx < RowSlots.Num(); ++Idx)
+		{
+			if (RowSlots[Idx] != nullptr)
+			{
+				const float TopPad = bCompact
+					? ((Idx == 0) ? 4.0f : 2.5f)
+					: ((Idx == 0) ? 5.5f : 3.5f);
+				RowSlots[Idx]->SetPadding(FMargin(0.0f, TopPad, 0.0f, 0.0f));
+			}
+		}
+
+		const FSlateFontInfo KeyFont = MakeControlsFont("Bold", KeyPt);
+		const FSlateFontInfo ActionFont = MakeControlsFont("Regular", ActionPt);
 		for (const TSharedPtr<STextBlock>& KeyBlk : KeyBlocks)
 		{
 			if (KeyBlk.IsValid())
@@ -670,8 +716,8 @@ public:
 		{
 			const float HeaderH = (HeaderTitleBlock.IsValid() && HeaderTitleBlock->GetDesiredSize().Y > 4.0f)
 				? HeaderTitleBlock->GetDesiredSize().Y
-				: 13.0f;
-			const float DividerY = PadTopPx + HeaderH + 2.0f;
+				: 16.0f;
+			const float DividerY = PadTopPx + HeaderH + 2.5f;
 			TareTitheHudPaint::DrawSolidBox(
 				OutDrawElements,
 				LayerId + 1,
@@ -694,14 +740,15 @@ public:
 private:
 	FHudPresentationConfig Config;
 	bool bExpanded = true;
-	int32 CachedHeaderPt = -1;
-	int32 CachedRowPt = -1;
+	float CachedHeaderPt = -1.0f;
+	float CachedRowPt = -1.0f;
 
 	TSharedPtr<SBox> ExpandedContainer;
 	TSharedPtr<SBox> CollapsedPillContainer;
 	TSharedPtr<STextBlock> HeaderTitleBlock;
 	TSharedPtr<STextBlock> HideHintBlock;
 	TSharedPtr<STextBlock> CollapsedPillTextBlock;
+	TArray<SVerticalBox::FSlot*> RowSlots;
 	TArray<TSharedPtr<STextBlock>> KeyBlocks;
 	TArray<TSharedPtr<STextBlock>> ActionBlocks;
 };
@@ -1373,11 +1420,11 @@ public:
 	{
 		SetVisibility(EVisibility::HitTestInvisible);
 
-		const FSlateFontInfo HeaderFont = FCoreStyle::GetDefaultFontStyle("Bold", 9);
-		const FSlateFontInfo WindowFont = FCoreStyle::GetDefaultFontStyle("Regular", 8);
+		const FSlateFontInfo HeaderFont = FCoreStyle::GetDefaultFontStyle("Bold", 10);
+		const FSlateFontInfo WindowFont = FCoreStyle::GetDefaultFontStyle("Regular", 9);
 		const FSlateFontInfo MassHeroFont = FCoreStyle::GetDefaultFontStyle("Bold", 17);
 		const FSlateFontInfo BadgeFont = FCoreStyle::GetDefaultFontStyle("Bold", 9);
-		const FSlateFontInfo StatusFont = FCoreStyle::GetDefaultFontStyle("Bold", 9);
+		const FSlateFontInfo StatusFont = FCoreStyle::GetDefaultFontStyle("Bold", 10);
 
 		ChildSlot
 		.Padding(FMargin(14.0f, 8.0f, 14.0f, 7.0f))
@@ -1830,12 +1877,13 @@ void STareTitheHudOverlay::RefreshResponsiveMetrics()
 		TopRightPanel->UpdateResponsiveTypography(CachedEffectiveCornerWidth);
 	}
 
-	// Sub-System 2 + Correction 4: Strict Width <= 232 <= 245 px and U_right <= 0.135 across 100% and 125% DPI.
-	const float MaxAllowedControlsWidthForU = FMath::FloorToFloat((LocalW * 0.135f) - Margin - 0.5f);
+	// Phase 12-FIX5 Refinement 1: Target 326 px at 1080p with strict U_right <= 0.180 across 100%/125%/150% DPI
+	// (0.0 px contact with Left Panopticon bezel even at max +4.5 deg camera yaw where U_window_left = 0.181).
+	const float MaxAllowedControlsWidthForU = FMath::FloorToFloat((LocalW * 0.180f) - Margin - 0.5f);
 	CachedEffectiveControlsWidth = FMath::Clamp(
-		FMath::Min(232.0f, MaxAllowedControlsWidthForU),
+		FMath::Min(326.0f, MaxAllowedControlsWidthForU),
 		FMath::Min(132.0f, MaxAllowedControlsWidthForU),
-		245.0f);
+		332.0f);
 
 	if (LeftControlsCard.IsValid())
 	{
@@ -1949,7 +1997,7 @@ void STareTitheHudOverlay::RefreshReticleClampedOffset()
 			: ((ControlsDesired.X > 10.0f) ? ControlsDesired.X : 108.0f);
 		const float ControlsH = (ControlsDesired.Y > 10.0f)
 			? ControlsDesired.Y
-			: (bIsControlsCardExpanded ? 148.0f : 24.0f);
+			: (bIsControlsCardExpanded ? 196.0f : 28.0f);
 		const float ControlsTopY = TopLeftBottomY + 8.0f;
 		const float ControlsBottomY = ControlsTopY + ControlsH;
 		const float ControlsRightX = Margin + ControlsW;
@@ -2250,14 +2298,13 @@ void STareTitheHudOverlay::UpdateTopRightPanel(const FTopRightDirectorViewModel&
 
 void STareTitheHudOverlay::UpdateCenterAlertBanner(const FCenterAlertViewModel& ViewModel)
 {
-	const uint64 PrevGen = LastObservedBannerGeneration;
 	LastObservedBannerGeneration = ViewModel.TriggerGeneration;
 	bIsCenterBannerTerminalStamp = ViewModel.bIsTerminalStamp;
 	if (CenterAlertBanner.IsValid())
 	{
 		CenterAlertBanner->ApplyViewModel(ViewModel);
 		if (CenterAlertBanner->GetVisibility() != EVisibility::Collapsed &&
-			(ViewModel.TriggerGeneration != PrevGen || CenterAlertBanner->GetDesiredSize().X < 20.0f))
+			CenterAlertBanner->GetDesiredSize().X < 20.0f)
 		{
 			CenterAlertBanner->SlatePrepass(1.0f);
 		}

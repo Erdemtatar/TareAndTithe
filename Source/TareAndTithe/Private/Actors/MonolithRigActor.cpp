@@ -14,16 +14,162 @@
 #include "Data/ShiftProgressionDataAsset.h"
 #include "Data/TareTithePresentationDataAsset.h"
 #include "UDynamicMesh.h"
+#include "DynamicMesh/DynamicMesh3.h"
 #include "Engine/CollisionProfile.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "GeometryScript/CollisionFunctions.h"
+#include "HAL/PlatformTime.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "Misc/PackageName.h"
 #include "PhysicsEngine/BodySetup.h"
 #include "Subsystems/InspectionShiftSubsystem.h"
 #include "UObject/ConstructorHelpers.h"
+
+namespace
+{
+	bool BuildFast26DopSingleConvexCollision(
+		UDynamicMesh* DynMesh,
+		UDynamicMeshComponent* TargetComponent,
+		float MinThicknessCm)
+	{
+		if (!IsValid(DynMesh) || !IsValid(TargetComponent))
+		{
+			return false;
+		}
+
+		TArray<FVector, TInlineAllocator<32>> HullVertices;
+		FBox MeshBounds(ForceInit);
+
+		DynMesh->ProcessMesh([&HullVertices, &MeshBounds, MinThicknessCm](const UE::Geometry::FDynamicMesh3& ReadMesh)
+		{
+			if (ReadMesh.VertexCount() < 4)
+			{
+				return;
+			}
+
+			FVector Directions[26];
+			double MaxDots[26];
+			int32 BestVids[26];
+			int32 DirCount = 0;
+			for (int32 Ix = -1; Ix <= 1; ++Ix)
+			{
+				for (int32 Iy = -1; Iy <= 1; ++Iy)
+				{
+					for (int32 Iz = -1; Iz <= 1; ++Iz)
+					{
+						if (Ix == 0 && Iy == 0 && Iz == 0)
+						{
+							continue;
+						}
+						Directions[DirCount] = FVector(static_cast<double>(Ix), static_cast<double>(Iy), static_cast<double>(Iz));
+						MaxDots[DirCount] = -TNumericLimits<double>::Max();
+						BestVids[DirCount] = INDEX_NONE;
+						++DirCount;
+					}
+				}
+			}
+
+			for (int32 Vid : ReadMesh.VertexIndicesItr())
+			{
+				const FVector Pos(ReadMesh.GetVertex(Vid));
+				MeshBounds += Pos;
+				for (int32 DirIdx = 0; DirIdx < 26; ++DirIdx)
+				{
+					const double Dot =
+						Directions[DirIdx].X * Pos.X +
+						Directions[DirIdx].Y * Pos.Y +
+						Directions[DirIdx].Z * Pos.Z;
+					if (Dot > MaxDots[DirIdx])
+					{
+						MaxDots[DirIdx] = Dot;
+						BestVids[DirIdx] = Vid;
+					}
+				}
+			}
+
+			for (int32 DirIdx = 0; DirIdx < 26; ++DirIdx)
+			{
+				const int32 Vid = BestVids[DirIdx];
+				if (Vid == INDEX_NONE)
+				{
+					continue;
+				}
+				const FVector Candidate(ReadMesh.GetVertex(Vid));
+				bool bDuplicate = false;
+				for (const FVector& Existing : HullVertices)
+				{
+					if (FVector::DistSquared(Candidate, Existing) <= 0.0025)
+					{
+						bDuplicate = true;
+						break;
+					}
+				}
+				if (!bDuplicate)
+				{
+					HullVertices.Add(Candidate);
+				}
+			}
+
+			if (MeshBounds.IsValid && HullVertices.Num() >= 3)
+			{
+				const double SafeMinThick = FMath::Max(0.1, static_cast<double>(MinThicknessCm));
+				const FVector Center = MeshBounds.GetCenter();
+				const FVector Size = MeshBounds.GetSize();
+				for (int32 Axis = 0; Axis < 3; ++Axis)
+				{
+					if (Size[Axis] < SafeMinThick)
+					{
+						FVector Offset = FVector::ZeroVector;
+						Offset[Axis] = 0.5 * SafeMinThick;
+						HullVertices.Add(Center - Offset);
+						HullVertices.Add(Center + Offset);
+					}
+				}
+			}
+		});
+
+		if (HullVertices.Num() < 4 || !MeshBounds.IsValid)
+		{
+			return false;
+		}
+
+		FKConvexElem ConvexElem;
+		ConvexElem.VertexData.Reserve(HullVertices.Num());
+		for (const FVector& Vert : HullVertices)
+		{
+			ConvexElem.VertexData.Add(Vert);
+		}
+		ConvexElem.UpdateElemBox();
+
+		FKAggregateGeom FastAggGeom;
+		FastAggGeom.ConvexElems.Add(MoveTemp(ConvexElem));
+
+		TargetComponent->bUseAsyncCooking = false;
+		TargetComponent->SetSimpleCollisionShapes(FastAggGeom, true);
+
+		const UBodySetup* BodySetup = TargetComponent->GetBodySetup();
+		if (IsValid(BodySetup) &&
+			BodySetup->AggGeom.ConvexElems.Num() > 0 &&
+			BodySetup->AggGeom.ConvexElems[0].GetChaosConvexMesh().IsValid())
+		{
+			return true;
+		}
+
+		// Ultrafast fallback box if degenerate hull points could not form a 3D Chaos simplex.
+		const FVector Center = MeshBounds.GetCenter();
+		const FVector SafeSize = MeshBounds.GetSize().ComponentMax(FVector(static_cast<double>(MinThicknessCm)));
+		FKBoxElem FallbackBox(SafeSize.X, SafeSize.Y, SafeSize.Z);
+		FallbackBox.Center = Center;
+		FKAggregateGeom BoxAggGeom;
+		BoxAggGeom.BoxElems.Add(FallbackBox);
+		TargetComponent->SetSimpleCollisionShapes(BoxAggGeom, true);
+
+		BodySetup = TargetComponent->GetBodySetup();
+		return IsValid(BodySetup) && (BodySetup->AggGeom.GetElementCount() > 0);
+	}
+}
 
 AMonolithRigActor::AMonolithRigActor()
 {
@@ -346,7 +492,9 @@ FSlicePreviewTelemetry AMonolithRigActor::PreviewSlicePlane_Implementation(
 	const FVector& PlaneNormalWorld,
 	const FLaserSliceAperture& SheetAperture)
 {
-	if (!IsValid(MonolithSliceComponent) || !IsValid(VeinScannerComponent))
+	if (!IsValid(MonolithSliceComponent) ||
+		!IsValid(VeinScannerComponent) ||
+		(IsValid(ClampTorqueSolverComponent) && ClampTorqueSolverComponent->IsClampSnapped()))
 	{
 		return FSlicePreviewTelemetry();
 	}
@@ -393,9 +541,11 @@ FSliceResultSummary AMonolithRigActor::CommitSlicePlane_Implementation(
 	const FVector& PlaneNormalWorld,
 	const FLaserSliceAperture& SheetAperture)
 {
+	const double CommitStartSec = FPlatformTime::Seconds();
 	FSliceResultSummary Summary;
 	if (!IsValid(MonolithSliceComponent) || !IsValid(VeinScannerComponent))
 	{
+		LastCommitSliceDurationMs = static_cast<float>((FPlatformTime::Seconds() - CommitStartSec) * 1000.0);
 		return Summary;
 	}
 
@@ -406,6 +556,7 @@ FSliceResultSummary AMonolithRigActor::CommitSlicePlane_Implementation(
 		? static_cast<float>(0.5 * FMath::Max(PreCutLocalBounds.GetSize().X, PreCutLocalBounds.GetSize().Y))
 		: 14.0f;
 
+	bRemainderSimpleCollisionPreCooked = false;
 	TArray<ASeveredChunkActor*> SpawnedChunks;
 	Summary = MonolithSliceComponent->ExecuteSlice(
 		PlaneOriginWorld,
@@ -423,10 +574,12 @@ FSliceResultSummary AMonolithRigActor::CommitSlicePlane_Implementation(
 
 	if (Summary.Outcome == ECommitSliceOutcome::Success && IsValid(RemainderMeshComponent))
 	{
-		RemainderMeshComponent->ConfigureMaterialSet({
-			ResolveEffectiveOuterMaterial(CachedLoadedContract),
-			ResolveEffectiveCutCapMaterial(CachedLoadedContract)
-		});
+		UMaterialInterface* ExpectedOuter = ResolveEffectiveOuterMaterial(CachedLoadedContract);
+		UMaterialInterface* ExpectedCap = ResolveEffectiveCutCapMaterial(CachedLoadedContract);
+		if (RemainderMeshComponent->GetMaterial(0) != ExpectedOuter || RemainderMeshComponent->GetMaterial(1) != ExpectedCap)
+		{
+			RemainderMeshComponent->ConfigureMaterialSet({ExpectedOuter, ExpectedCap});
+		}
 	}
 
 	if (Summary.Outcome == ECommitSliceOutcome::Success && IsValid(ClampTorqueSolverComponent))
@@ -445,8 +598,14 @@ FSliceResultSummary AMonolithRigActor::CommitSlicePlane_Implementation(
 		// and triggered FaultResetDelay on UInspectionShiftSubsystem. Return immediately without re-igniting MoltenThermalLight!
 		if (ClampTorqueSolverComponent->IsClampSnapped())
 		{
+			LastCommitSliceDurationMs = static_cast<float>((FPlatformTime::Seconds() - CommitStartSec) * 1000.0);
 			return Summary;
 		}
+	}
+
+	if (Summary.Outcome == ECommitSliceOutcome::Success && Summary.NewRemainderMassKg > KINDA_SMALL_NUMBER)
+	{
+		PreCookRemainderSimpleCollision();
 	}
 
 	if (Summary.Outcome == ECommitSliceOutcome::Success && IsValid(MoltenThermalLightComponent))
@@ -478,6 +637,7 @@ FSliceResultSummary AMonolithRigActor::CommitSlicePlane_Implementation(
 		}
 	}
 
+	LastCommitSliceDurationMs = static_cast<float>((FPlatformTime::Seconds() - CommitStartSec) * 1000.0);
 	return Summary;
 }
 
@@ -612,6 +772,7 @@ bool AMonolithRigActor::LoadContractOnRig(
 	RemainderMeshComponent->SetEnableGravity(false);
 	RemainderMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	UGeometryScriptLibrary_CollisionFunctions::ResetDynamicMeshCollision(RemainderMeshComponent, false, nullptr);
+	bRemainderSimpleCollisionPreCooked = false;
 	RemainderMeshComponent->AttachToComponent(
 		TiltingMountComponent,
 		FAttachmentTransformRules::SnapToTargetNotIncludingScale);
@@ -667,6 +828,8 @@ bool AMonolithRigActor::LoadContractOnRig(
 	const float InitialMassKg = MonolithSliceComponent->GetRemainderMassKg();
 	const FVector MountLocalCoMCm = TransformRemainderCoMToMountLocal(MonolithSliceComponent->GetRemainderLocalCoMCm());
 	ClampTorqueSolverComponent->InitializeFromContract(Contract, InitialMassKg, MountLocalCoMCm);
+
+	PreCookRemainderSimpleCollision();
 
 	OutInitialMassKg = InitialMassKg;
 	return true;
@@ -1193,59 +1356,108 @@ void AMonolithRigActor::HandleSliverVaporized(float VaporizedMassKg, const FVect
 	}
 }
 
+FVector AMonolithRigActor::GetRemainderWorldLocationForTest() const
+{
+	return IsValid(RemainderMeshComponent)
+		? RemainderMeshComponent->GetComponentLocation()
+		: GetActorLocation();
+}
+
+void AMonolithRigActor::SetClampTorqueCapacityMultiplierForTest(float InMultiplier)
+{
+	if (IsValid(ClampTorqueSolverComponent))
+	{
+		ClampTorqueSolverComponent->SetTorqueCapacityMultiplier(InMultiplier);
+	}
+}
+
+void AMonolithRigActor::PreCookRemainderSimpleCollision()
+{
+	const double PreCookStartSec = FPlatformTime::Seconds();
+	bRemainderSimpleCollisionPreCooked = false;
+
+	if (IsValid(RemainderMeshComponent))
+	{
+		if (UDynamicMesh* DynMesh = RemainderMeshComponent->GetDynamicMesh())
+		{
+			const int32 TriCount = DynMesh->GetTriangleCount();
+			if (TriCount > 48)
+			{
+				bRemainderSimpleCollisionPreCooked = BuildFast26DopSingleConvexCollision(
+					DynMesh,
+					RemainderMeshComponent,
+					0.5f);
+			}
+			else if (TriCount >= 4)
+			{
+				FGeometryScriptCollisionFromMeshOptions PreCookOptions;
+				PreCookOptions.bEmitTransaction = false;
+				PreCookOptions.Method = EGeometryScriptCollisionGenerationMethod::ConvexHulls;
+				PreCookOptions.bSimplifyHulls = true;
+				PreCookOptions.MaxConvexHullsPerMesh = 1;
+				PreCookOptions.ConvexHullTargetFaceCount = 16;
+				PreCookOptions.MinThickness = 0.5f;
+
+				UGeometryScriptLibrary_CollisionFunctions::SetDynamicMeshCollisionFromMesh(
+					DynMesh,
+					RemainderMeshComponent,
+					PreCookOptions,
+					nullptr);
+
+				const UBodySetup* BodySetup = RemainderMeshComponent->GetBodySetup();
+				if (!IsValid(BodySetup) || BodySetup->AggGeom.GetElementCount() == 0)
+				{
+					PreCookOptions.Method = EGeometryScriptCollisionGenerationMethod::AlignedBoxes;
+					UGeometryScriptLibrary_CollisionFunctions::SetDynamicMeshCollisionFromMesh(
+						DynMesh,
+						RemainderMeshComponent,
+						PreCookOptions,
+						nullptr);
+					BodySetup = RemainderMeshComponent->GetBodySetup();
+				}
+
+				bRemainderSimpleCollisionPreCooked = IsValid(BodySetup) && (BodySetup->AggGeom.GetElementCount() > 0);
+			}
+		}
+	}
+
+	LastRemainderPreCookDurationMs = static_cast<float>((FPlatformTime::Seconds() - PreCookStartSec) * 1000.0);
+	UE_LOG(
+		LogTemp,
+		Verbose,
+		TEXT("[Phase12Fix5] PreCookRemainderSimpleCollision finished in %.3f ms (ready=%d)"),
+		LastRemainderPreCookDurationMs,
+		bRemainderSimpleCollisionPreCooked ? 1 : 0);
+}
+
 void AMonolithRigActor::HandleClampStructuralSnap()
 {
+	const double SnapStartSec = FPlatformTime::Seconds();
+
 	if (IsValid(MoltenThermalLightComponent))
 	{
 		MoltenThermalLightComponent->SetSteadyEmberIntensity(0.0f);
 	}
 
-	// Guard 3: Detach and drop snapped remainder under guaranteed non-empty simple Chaos collision + gravity + shear tumble kick.
+	// Guard 3 + Phase 12-FIX5: Reuse pre-cooked single-hull UBodySetup on RemainderMeshComponent (0.00 ms GeometryScript on fatigue snap)
+	// or run single-hull PreCookRemainderSimpleCollision() if invalidated mid-slice, eliminating FConvexDecomposition3 stalls.
 	if (IsValid(RemainderMeshComponent))
 	{
+		const UBodySetup* ExistingBodySetup = RemainderMeshComponent->GetBodySetup();
+		if (!bRemainderSimpleCollisionPreCooked || !IsValid(ExistingBodySetup) || ExistingBodySetup->AggGeom.GetElementCount() == 0)
+		{
+			PreCookRemainderSimpleCollision();
+		}
+
 		SetActorEnableCollision(true);
 		RemainderMeshComponent->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
 
-		if (UDynamicMesh* DynMesh = RemainderMeshComponent->GetDynamicMesh())
-		{
-			FGeometryScriptCollisionFromMeshOptions SnapCollisionOptions;
-			SnapCollisionOptions.bEmitTransaction = false;
-			SnapCollisionOptions.Method = EGeometryScriptCollisionGenerationMethod::ConvexHulls;
-			SnapCollisionOptions.bSimplifyHulls = true;
-			SnapCollisionOptions.MaxConvexHullsPerMesh = 4;
-			SnapCollisionOptions.ConvexHullTargetFaceCount = 20;
-			SnapCollisionOptions.MinThickness = 0.5f;
-
-			UGeometryScriptLibrary_CollisionFunctions::SetDynamicMeshCollisionFromMesh(
-				DynMesh,
-				RemainderMeshComponent,
-				SnapCollisionOptions,
-				nullptr);
-
-			const UBodySetup* BodySetup = RemainderMeshComponent->GetBodySetup();
-			if (!IsValid(BodySetup) || BodySetup->AggGeom.GetElementCount() == 0)
-			{
-				SnapCollisionOptions.Method = EGeometryScriptCollisionGenerationMethod::AlignedBoxes;
-				UGeometryScriptLibrary_CollisionFunctions::SetDynamicMeshCollisionFromMesh(
-					DynMesh,
-					RemainderMeshComponent,
-					SnapCollisionOptions,
-					nullptr);
-			}
-		}
-
-		RemainderMeshComponent->BodyInstance.bUseCCD = true;
-		RemainderMeshComponent->SetUseCCD(true);
-		RemainderMeshComponent->SetCollisionProfileName(UCollisionProfile::PhysicsActor_ProfileName);
-		RemainderMeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-		RemainderMeshComponent->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
-		RemainderMeshComponent->SetGenerateOverlapEvents(false);
-		RemainderMeshComponent->SetComplexAsSimpleCollisionEnabled(false, true);
-		RemainderMeshComponent->SetEnableGravity(true);
-
 		const float SafeMassKg = FMath::Max(1.0f, QueryCurrentRemainderMassKg());
-		RemainderMeshComponent->SetMassOverrideInKg(NAME_None, SafeMassKg, true);
-		RemainderMeshComponent->SetSimulatePhysics(true);
+		RemainderMeshComponent->BodyInstance.bUseCCD = true;
+		RemainderMeshComponent->BodyInstance.bEnableGravity = true;
+		RemainderMeshComponent->BodyInstance.SetMassOverride(SafeMassKg, true);
+		RemainderMeshComponent->BodyInstance.bSimulatePhysics = true;
+		RemainderMeshComponent->SetCollisionProfileName(UCollisionProfile::PhysicsActor_ProfileName);
 		RemainderMeshComponent->WakeAllRigidBodies();
 
 		const FVector2D SnapDir = IsValid(ClampTorqueSolverComponent)
@@ -1264,4 +1476,12 @@ void AMonolithRigActor::HandleClampStructuralSnap()
 			ShiftSubsystem->TriggerContractFault(EContractFaultReason::ClampStructuralSnap);
 		}
 	}
+
+	LastClampSnapDurationMs = static_cast<float>((FPlatformTime::Seconds() - SnapStartSec) * 1000.0);
+	UE_LOG(
+		LogTemp,
+		Log,
+		TEXT("[Phase12Fix5] HandleClampStructuralSnap completed in %.3f ms (preCookMs=%.3f)"),
+		LastClampSnapDurationMs,
+		LastRemainderPreCookDurationMs);
 }

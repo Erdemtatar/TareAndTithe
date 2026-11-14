@@ -72,6 +72,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "AudioTelemetry|Diagnostics")
 	UAudioComponent* GetContinuousLoopsAudioComponent() const { return ContinuousLoopsAudioComponent; }
 
+	UFUNCTION(BlueprintPure, Category = "AudioTelemetry|Diagnostics")
+	int32 GetLastFaultFrameDispatchedImpulseCountForTest() const { return LastFaultFrameDispatchedImpulseCount; }
+
+	UFUNCTION(BlueprintPure, Category = "AudioTelemetry|Diagnostics")
+	int32 GetSuppressedDuplicateFaultImpulseCountForTest() const { return SuppressedDuplicateFaultImpulseCount; }
+
 	FOnTelemetryStreamSignature OnFilteredTelemetryStream;
 	FOnTelemetryImpulseSignature OnForwardedTelemetryImpulse;
 
@@ -182,4 +188,7 @@ private:
 	TArray<FPublisherSubscription> ActiveSubscriptions;
 	TArray<TWeakObjectPtr<UAudioComponent>> BoundAudioComponents;
 	TMap<ETelemetryStreamId, float> LastFlushedStreamValues;
+	uint64 LastFaultImpulseFrameNumber = MAX_uint64;
+	int32 LastFaultFrameDispatchedImpulseCount = 0;
+	int32 SuppressedDuplicateFaultImpulseCount = 0;
 };

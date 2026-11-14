@@ -870,7 +870,7 @@ UShiftProgressionDataAsset* UInspectionShiftSubsystem::BuildFallbackGreyboxProgr
 		C01->TargetTitheMassKg = 12.0f;
 		C01->QuotaToleranceKg = 1.25f;
 		C01->MaxAllowedTareWasteKg = 14.0f;
-		C01->bAllowDiverterToggle = false;
+		C01->bAllowDiverterToggle = true;
 		C01->ClampMaxSafeTorqueNm = 26.0f;
 		C01->ClampFatigueGraceSeconds = 6.5f;
 		FallbackGreyboxContracts.Add(C01);

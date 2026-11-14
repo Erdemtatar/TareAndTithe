@@ -10,6 +10,7 @@
 #include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
 #include "HAL/FileManager.h"
+#include "HAL/IConsoleManager.h"
 #include "Misc/Paths.h"
 #include "TimerManager.h"
 #include "UI/STareTitheHudOverlay.h"
@@ -24,6 +25,20 @@ namespace
 	constexpr float QuotaEpsilonKg = 1.0e-3f;
 	constexpr float MinPredictiveMassKg = 0.05f;
 	constexpr double VeinDropEdgeDebounceSeconds = 0.18;
+
+	uint64 GLatchedFaultPushFrameCounter = MAX_uint64;
+	EContractFaultReason GLatchedFaultPushReason = EContractFaultReason::None;
+
+	TAutoConsoleVariable<FString> CVarDiagBottomCrtJson(
+		TEXT("TareTithe.Diag.BottomCrtJson"),
+		TEXT("{}"),
+		TEXT("Read-only Phase 12-FIX5 Bottom CRT console telemetry JSON"),
+		ECVF_Default);
+
+	FString EscapeDiagJsonField(const FString& Raw)
+	{
+		return Raw.Replace(TEXT("\\"), TEXT("\\\\")).Replace(TEXT("\""), TEXT("\\\""));
+	}
 }
 
 UInspectorHudBridgeComponent::UInspectorHudBridgeComponent()
@@ -437,6 +452,14 @@ void UInspectorHudBridgeComponent::HandleSliceCommittedResult(const FSliceResult
 
 void UInspectorHudBridgeComponent::HandleShiftVerdict(EShiftVerdictType Verdict, EContractFaultReason FaultReason)
 {
+	if (bHasLatchedTerminalVerdict &&
+		LatchedVerdict == Verdict &&
+		LatchedFaultReason == FaultReason &&
+		GFrameCounter == GLatchedFaultPushFrameCounter)
+	{
+		return;
+	}
+
 	DismissActiveTutorialHint(false);
 
 	LatchedVerdict = Verdict;
@@ -479,6 +502,13 @@ void UInspectorHudBridgeComponent::HandleContractSnapshotUpdated(const FContract
 	if (PreviousRoute != Snapshot.ActiveDiverterRoute && Snapshot.ActiveDiverterRoute == EDiverterRoute::TitheScale)
 	{
 		LastVeinInDropAutoClearTimeSec = -10.0;
+	}
+
+	if (CachedShiftPhase == EShiftPhase::FaultResetDelay &&
+		GFrameCounter == GLatchedFaultPushFrameCounter &&
+		LatchedFaultReason == GLatchedFaultPushReason)
+	{
+		return;
 	}
 
 	PushAllPanels();
@@ -527,9 +557,12 @@ void UInspectorHudBridgeComponent::HandleShiftPhaseChanged(EShiftPhase NewPhase)
 		{
 			if (const UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
 			{
+				CachedSnapshot = ShiftSubsystem->GetCurrentSnapshot();
 				LatchedVerdict = EShiftVerdictType::ContractFaultReset;
 				LatchedFaultReason = ShiftSubsystem->GetLastFaultReason();
 				bHasLatchedTerminalVerdict = true;
+				GLatchedFaultPushFrameCounter = GFrameCounter;
+				GLatchedFaultPushReason = LatchedFaultReason;
 			}
 		}
 	}
@@ -1140,7 +1173,7 @@ void UInspectorHudBridgeComponent::PushBottomCrtConsole()
 	}
 
 	FBottomCrtConsoleViewModel VM;
-	VM.ConsoleHeaderText = LOCTEXT("CrtConsoleHeader", "TITHE WEIGHING CONSOLE");
+	VM.ConsoleHeaderText = LOCTEXT("CrtConsoleHeader", "WEIGHING CONSOLE");
 
 	const float TargetKg = FMath::Max(0.0f, CachedSnapshot.TargetTitheMassKg);
 	const float TolKg = FMath::Max(0.0f, CachedSnapshot.QuotaToleranceKg);
@@ -1152,11 +1185,9 @@ void UInspectorHudBridgeComponent::PushBottomCrtConsole()
 
 	VM.WindowsSummaryText = FText::FromString(
 		FString::Printf(
-			TEXT("VALID: %.2f-%.2f KG  |  DIR CUT: %.2f-%.2f KG (+2 SCRIP)"),
-			MinValidKg,
-			MaxValidKg,
-			MinDirKg,
-			MaxDirKg));
+			TEXT("WINDOW: +/-%.2f KG  |  DIR.CUT: +/-%.2f KG (+2 SCRIP)"),
+			TolKg,
+			DirTolKg));
 
 	const float SettledKg = FMath::Max(0.0f, CachedSnapshot.SettledScaleMassKg);
 	VM.MassReadoutText = FText::FromString(FString::Printf(TEXT("%05.2f / %05.2f KG"), SettledKg, TargetKg));
@@ -1220,58 +1251,68 @@ void UInspectorHudBridgeComponent::PushBottomCrtConsole()
 	}
 	else if (CachedShiftPhase == EShiftPhase::BondCleared)
 	{
-		VM.OperationalStatusText = LOCTEXT("CrtStatusBondCleared", "BOND CLEARED - PRESS [E] OVERTIME | HOLD [R] CAREER RESET");
+		VM.OperationalStatusText = LOCTEXT("CrtStatusBondCleared", "BOND CLEARED - PRESS [E] OVERTIME | HOLD [R] RESET");
 		VM.OperationalStatusColor = Gold;
 	}
 	else if (CachedShiftPhase == EShiftPhase::ShiftCompleted)
 	{
-		VM.OperationalStatusText = LOCTEXT("CrtStatusShiftDone", "SHIFT COMPLETE - PRESS [E] ADVANCE | [1-3] UPGRADE | HOLD [R] RESET");
+		VM.OperationalStatusText = LOCTEXT("CrtStatusShiftDone", "SHIFT COMPLETE - [E] NEXT SHIFT | [1-3] UPGRADES");
 		VM.OperationalStatusColor = Emerald;
 	}
 	else if (CachedShiftPhase == EShiftPhase::ContractPassTransition)
 	{
 		VM.OperationalStatusText = CachedSnapshot.bLastStampWasDirectorsCut
-			? LOCTEXT("CrtStatusDirPass", "DIRECTOR'S CUT STAMPED (+2 SCRIP) - LOADING NEXT CONTRACT")
-			: LOCTEXT("CrtStatusStdPass", "QUOTA STAMPED (+1 SCRIP) - LOADING NEXT CONTRACT");
+			? LOCTEXT("CrtStatusDirPass", "DIRECTOR'S CUT (+2 SCRIP) - ADVANCING...")
+			: LOCTEXT("CrtStatusStdPass", "QUOTA STAMPED (+1 SCRIP) - ADVANCING...");
 		VM.OperationalStatusColor = CachedSnapshot.bLastStampWasDirectorsCut ? Gold : Emerald;
 	}
-	else if (CachedSnapshot.InFlightMassKg > 0.01f)
+	else if (bOvershoot)
 	{
-		VM.OperationalStatusText = LOCTEXT("CrtStatusDropping", "PAYLOAD IN FLIGHT...");
-		VM.OperationalStatusColor = SkyBlue;
+		VM.OperationalStatusText = LOCTEXT("CrtStatusOverQuota", "OVER QUOTA - HOLD [R] TO PURGE CELL");
+		VM.OperationalStatusColor = Crimson;
 	}
-	else if (!CachedSnapshot.bScaleSettledForStamp && SettledKg > 0.01f && CachedSnapshot.bIsWithinQuotaWindow)
+	else if (CachedSnapshot.InFlightMassKg > 0.01f || (!CachedSnapshot.bScaleSettledForStamp && SettledKg > 0.01f))
 	{
-		VM.OperationalStatusText = LOCTEXT("CrtStatusSettling", "SCALE DAMPING - SETTLING PAYLOAD...");
+		VM.OperationalStatusText = LOCTEXT("CrtStatusSettling", "SETTLING...");
 		VM.OperationalStatusColor = Gold;
 	}
 	else if (CachedSnapshot.bScaleSettledForStamp && CachedSnapshot.bIsWithinDirectorsCutWindow)
 	{
-		VM.OperationalStatusText = LOCTEXT("CrtStatusDirReady", "DIRECTOR'S CUT LOCKED - PRESS [E] TO STAMP (+2 SCRIP)");
+		VM.OperationalStatusText = LOCTEXT("CrtStatusDirReady", "DIRECTOR'S CUT - PRESS [E] (+2 SCRIP)");
 		VM.OperationalStatusColor = Gold;
 	}
 	else if (CachedSnapshot.bScaleSettledForStamp && CachedSnapshot.bIsWithinQuotaWindow)
 	{
-		VM.OperationalStatusText = LOCTEXT("CrtStatusQuotaReady", "QUOTA MET - PRESS [E] TO STAMP (+1 SCRIP)");
+		VM.OperationalStatusText = LOCTEXT("CrtStatusQuotaReady", "QUOTA VALID - PRESS [E] TO STAMP");
 		VM.OperationalStatusColor = Emerald;
 	}
 	else if (CachedSnapshot.ActiveDiverterRoute == EDiverterRoute::TareChute)
 	{
-		VM.OperationalStatusText = LOCTEXT("CrtStatusTareActive", "TARE CHUTE ACTIVE - HOLD [LMB] TO PURGE SCRAP | [SPACE] TITHE");
+		VM.OperationalStatusText = LOCTEXT("CrtStatusTareActive", "TARE ROUTE ACTIVE - [SPACE] FOR TITHE");
 		VM.OperationalStatusColor = Orange;
 	}
 	else if (SettledKg > KINDA_SMALL_NUMBER && SettledKg < MinValidKg)
 	{
 		const float NeedToMinKg = FMath::Max(0.01f, MinValidKg - SettledKg);
 		VM.OperationalStatusText = FText::FromString(
-			FString::Printf(TEXT("UNDER QUOTA - ADD %.2f KG TO REACH VALID WINDOW"), NeedToMinKg));
+			FString::Printf(TEXT("[UNDER QUOTA] +%.2f KG NEEDED"), NeedToMinKg));
 		VM.OperationalStatusColor = SkyBlue;
 	}
 	else
 	{
-		VM.OperationalStatusText = LOCTEXT("CrtStatusReady", "SCALE READY - HOLD [LMB] TO SLICE MONOLITH INTO TITHE");
-		VM.OperationalStatusColor = SkyBlue;
+		VM.OperationalStatusText = LOCTEXT("CrtStatusReady", "AWAITING TITHE CUT");
+		VM.OperationalStatusColor = FLinearColor(0.45f, 0.84f, 1.00f, 0.86f);
 	}
+
+	const FString DiagJson = FString::Printf(
+		TEXT("{\"header\":\"%s\",\"windows\":\"%s\",\"mass\":\"%s\",\"tare\":\"%s\",\"route\":\"%s\",\"status\":\"%s\"}"),
+		*EscapeDiagJsonField(VM.ConsoleHeaderText.ToString()),
+		*EscapeDiagJsonField(VM.WindowsSummaryText.ToString()),
+		*EscapeDiagJsonField(VM.MassReadoutText.ToString()),
+		*EscapeDiagJsonField(VM.TareBadgeText.ToString()),
+		*EscapeDiagJsonField(VM.RouteBadgeText.ToString()),
+		*EscapeDiagJsonField(VM.OperationalStatusText.ToString()));
+	CVarDiagBottomCrtJson->Set(*DiagJson, ECVF_SetByCode);
 
 	OverlayWidget->UpdateBottomCrtConsole(VM);
 }

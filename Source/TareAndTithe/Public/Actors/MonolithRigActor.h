@@ -75,6 +75,21 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Rig|Test")
 	int32 GetActiveScanUpgradeTierForTest() const { return static_cast<int32>(CachedScanUpgradeLevel); }
 
+	UFUNCTION(BlueprintPure, Category = "Rig|Test")
+	float GetLastRemainderPreCookDurationMsForTest() const { return LastRemainderPreCookDurationMs; }
+
+	UFUNCTION(BlueprintPure, Category = "Rig|Test")
+	float GetLastClampSnapDurationMsForTest() const { return LastClampSnapDurationMs; }
+
+	UFUNCTION(BlueprintPure, Category = "Rig|Test")
+	float GetLastCommitSliceDurationMsForTest() const { return LastCommitSliceDurationMs; }
+
+	UFUNCTION(BlueprintPure, Category = "Rig|Test")
+	FVector GetRemainderWorldLocationForTest() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Rig|Test")
+	void SetClampTorqueCapacityMultiplierForTest(float InMultiplier);
+
 	FOnTelemetryStreamSignature OnTelemetryStream;
 	FOnTelemetryImpulseSignature OnTelemetryImpulse;
 
@@ -216,6 +231,7 @@ private:
 	void HandleChunkSpawnedFromSlice(ASeveredChunkActor* SpawnedChunk);
 	void HandleSliverVaporized(float VaporizedMassKg, const FVector& WorldLocation);
 	void HandleClampStructuralSnap();
+	void PreCookRemainderSimpleCollision();
 
 	UPROPERTY()
 	TObjectPtr<UStaticMesh> FallbackCubeMesh;
@@ -258,5 +274,9 @@ private:
 
 	uint8 CachedHydUpgradeLevel = 0;
 	uint8 CachedScanUpgradeLevel = 0;
+	float LastRemainderPreCookDurationMs = 0.0f;
+	float LastClampSnapDurationMs = 0.0f;
+	float LastCommitSliceDurationMs = 0.0f;
 	bool bHasCustomClampJawMesh = false;
+	bool bRemainderSimpleCollisionPreCooked = false;
 };

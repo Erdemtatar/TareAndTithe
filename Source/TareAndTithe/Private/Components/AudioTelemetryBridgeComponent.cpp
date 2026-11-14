@@ -2,6 +2,7 @@
 
 #include "Components/AudioTelemetryBridgeComponent.h"
 #include "Components/AudioComponent.h"
+#include "CoreGlobals.h"
 #include "Data/TareTithePresentationDataAsset.h"
 #include "Engine/World.h"
 #include "Interfaces/TelemetryPublisherInterface.h"
@@ -495,6 +496,19 @@ void UAudioTelemetryBridgeComponent::HandlePublisherImpulse(
 	float NormalizedMagnitude,
 	const FVector& WorldLocation)
 {
+	if (ImpulseId == ETelemetryImpulseId::FaultTriggered)
+	{
+		// Phase 12-FIX5: Debounce same-frame duplicate FaultTriggered broadcasts (e.g., ClampTorqueSolverComponent
+		// followed immediately by UInspectionShiftSubsystem::TriggerContractFault) while keeping ClampTorqueSolverComponent untouched.
+		if (LastFaultImpulseFrameNumber == GFrameCounter)
+		{
+			++SuppressedDuplicateFaultImpulseCount;
+			return;
+		}
+		LastFaultImpulseFrameNumber = GFrameCounter;
+		LastFaultFrameDispatchedImpulseCount = 1;
+	}
+
 	const float ClampedMagnitude = FMath::Clamp(NormalizedMagnitude, 0.0f, 1.0f);
 
 	SpawnSpatialImpulseSoundIfAssigned(ImpulseId, ClampedMagnitude, WorldLocation);
@@ -532,6 +546,8 @@ void UAudioTelemetryBridgeComponent::HandleShiftPhaseChanged(EShiftPhase NewPhas
 		MuteAndCutoffLoopsForFaultOrPhaseExit();
 		return;
 	}
+
+	LastFaultImpulseFrameNumber = MAX_uint64;
 
 	bool bHasActiveFault = false;
 	if (UWorld* World = GetWorld())

@@ -13,12 +13,139 @@
 #include "Engine/World.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
+#include "PhysicsEngine/BodySetup.h"
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
 
 namespace
 {
 	const FVector PooledParkingLocationCm(0.0, 0.0, -50000.0);
+
+	bool BuildFast26DopSingleConvexChunkCollision(
+		UDynamicMesh* DynMesh,
+		UDynamicMeshComponent* TargetComponent,
+		float MinThicknessCm)
+	{
+		if (!IsValid(DynMesh) || !IsValid(TargetComponent))
+		{
+			return false;
+		}
+
+		TArray<FVector, TInlineAllocator<32>> HullVertices;
+		FBox MeshBounds(ForceInit);
+
+		DynMesh->ProcessMesh([&HullVertices, &MeshBounds, MinThicknessCm](const UE::Geometry::FDynamicMesh3& ReadMesh)
+		{
+			if (ReadMesh.VertexCount() < 4)
+			{
+				return;
+			}
+
+			FVector Directions[26];
+			double MaxDots[26];
+			int32 BestVids[26];
+			int32 DirCount = 0;
+			for (int32 Ix = -1; Ix <= 1; ++Ix)
+			{
+				for (int32 Iy = -1; Iy <= 1; ++Iy)
+				{
+					for (int32 Iz = -1; Iz <= 1; ++Iz)
+					{
+						if (Ix == 0 && Iy == 0 && Iz == 0)
+						{
+							continue;
+						}
+						Directions[DirCount] = FVector(static_cast<double>(Ix), static_cast<double>(Iy), static_cast<double>(Iz));
+						MaxDots[DirCount] = -TNumericLimits<double>::Max();
+						BestVids[DirCount] = INDEX_NONE;
+						++DirCount;
+					}
+				}
+			}
+
+			for (int32 Vid : ReadMesh.VertexIndicesItr())
+			{
+				const FVector Pos(ReadMesh.GetVertex(Vid));
+				MeshBounds += Pos;
+				for (int32 DirIdx = 0; DirIdx < 26; ++DirIdx)
+				{
+					const double Dot =
+						Directions[DirIdx].X * Pos.X +
+						Directions[DirIdx].Y * Pos.Y +
+						Directions[DirIdx].Z * Pos.Z;
+					if (Dot > MaxDots[DirIdx])
+					{
+						MaxDots[DirIdx] = Dot;
+						BestVids[DirIdx] = Vid;
+					}
+				}
+			}
+
+			for (int32 DirIdx = 0; DirIdx < 26; ++DirIdx)
+			{
+				const int32 Vid = BestVids[DirIdx];
+				if (Vid == INDEX_NONE)
+				{
+					continue;
+				}
+				const FVector Candidate(ReadMesh.GetVertex(Vid));
+				bool bDuplicate = false;
+				for (const FVector& Existing : HullVertices)
+				{
+					if (FVector::DistSquared(Candidate, Existing) <= 0.0025)
+					{
+						bDuplicate = true;
+						break;
+					}
+				}
+				if (!bDuplicate)
+				{
+					HullVertices.Add(Candidate);
+				}
+			}
+
+			if (MeshBounds.IsValid && HullVertices.Num() >= 3)
+			{
+				const double SafeMinThick = FMath::Max(0.05, static_cast<double>(MinThicknessCm));
+				const FVector Center = MeshBounds.GetCenter();
+				const FVector Size = MeshBounds.GetSize();
+				for (int32 Axis = 0; Axis < 3; ++Axis)
+				{
+					if (Size[Axis] < SafeMinThick)
+					{
+						FVector Offset = FVector::ZeroVector;
+						Offset[Axis] = 0.5 * SafeMinThick;
+						HullVertices.Add(Center - Offset);
+						HullVertices.Add(Center + Offset);
+					}
+				}
+			}
+		});
+
+		if (HullVertices.Num() < 4 || !MeshBounds.IsValid)
+		{
+			return false;
+		}
+
+		FKConvexElem ConvexElem;
+		ConvexElem.VertexData.Reserve(HullVertices.Num());
+		for (const FVector& Vert : HullVertices)
+		{
+			ConvexElem.VertexData.Add(Vert);
+		}
+		ConvexElem.UpdateElemBox();
+
+		FKAggregateGeom FastAggGeom;
+		FastAggGeom.ConvexElems.Add(MoveTemp(ConvexElem));
+
+		TargetComponent->bUseAsyncCooking = false;
+		TargetComponent->SetSimpleCollisionShapes(FastAggGeom, true);
+
+		const UBodySetup* BodySetup = TargetComponent->GetBodySetup();
+		return IsValid(BodySetup) &&
+			BodySetup->AggGeom.ConvexElems.Num() > 0 &&
+			BodySetup->AggGeom.ConvexElems[0].GetChaosConvexMesh().IsValid();
+	}
 }
 
 ASeveredChunkActor::ASeveredChunkActor()
@@ -117,38 +244,61 @@ void ASeveredChunkActor::ActivateFromSlice(
 
 		if (UDynamicMesh* DynMesh = ChunkMeshComponent->GetDynamicMesh())
 		{
+			const int32 SourceTriCount = InCenteredMesh.TriangleCount();
 			DynMesh->SetMesh(MoveTemp(InCenteredMesh));
 			ChunkMeshComponent->ConfigureMaterialSet({EffectiveOuterMat, EffectiveCutCapMat});
+			ChunkMeshComponent->SetComplexAsSimpleCollisionEnabled(false, false);
 
-			FGeometryScriptCollisionFromMeshOptions CollisionOptions;
-			CollisionOptions.bEmitTransaction = false;
-			CollisionOptions.Method = EGeometryScriptCollisionGenerationMethod::ConvexHulls;
-			CollisionOptions.bSimplifyHulls = true;
-			CollisionOptions.ConvexHullTargetFaceCount = ConvexHullTargetFaceCount;
-			CollisionOptions.MaxConvexHullsPerMesh = MaxConvexHulls;
-			CollisionOptions.MinThickness = MinCollisionThicknessCm;
+			// Phase 12-FIX5: Sculpted Rodin chunks (> 48 tris on Contracts 04/05/06, including corner cuts) cook a single
+			// 26-DOP extremal-vertex Chaos convex hull (< 0.20 ms) to bypass synchronous FConvexDecomposition3
+			// and QEM hull-simplification stalls while preserving MaxConvexHulls = 2 for low-poly procedural L/J/C/Z brackets (<= 48 tris).
+			const bool bHighPolySculptedChunk = (SourceTriCount > 48);
+			bool bBuiltFastHighPolyHull = false;
+			if (bHighPolySculptedChunk)
+			{
+				bBuiltFastHighPolyHull = BuildFast26DopSingleConvexChunkCollision(
+					DynMesh,
+					ChunkMeshComponent,
+					MinCollisionThicknessCm);
+			}
 
-			UGeometryScriptLibrary_CollisionFunctions::SetDynamicMeshCollisionFromMesh(
-				DynMesh,
-				ChunkMeshComponent,
-				CollisionOptions,
-				nullptr);
+			if (!bBuiltFastHighPolyHull)
+			{
+				FGeometryScriptCollisionFromMeshOptions CollisionOptions;
+				CollisionOptions.bEmitTransaction = false;
+				CollisionOptions.Method = EGeometryScriptCollisionGenerationMethod::ConvexHulls;
+				CollisionOptions.bSimplifyHulls = true;
+				CollisionOptions.ConvexHullTargetFaceCount = bHighPolySculptedChunk
+					? FMath::Min(16, ConvexHullTargetFaceCount)
+					: ConvexHullTargetFaceCount;
+				CollisionOptions.MaxConvexHullsPerMesh = bHighPolySculptedChunk ? 1 : MaxConvexHulls;
+				CollisionOptions.MinThickness = MinCollisionThicknessCm;
+
+				UGeometryScriptLibrary_CollisionFunctions::SetDynamicMeshCollisionFromMesh(
+					DynMesh,
+					ChunkMeshComponent,
+					CollisionOptions,
+					nullptr);
+			}
 		}
 		else
 		{
 			ChunkMeshComponent->ConfigureMaterialSet({EffectiveOuterMat, EffectiveCutCapMat});
+			ChunkMeshComponent->SetComplexAsSimpleCollisionEnabled(false, false);
 		}
 
 		ChunkMeshComponent->BodyInstance.bUseCCD = true;
-		ChunkMeshComponent->SetUseCCD(true);
-		ChunkMeshComponent->SetCollisionProfileName(UCollisionProfile::PhysicsActor_ProfileName);
-		ChunkMeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-		ChunkMeshComponent->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
+		ChunkMeshComponent->BodyInstance.bEnableGravity = true;
+		ChunkMeshComponent->BodyInstance.SetMassOverride(AnalyticalMassKg, true);
+		ChunkMeshComponent->BodyInstance.bSimulatePhysics = true;
 		ChunkMeshComponent->SetGenerateOverlapEvents(true);
 		ChunkMeshComponent->SetNotifyRigidBodyCollision(true);
-		ChunkMeshComponent->SetComplexAsSimpleCollisionEnabled(false, true);
-		ChunkMeshComponent->SetMassOverrideInKg(NAME_None, AnalyticalMassKg, true);
-		ChunkMeshComponent->SetSimulatePhysics(true);
+		ChunkMeshComponent->SetCollisionProfileName(UCollisionProfile::PhysicsActor_ProfileName);
+		ChunkMeshComponent->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
+		if (!ChunkMeshComponent->IsSimulatingPhysics())
+		{
+			ChunkMeshComponent->SetSimulatePhysics(true);
+		}
 		ChunkMeshComponent->WakeAllRigidBodies();
 		ChunkMeshComponent->SetPhysicsLinearVelocity(InInitialLinearVelocityCmPerSec, false);
 		ChunkMeshComponent->SetPhysicsAngularVelocityInRadians(FVector::ZeroVector, false);
