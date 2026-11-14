@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Core/TareTitheTypes.h"
+#include "Interfaces/SliceableTargetInterface.h"
 #include "LaserPlaneAimComponent.generated.h"
 
 class USceneComponent;
@@ -51,11 +52,13 @@ public:
 
 	void ResetAimAndOrientation();
 	void ForceRefreshPreview();
+	void SetDirectAimState(float InHorizontalCm, float InVerticalCm, float InRollDeg, float InPitchBevelDeg);
 
 	const FVector& GetCurrentPlaneOriginWorld() const { return CurrentPlaneOriginWorld; }
 	const FVector& GetCurrentPlaneNormalWorld() const { return CurrentPlaneNormalWorld; }
 	const FQuat& GetCurrentPlaneOrientationWorld() const { return CurrentPlaneOrientationWorld; }
 	const FSlicePreviewTelemetry& GetLastPreviewTelemetry() const { return LastPreviewTelemetry; }
+	const FMonolithCutMaskVolume& GetLastCuttableMaskVolume() const { return LastCuttableMaskVolume; }
 
 	float GetAimHorizontalCm() const { return AimHorizontalCm; }
 	float GetAimVerticalCm() const { return AimVerticalCm; }
@@ -112,6 +115,7 @@ private:
 	FQuat CurrentPlaneOrientationWorld = FQuat::Identity;
 	FBox CachedTargetWorldBounds = FBox(ForceInit);
 	FSlicePreviewTelemetry LastPreviewTelemetry;
+	FMonolithCutMaskVolume LastCuttableMaskVolume;
 
 	float AimHorizontalCm = 0.0f;
 	float AimVerticalCm = 0.0f;

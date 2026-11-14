@@ -928,11 +928,16 @@ void AInspectorPawn::UpdateLaserSheetMaterialVisuals()
 	}
 
 	constexpr float QuotaFloatEpsilonKg = 1.0e-3f;
+	const FLaserSheetPresentationConfig SheetCfg = IsValid(PresentationData)
+		? PresentationData->LaserSheetConfig.GetSanitized()
+		: FLaserSheetPresentationConfig();
+
 	const FLinearColor SafeIdleColor(0.04f, 0.52f, 0.78f, 1.0f);
 	const FLinearColor IntersectCyanColor(0.08f, 0.88f, 1.00f, 1.0f);
 	const FLinearColor WindowMatchEmeraldColor(0.04f, 0.96f, 0.36f, 1.0f);
 	const FLinearColor TarePurgeReadyColor(0.06f, 0.94f, 0.62f, 1.0f);
-	const FLinearColor WarningAmberColor(1.00f, 0.56f, 0.04f, 1.0f);
+	const FLinearColor VeinDropYellowColor = SheetCfg.VeinDropYellowColor;
+	const FLinearColor IsotopeProximityAmberColor = SheetCfg.IsotopeProximityAmberColor;
 	const FLinearColor DangerCrimsonColor(1.00f, 0.05f, 0.03f, 1.0f);
 	const FLinearColor CapacitorHotWhiteColor(1.00f, 0.94f, 0.78f, 1.0f);
 
@@ -958,7 +963,7 @@ void AInspectorPawn::UpdateLaserSheetMaterialVisuals()
 			if (CachedHudSnapshot.ActiveDiverterRoute == EDiverterRoute::TitheScale)
 			{
 				const float DangerAlpha = FMath::Clamp((CachedVeinProximityNormalized - 0.5f) * 2.0f, 0.0f, 1.0f);
-				BaseHue = FMath::Lerp(WarningAmberColor, DangerCrimsonColor, DangerAlpha);
+				BaseHue = FMath::Lerp(VeinDropYellowColor, DangerCrimsonColor, DangerAlpha);
 			}
 			else if (bTareOverflowRisk)
 			{
@@ -984,11 +989,11 @@ void AInspectorPawn::UpdateLaserSheetMaterialVisuals()
 			}
 			else if (CachedVeinProximityNormalized < 0.5f)
 			{
-				BaseHue = FMath::Lerp(CleanContactHue, WarningAmberColor, CachedVeinProximityNormalized * 2.0f);
+				BaseHue = FMath::Lerp(CleanContactHue, IsotopeProximityAmberColor, CachedVeinProximityNormalized * 2.0f);
 			}
 			else
 			{
-				BaseHue = FMath::Lerp(WarningAmberColor, DangerCrimsonColor, (CachedVeinProximityNormalized - 0.5f) * 2.0f);
+				BaseHue = FMath::Lerp(IsotopeProximityAmberColor, DangerCrimsonColor, (CachedVeinProximityNormalized - 0.5f) * 2.0f);
 			}
 		}
 	}
@@ -997,7 +1002,13 @@ void AInspectorPawn::UpdateLaserSheetMaterialVisuals()
 	const float EmissiveBoost = 1.0f + (CachedVeinProximityNormalized * 1.25f) + (CachedLaserChargeNormalized * 3.0f);
 	const FLinearColor FinalColor = FMath::Lerp(BaseHue, CapacitorHotWhiteColor, ChargeBlend) * EmissiveBoost;
 
-	auto ApplyParameters = [&](UMaterialInstanceDynamic* TargetMID, float OpacityScalar)
+	const FMonolithCutMaskVolume CutMask = IsValid(LaserPlaneAimComponent)
+		? LaserPlaneAimComponent->GetLastCuttableMaskVolume()
+		: FMonolithCutMaskVolume();
+	const float CutMaskActiveScalar = (bCachedIntersectsMonolith && CutMask.bIsValid) ? 1.0f : 0.0f;
+	const float DirectVeinHitScalar = bDirectVeinHit ? 1.0f : 0.0f;
+
+	auto ApplySharedParameters = [&](UMaterialInstanceDynamic* TargetMID, float OpacityScalar)
 	{
 		if (!IsValid(TargetMID))
 		{
@@ -1019,8 +1030,47 @@ void AInspectorPawn::UpdateLaserSheetMaterialVisuals()
 	const float SheetOpacity = (bValidContact || bDirectVeinHit)
 		? (bHighlightReadySheet ? 0.48f : 0.42f)
 		: 0.18f;
-	ApplyParameters(LaserSheetMID, SheetOpacity);
-	ApplyParameters(LaserFrameMID, 1.0f);
+	ApplySharedParameters(LaserSheetMID, SheetOpacity);
+	ApplySharedParameters(LaserFrameMID, 1.0f);
+
+	if (IsValid(LaserSheetMID))
+	{
+		LaserSheetMID->SetVectorParameterValue(
+			TEXT("MonolithCutMaskCenterWS"),
+			FLinearColor(CutMask.CenterWorld.X, CutMask.CenterWorld.Y, CutMask.CenterWorld.Z, 1.0f));
+		LaserSheetMID->SetVectorParameterValue(
+			TEXT("MonolithCutMaskExtentWS"),
+			FLinearColor(CutMask.HalfExtentsCm.X, CutMask.HalfExtentsCm.Y, CutMask.HalfExtentsCm.Z, 1.0f));
+		LaserSheetMID->SetVectorParameterValue(
+			TEXT("MonolithCutMaskAxisXWS"),
+			FLinearColor(CutMask.AxisXWorld.X, CutMask.AxisXWorld.Y, CutMask.AxisXWorld.Z, 0.0f));
+		LaserSheetMID->SetVectorParameterValue(
+			TEXT("MonolithCutMaskAxisYWS"),
+			FLinearColor(CutMask.AxisYWorld.X, CutMask.AxisYWorld.Y, CutMask.AxisYWorld.Z, 0.0f));
+		LaserSheetMID->SetVectorParameterValue(
+			TEXT("MonolithCutMaskAxisZWS"),
+			FLinearColor(CutMask.AxisZWorld.X, CutMask.AxisZWorld.Y, CutMask.AxisZWorld.Z, 0.0f));
+		LaserSheetMID->SetVectorParameterValue(
+			TEXT("SheetMaskPadWS"),
+			FLinearColor(SheetCfg.SheetMaskPadXCm, SheetCfg.SheetMaskPadYCm, 2.0f, 0.0f));
+
+		LaserSheetMID->SetVectorParameterValue(TEXT("SeamCoreColor"), SheetCfg.SeamCoreLinearColor);
+		LaserSheetMID->SetVectorParameterValue(TEXT("SeamShoulderColor"), SheetCfg.SeamShoulderLinearColor);
+		LaserSheetMID->SetVectorParameterValue(TEXT("VeinHitCoreColor"), SheetCfg.VeinHitCoreLinearColor);
+		LaserSheetMID->SetVectorParameterValue(TEXT("VeinHitShoulderColor"), SheetCfg.VeinHitShoulderLinearColor);
+
+		LaserSheetMID->SetScalarParameterValue(TEXT("CutMaskActiveScalar"), CutMaskActiveScalar);
+		LaserSheetMID->SetScalarParameterValue(TEXT("DirectVeinHitScalar"), DirectVeinHitScalar);
+		LaserSheetMID->SetScalarParameterValue(TEXT("CoreSeamWidthCm"), SheetCfg.CoreSeamWidthCm);
+		LaserSheetMID->SetScalarParameterValue(TEXT("ShoulderSeamWidthCm"), SheetCfg.ShoulderSeamWidthCm);
+		LaserSheetMID->SetScalarParameterValue(TEXT("GrazingRefSin"), SheetCfg.GrazingReferenceSin);
+		LaserSheetMID->SetScalarParameterValue(TEXT("MinGrazingScale"), SheetCfg.MinGrazingScale);
+		LaserSheetMID->SetScalarParameterValue(TEXT("SceneMaskFeatherCm"), SheetCfg.SceneMaskFeatherCm);
+		LaserSheetMID->SetScalarParameterValue(TEXT("InteriorOpacityScale"), SheetCfg.InteriorOpacityMultiplier);
+		LaserSheetMID->SetScalarParameterValue(TEXT("InteriorTroughGain"), SheetCfg.InteriorTroughEmissiveGain);
+		LaserSheetMID->SetScalarParameterValue(TEXT("InteriorCrestGain"), SheetCfg.InteriorCrestEmissiveGain);
+		LaserSheetMID->SetScalarParameterValue(TEXT("BorderEmissiveGain"), SheetCfg.BorderEmissiveGain);
+	}
 }
 
 bool AInspectorPawn::HasValidPredictiveSliceContact() const
@@ -1775,6 +1825,61 @@ void AInspectorPawn::InjectAimCursorDeltaForTest(FVector2D MouseDelta)
 	{
 		LaserPlaneAimComponent->AddAimCursorDelta(MouseDelta);
 	}
+}
+
+void AInspectorPawn::SetLaserPlanePoseForTest(
+	float WorldZCm,
+	float HorizontalOffsetCm,
+	float RollDeg,
+	float PitchBevelDeg)
+{
+	if (!IsValid(LaserPlaneAimComponent))
+	{
+		return;
+	}
+	if (!LaserPlaneAimComponent->IsAimingEnabled())
+	{
+		LaserPlaneAimComponent->SetAimingEnabled(true);
+	}
+	const float AnchorZCm = static_cast<float>(LaserPlaneAimComponent->GetFrameAnchorWorld().Z);
+	const float VerticalOffsetCm = WorldZCm - AnchorZCm;
+	LaserPlaneAimComponent->SetDirectAimState(HorizontalOffsetCm, VerticalOffsetCm, RollDeg, PitchBevelDeg);
+	LaserPlaneAimComponent->SetChargePlaneLocked(true);
+	UpdateCameraParallaxFromAim();
+	UpdateLaserSheetMaterialVisuals();
+	UpdateLaserReticleTransform();
+	UpdateLaserReticleReadoutText();
+}
+
+void AInspectorPawn::SetCapacitorChargeForTest(float NormalizedCharge)
+{
+	CachedLaserChargeNormalized = FMath::Clamp(NormalizedCharge, 0.0f, 1.0f);
+	UpdateLaserSheetMaterialVisuals();
+}
+
+void AInspectorPawn::ToggleDiverterRouteForTest()
+{
+	if (UWorld* World = GetWorld())
+	{
+		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
+		{
+			ShiftSubsystem->RequestToggleDiverter();
+		}
+	}
+}
+
+FMonolithCutMaskVolume AInspectorPawn::GetCachedCuttableMaskForTest() const
+{
+	return IsValid(LaserPlaneAimComponent)
+		? LaserPlaneAimComponent->GetLastCuttableMaskVolume()
+		: FMonolithCutMaskVolume();
+}
+
+FVector AInspectorPawn::GetCurrentLaserPlaneOriginWorldForTest() const
+{
+	return IsValid(LaserPlaneAimComponent)
+		? LaserPlaneAimComponent->GetCurrentPlaneOriginWorld()
+		: FVector::ZeroVector;
 }
 
 void AInspectorPawn::Input_AimCursor(const FInputActionValue& Value)

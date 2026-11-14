@@ -348,6 +348,93 @@ FBox AMonolithRigActor::GetTargetWorldBounds_Implementation() const
 	return FBox(ForceInit);
 }
 
+FMonolithCutMaskVolume AMonolithRigActor::GetCuttableWorldMask_Implementation() const
+{
+	FMonolithCutMaskVolume OutVolume;
+	if (!IsValid(MonolithSliceComponent) || !IsValid(RemainderMeshComponent))
+	{
+		return OutVolume;
+	}
+
+	const FBox RemainderLocalBox = MonolithSliceComponent->GetRemainderLocalBounds();
+	if (!RemainderLocalBox.IsValid)
+	{
+		return OutVolume;
+	}
+
+	const FTransform RemainderXf = RemainderMeshComponent->GetComponentTransform();
+	const FLaserSheetPresentationConfig SheetCfg = IsValid(PresentationData)
+		? PresentationData->LaserSheetConfig.GetSanitized()
+		: FLaserSheetPresentationConfig();
+
+	double JawBottomLocalZ = RemainderLocalBox.Max.Z;
+	bool bResolvedJawMeshBounds = false;
+
+	auto AccumulateJawBottomFromComponent = [&](const UStaticMeshComponent* JawComp)
+	{
+		if (!IsValid(JawComp) || !JawComp->IsVisible())
+		{
+			return;
+		}
+		const UStaticMesh* JawMesh = JawComp->GetStaticMesh();
+		if (!IsValid(JawMesh))
+		{
+			return;
+		}
+		const FBox JawMeshBox = JawMesh->GetBoundingBox();
+		if (!JawMeshBox.IsValid)
+		{
+			return;
+		}
+
+		// Correction B: Sibling transform from ClampJawVisual space directly into RemainderMeshComponent local space.
+		const FTransform JawToRemainderXf = JawComp->GetComponentTransform().GetRelativeTransform(RemainderXf);
+		double MinCornerLocalZ = TNumericLimits<double>::Max();
+		for (int32 CornerIdx = 0; CornerIdx < 8; ++CornerIdx)
+		{
+			const FVector JawCorner(
+				(CornerIdx & 1) ? JawMeshBox.Max.X : JawMeshBox.Min.X,
+				(CornerIdx & 2) ? JawMeshBox.Max.Y : JawMeshBox.Min.Y,
+				(CornerIdx & 4) ? JawMeshBox.Max.Z : JawMeshBox.Min.Z);
+			const FVector CornerInRemainderLocal = JawToRemainderXf.TransformPosition(JawCorner);
+			MinCornerLocalZ = FMath::Min(MinCornerLocalZ, CornerInRemainderLocal.Z);
+		}
+		JawBottomLocalZ = FMath::Min(JawBottomLocalZ, MinCornerLocalZ);
+		bResolvedJawMeshBounds = true;
+	};
+
+	AccumulateJawBottomFromComponent(ClampJawVisual);
+
+	if (!bResolvedJawMeshBounds)
+	{
+		const FBox GripBoxLocal = MonolithSliceComponent->GetClampGripBoxLocal();
+		if (GripBoxLocal.IsValid)
+		{
+			JawBottomLocalZ = FMath::Min(JawBottomLocalZ, GripBoxLocal.Min.Z);
+		}
+	}
+
+	FBox CuttableLocalBox = RemainderLocalBox;
+	CuttableLocalBox.Max.Z = FMath::Min(
+		RemainderLocalBox.Max.Z,
+		JawBottomLocalZ - static_cast<double>(SheetCfg.JawSeamExclusionMarginCm));
+
+	if (CuttableLocalBox.Max.Z <= (CuttableLocalBox.Min.Z + 0.5))
+	{
+		return OutVolume;
+	}
+
+	const FVector AbsScale = RemainderXf.GetScale3D().GetAbs();
+	OutVolume.bIsValid = true;
+	OutVolume.CenterWorld = RemainderXf.TransformPosition(CuttableLocalBox.GetCenter());
+	OutVolume.HalfExtentsCm = CuttableLocalBox.GetExtent() * AbsScale;
+	OutVolume.AxisXWorld = RemainderXf.GetUnitAxis(EAxis::X);
+	OutVolume.AxisYWorld = RemainderXf.GetUnitAxis(EAxis::Y);
+	OutVolume.AxisZWorld = RemainderXf.GetUnitAxis(EAxis::Z);
+	OutVolume.JawBottomLocalZ = static_cast<float>(JawBottomLocalZ);
+	return OutVolume;
+}
+
 bool AMonolithRigActor::LoadContractOnRig(
 	const UMonolithContractDataAsset* Contract,
 	const UShiftProgressionDataAsset* ShiftConfig,

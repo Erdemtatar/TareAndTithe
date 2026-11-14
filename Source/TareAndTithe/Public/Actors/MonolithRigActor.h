@@ -50,6 +50,7 @@ public:
 		const FLaserSliceAperture& SheetAperture) override;
 
 	virtual FBox GetTargetWorldBounds_Implementation() const override;
+	virtual FMonolithCutMaskVolume GetCuttableWorldMask_Implementation() const override;
 
 	// ITelemetryPublisherInterface
 	virtual FOnTelemetryStreamSignature& GetTelemetryStreamDelegate() override { return OnTelemetryStream; }

@@ -655,6 +655,77 @@ struct TAREANDTITHE_API FClampGroanAudioConfig
 	FClampGroanAudioConfig GetSanitized() const;
 };
 
+/**
+ * Phase 12C OBB-Masked Incandescent Contact Seam, 5-State Palette Separation & Plasma Scanline Configuration.
+ */
+USTRUCT(BlueprintType)
+struct TAREANDTITHE_API FLaserSheetPresentationConfig
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials|LaserSheet|Seam", meta = (ClampMin = "0.35", ClampMax = "3.00"))
+	float CoreSeamWidthCm = 1.05f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials|LaserSheet|Seam", meta = (ClampMin = "1.00", ClampMax = "6.00"))
+	float ShoulderSeamWidthCm = 2.45f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials|LaserSheet|Seam", meta = (ClampMin = "0.10", ClampMax = "0.60"))
+	float GrazingReferenceSin = 0.26f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials|LaserSheet|Seam", meta = (ClampMin = "0.02", ClampMax = "1.00"))
+	float MinGrazingScale = 0.055f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials|LaserSheet|Mask", meta = (ClampMin = "0.00", ClampMax = "4.00"))
+	float JawSeamExclusionMarginCm = 0.80f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials|LaserSheet|Mask", meta = (ClampMin = "0.10", ClampMax = "2.50"))
+	float SceneMaskFeatherCm = 0.65f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials|LaserSheet|Mask", meta = (ClampMin = "1.00", ClampMax = "32.00"))
+	float SheetMaskPadXCm = 22.00f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials|LaserSheet|Mask", meta = (ClampMin = "0.50", ClampMax = "16.00"))
+	float SheetMaskPadYCm = 6.00f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials|LaserSheet|Scanlines", meta = (ClampMin = "0.10", ClampMax = "0.35"))
+	float InteriorOpacityMultiplier = 0.22f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials|LaserSheet|Scanlines", meta = (ClampMin = "0.02", ClampMax = "0.60"))
+	float InteriorTroughEmissiveGain = 0.08f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials|LaserSheet|Scanlines", meta = (ClampMin = "0.10", ClampMax = "1.20"))
+	float InteriorCrestEmissiveGain = 0.46f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials|LaserSheet|Border", meta = (ClampMin = "1.00", ClampMax = "5.00"))
+	float BorderEmissiveGain = 2.60f;
+
+	/** Distinct Yellow-Gold for [VEIN -> SPACE] (Checkpoint 1). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials|LaserSheet|Palette")
+	FLinearColor VeinDropYellowColor = FLinearColor(1.00f, 0.88f, 0.04f, 1.0f);
+
+	/** Distinct Amber-Orange for ISOTOPE PROXIMITY (Checkpoint 1). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials|LaserSheet|Palette")
+	FLinearColor IsotopeProximityAmberColor = FLinearColor(1.00f, 0.36f, 0.02f, 1.0f);
+
+	/** White-hot incandescent contact core (#FFF6D6 chromaticity, exceeds BloomThreshold=1.65f). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials|LaserSheet|Seam")
+	FLinearColor SeamCoreLinearColor = FLinearColor(6.20f, 5.10f, 2.90f, 1.0f);
+
+	/** Tight molten gold-orange thermal shoulder matching freshly severed hot monolith cap. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials|LaserSheet|Seam")
+	FLinearColor SeamShoulderLinearColor = FLinearColor(3.60f, 1.02f, 0.10f, 1.0f);
+
+	/** White-crimson detonation arc core when bWillDetonate (VEIN INTERSECT) is active. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials|LaserSheet|Seam")
+	FLinearColor VeinHitCoreLinearColor = FLinearColor(6.80f, 1.80f, 1.60f, 1.0f);
+
+	/** Deep plasma crimson arc shoulder when bWillDetonate (VEIN INTERSECT) is active. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials|LaserSheet|Seam")
+	FLinearColor VeinHitShoulderLinearColor = FLinearColor(4.60f, 0.12f, 0.06f, 1.0f);
+
+	FLaserSheetPresentationConfig GetSanitized() const;
+};
+
 UCLASS(BlueprintType)
 class TAREANDTITHE_API UTareTithePresentationDataAsset : public UPrimaryDataAsset
 {
@@ -702,6 +773,9 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials")
 	TObjectPtr<UMaterialInterface> LaserSheetMaterial = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials|LaserSheet")
+	FLaserSheetPresentationConfig LaserSheetConfig;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials")
 	TObjectPtr<UMaterialInterface> DefaultMonolithOuterMaterial = nullptr;

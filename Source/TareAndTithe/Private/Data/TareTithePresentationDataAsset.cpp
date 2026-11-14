@@ -207,3 +207,21 @@ FClampGroanAudioConfig FClampGroanAudioConfig::GetSanitized() const
 	Out.GroanFastCutoffSeconds = FMath::Clamp(Out.GroanFastCutoffSeconds, 0.01f, 0.12f);
 	return Out;
 }
+
+FLaserSheetPresentationConfig FLaserSheetPresentationConfig::GetSanitized() const
+{
+	FLaserSheetPresentationConfig Out = *this;
+	Out.CoreSeamWidthCm = FMath::Clamp(Out.CoreSeamWidthCm, 0.35f, 3.00f);
+	Out.ShoulderSeamWidthCm = FMath::Clamp(Out.ShoulderSeamWidthCm, Out.CoreSeamWidthCm + 0.35f, 6.00f);
+	Out.GrazingReferenceSin = FMath::Clamp(Out.GrazingReferenceSin, 0.10f, 0.60f);
+	Out.MinGrazingScale = FMath::Clamp(Out.MinGrazingScale, 0.02f, 1.00f);
+	Out.JawSeamExclusionMarginCm = FMath::Clamp(Out.JawSeamExclusionMarginCm, 0.00f, 4.00f);
+	Out.SceneMaskFeatherCm = FMath::Clamp(Out.SceneMaskFeatherCm, 0.10f, 2.50f);
+	Out.SheetMaskPadXCm = FMath::Clamp(Out.SheetMaskPadXCm, 1.00f, 32.00f);
+	Out.SheetMaskPadYCm = FMath::Clamp(Out.SheetMaskPadYCm, 0.50f, 16.00f);
+	Out.InteriorOpacityMultiplier = FMath::Clamp(Out.InteriorOpacityMultiplier, 0.10f, 0.35f);
+	Out.InteriorTroughEmissiveGain = FMath::Clamp(Out.InteriorTroughEmissiveGain, 0.02f, 0.60f);
+	Out.InteriorCrestEmissiveGain = FMath::Clamp(Out.InteriorCrestEmissiveGain, Out.InteriorTroughEmissiveGain, 1.20f);
+	Out.BorderEmissiveGain = FMath::Clamp(Out.BorderEmissiveGain, 1.00f, 5.00f);
+	return Out;
+}

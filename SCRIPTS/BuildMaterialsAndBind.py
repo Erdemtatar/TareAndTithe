@@ -423,129 +423,22 @@ def finalize_and_save_material(
 
 def build_laser_sheet_master() -> unreal.Material:
     """
-    Phase 11A High-Energy Translucent Laser Optic Sheet (Guard 3 single-sided two_sided=False):
-    - Low interior fill opacity (0.08 - 0.13 during active slice contact) with 68-cycle optical scanline striations
-      so the ore monolith and molten cut cap remain unmistakably legible right through the plane.
-    - Razor-sharp 0.018 UV perimeter frame (0.88 opacity, 2.60x HDR emissive boost) cleanly exceeding
-      BloomThreshold=1.65 along the optical slice border while keeping HUD text immune.
+    Phase 12C High-Energy OBB-Masked Translucent Laser Optic Sheet (Guard 3 single-sided two_sided=False):
+    - Preserves 0.018 UV perimeter frame across all 5 gameplay state palettes (Cyan, Emerald, Yellow, Amber, Crimson).
+    - Phase-continuous dual-wave GPU Time scrolling plasma scanlines at 0.08..0.12 active interior opacity.
+    - Analytical native-node P_scene reconstruction & tilt-rigid 3D cuttable monolith OBB mask driving a dual-zone
+      #FFF6D6 incandescent core + molten gold-orange thermal shoulder (white-crimson arc on VEIN INTERSECT),
+      guaranteeing 0.0 false molten glow on SM_DiverterFlapper and SM_ClampJaw.
     """
+    import sys as _sys
+
+    _scripts_dir = os.path.dirname(os.path.abspath(__file__))
+    if _scripts_dir not in _sys.path:
+        _sys.path.insert(0, _scripts_dir)
+    import UpgradeLaserSheetPhase12C as _phase12c_laser
+
     mat = get_or_create_material("M_LaserSheet_Master")
-    mat.set_editor_property("blend_mode", unreal.BlendMode.BLEND_TRANSLUCENT)
-    mat.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_UNLIT)
-    mat.set_editor_property("two_sided", False)
-
-    tex_uv = create_expr(mat, unreal.MaterialExpressionTextureCoordinate, -1480, 40)
-    tex_uv.set_editor_property("coordinate_index", 0)
-    tex_uv.set_editor_property("u_tiling", 1.0)
-    tex_uv.set_editor_property("v_tiling", 1.0)
-
-    u_mask = create_expr(mat, unreal.MaterialExpressionComponentMask, -1240, -60)
-    u_mask.set_editor_property("r", True)
-    u_mask.set_editor_property("g", False)
-    u_mask.set_editor_property("b", False)
-    u_mask.set_editor_property("a", False)
-    connect_expr(tex_uv, "", u_mask, "")
-
-    v_mask = create_expr(mat, unreal.MaterialExpressionComponentMask, -1240, 140)
-    v_mask.set_editor_property("r", False)
-    v_mask.set_editor_property("g", True)
-    v_mask.set_editor_property("b", False)
-    v_mask.set_editor_property("a", False)
-    connect_expr(tex_uv, "", v_mask, "")
-
-    # UV perimeter border mask: max(|U - 0.5|, |V - 0.5|) mapped across [0.482, 0.500] (0.018 UV edge width)
-    u_centered = create_expr(mat, unreal.MaterialExpressionSubtract, -1040, -80)
-    u_centered.set_editor_property("const_b", 0.5)
-    connect_expr(u_mask, "", u_centered, "A")
-    u_abs = create_expr(mat, unreal.MaterialExpressionAbs, -880, -80)
-    connect_expr(u_centered, "", u_abs, "")
-
-    v_centered = create_expr(mat, unreal.MaterialExpressionSubtract, -1040, 60)
-    v_centered.set_editor_property("const_b", 0.5)
-    connect_expr(v_mask, "", v_centered, "A")
-    v_abs = create_expr(mat, unreal.MaterialExpressionAbs, -880, 60)
-    connect_expr(v_centered, "", v_abs, "")
-
-    box_dist = create_expr(mat, unreal.MaterialExpressionMax, -720, -10)
-    connect_expr(u_abs, "", box_dist, "A")
-    connect_expr(v_abs, "", box_dist, "B")
-
-    edge_shifted = create_expr(mat, unreal.MaterialExpressionSubtract, -560, -10)
-    edge_shifted.set_editor_property("const_b", 0.482)
-    connect_expr(box_dist, "", edge_shifted, "A")
-
-    edge_scaled = create_expr(mat, unreal.MaterialExpressionMultiply, -400, -10)
-    edge_scaled.set_editor_property("const_b", 55.5556)
-    connect_expr(edge_shifted, "", edge_scaled, "A")
-
-    edge_clamped = create_expr(mat, unreal.MaterialExpressionClamp, -240, -10)
-    edge_clamped.set_editor_property("min_default", 0.0)
-    edge_clamped.set_editor_property("max_default", 1.0)
-    connect_expr(edge_scaled, "", edge_clamped, "")
-
-    border_mask = create_expr(mat, unreal.MaterialExpressionPower, -80, -10)
-    border_mask.set_editor_property("const_exponent", 1.6)
-    connect_expr(edge_clamped, "", border_mask, "Base")
-
-    # High-frequency optical scanline striations across V (68 cycles across 68 cm aperture = 1 cm optical pitch)
-    v_freq = create_expr(mat, unreal.MaterialExpressionMultiply, -1040, 240)
-    v_freq.set_editor_property("const_b", 68.0)
-    connect_expr(v_mask, "", v_freq, "A")
-
-    scan_sin = create_expr(mat, unreal.MaterialExpressionSine, -860, 240)
-    scan_sin.set_editor_property("period", 1.0)
-    connect_expr(v_freq, "", scan_sin, "")
-
-    scan_amp = create_expr(mat, unreal.MaterialExpressionMultiply, -680, 240)
-    scan_amp.set_editor_property("const_b", 0.15)
-    connect_expr(scan_sin, "", scan_amp, "A")
-
-    scanline_mod = create_expr(mat, unreal.MaterialExpressionAdd, -500, 240)
-    scanline_mod.set_editor_property("const_b", 1.0)
-    connect_expr(scan_amp, "", scanline_mod, "A")
-
-    # Emissive output: subtle 0.82x interior scanlines + 2.60x HDR perimeter beam
-    emissive_param = create_expr(mat, unreal.MaterialExpressionVectorParameter, -460, -280)
-    emissive_param.set_editor_property("parameter_name", "EmissiveColor")
-    emissive_param.set_editor_property("default_value", unreal.LinearColor(0.08, 0.88, 1.0, 1.0))
-
-    interior_emissive_gain = create_expr(mat, unreal.MaterialExpressionMultiply, -300, -160)
-    interior_emissive_gain.set_editor_property("const_b", 0.82)
-    connect_expr(scanline_mod, "", interior_emissive_gain, "A")
-
-    border_emissive_gain = make_const_scalar(mat, 2.60, -300, -80)
-
-    emissive_gain = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, -80, -160)
-    connect_expr(interior_emissive_gain, "", emissive_gain, "A")
-    connect_expr(border_emissive_gain, "", emissive_gain, "B")
-    connect_expr(border_mask, "", emissive_gain, "Alpha")
-
-    final_emissive = create_expr(mat, unreal.MaterialExpressionMultiply, 140, -220)
-    connect_expr(emissive_param, "", final_emissive, "A")
-    connect_expr(emissive_gain, "", final_emissive, "B")
-    connect_prop(final_emissive, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
-
-    # Opacity output: 0.24 * Opacity * scanline_mod interior (~0.085-0.132 in contact, ~0.043 idle) + 0.88 crisp border
-    opacity_param = create_expr(mat, unreal.MaterialExpressionScalarParameter, -500, 380)
-    opacity_param.set_editor_property("parameter_name", "Opacity")
-    opacity_param.set_editor_property("default_value", 0.42)
-
-    interior_op_raw = create_expr(mat, unreal.MaterialExpressionMultiply, -300, 360)
-    interior_op_raw.set_editor_property("const_b", 0.24)
-    connect_expr(opacity_param, "", interior_op_raw, "A")
-
-    interior_op = create_expr(mat, unreal.MaterialExpressionMultiply, -120, 320)
-    connect_expr(interior_op_raw, "", interior_op, "A")
-    connect_expr(scanline_mod, "", interior_op, "B")
-
-    border_op_const = make_const_scalar(mat, 0.88, -120, 440)
-
-    final_opacity = create_expr(mat, unreal.MaterialExpressionLinearInterpolate, 140, 320)
-    connect_expr(interior_op, "", final_opacity, "A")
-    connect_expr(border_op_const, "", final_opacity, "B")
-    connect_expr(border_mask, "", final_opacity, "Alpha")
-    connect_prop(final_opacity, "", unreal.MaterialProperty.MP_OPACITY)
-
+    _phase12c_laser.populate_phase12c_laser_sheet_graph(mat)
     finalize_and_save_material(mat, is_opaque_nanite_compatible=False)
     return mat
 

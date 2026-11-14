@@ -101,11 +101,13 @@ void ULaserPlaneAimComponent::SetSliceableTarget(UObject* InTarget)
 	{
 		ActiveSliceableTarget = InTarget;
 		CachedTargetWorldBounds = ISliceableTargetInterface::Execute_GetTargetWorldBounds(InTarget);
+		LastCuttableMaskVolume = ISliceableTargetInterface::Execute_GetCuttableWorldMask(InTarget);
 	}
 	else
 	{
 		ActiveSliceableTarget.Reset();
 		CachedTargetWorldBounds = FBox(ForceInit);
+		LastCuttableMaskVolume = FMonolithCutMaskVolume();
 	}
 
 	bPlaneStateDirty = true;
@@ -366,6 +368,23 @@ void ULaserPlaneAimComponent::ForceRefreshPreview()
 	RecomputePlaneAndDispatchPreview();
 }
 
+void ULaserPlaneAimComponent::SetDirectAimState(
+	float InHorizontalCm,
+	float InVerticalCm,
+	float InRollDeg,
+	float InPitchBevelDeg)
+{
+	bIsChargePlaneLocked = false;
+	bIsBevelLockActive = false;
+	bIsBevelButtonHeld = false;
+	AimHorizontalCm = FMath::Clamp(InHorizontalCm, -MaxHorizontalOffsetCm, MaxHorizontalOffsetCm);
+	AimVerticalCm = FMath::Clamp(InVerticalCm, -MaxVerticalOffsetCm, MaxVerticalOffsetCm);
+	RollDegrees = static_cast<float>(FMath::UnwindDegrees(static_cast<double>(InRollDeg)));
+	PitchBevelDegrees = FMath::Clamp(InPitchBevelDeg, -MaxPitchBevelDegrees, MaxPitchBevelDegrees);
+	bPlaneStateDirty = true;
+	RecomputePlaneAndDispatchPreview();
+}
+
 void ULaserPlaneAimComponent::RecomputePlaneAndDispatchPreview()
 {
 	const FVector FrameForward = GetFrameForwardUnit();
@@ -425,6 +444,7 @@ void ULaserPlaneAimComponent::DispatchSlicePreview()
 	UObject* TargetObj = ActiveSliceableTarget.Get();
 	if (IsValid(TargetObj) && TargetObj->Implements<USliceableTargetInterface>())
 	{
+		LastCuttableMaskVolume = ISliceableTargetInterface::Execute_GetCuttableWorldMask(TargetObj);
 		LastPreviewTelemetry = ISliceableTargetInterface::Execute_PreviewSlicePlane(
 			TargetObj,
 			CurrentPlaneOriginWorld,
@@ -433,6 +453,7 @@ void ULaserPlaneAimComponent::DispatchSlicePreview()
 	}
 	else
 	{
+		LastCuttableMaskVolume = FMonolithCutMaskVolume();
 		LastPreviewTelemetry = FSlicePreviewTelemetry();
 	}
 

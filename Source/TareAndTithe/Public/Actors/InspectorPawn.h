@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Pawn.h"
 #include "Core/TareTitheTypes.h"
+#include "Interfaces/SliceableTargetInterface.h"
 #include "Interfaces/TelemetryPublisherInterface.h"
 #include "Subsystems/InspectionShiftSubsystem.h"
 #include "UI/HudViewModels.h"
@@ -65,6 +66,24 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Inspector|Diagnostics")
 	void InjectAimCursorDeltaForTest(FVector2D MouseDelta);
+
+	UFUNCTION(BlueprintCallable, Category = "Inspector|Diagnostics")
+	void SetLaserPlanePoseForTest(float WorldZCm, float HorizontalOffsetCm, float RollDeg, float PitchBevelDeg);
+
+	UFUNCTION(BlueprintCallable, Category = "Inspector|Diagnostics")
+	void SetCapacitorChargeForTest(float NormalizedCharge);
+
+	UFUNCTION(BlueprintCallable, Category = "Inspector|Diagnostics")
+	void ToggleDiverterRouteForTest();
+
+	UFUNCTION(BlueprintPure, Category = "Inspector|Diagnostics")
+	FSlicePreviewTelemetry GetCachedPreviewTelemetryForTest() const { return CachedPreviewTelemetry; }
+
+	UFUNCTION(BlueprintPure, Category = "Inspector|Diagnostics")
+	FMonolithCutMaskVolume GetCachedCuttableMaskForTest() const;
+
+	UFUNCTION(BlueprintPure, Category = "Inspector|Diagnostics")
+	FVector GetCurrentLaserPlaneOriginWorldForTest() const;
 
 protected:
 	virtual void BeginPlay() override;
