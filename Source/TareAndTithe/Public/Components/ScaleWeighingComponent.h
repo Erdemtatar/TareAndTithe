@@ -96,8 +96,35 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Scale|Settle", meta = (ClampMin = "0.2", ClampMax = "15.0"))
 	float PayloadLinearSpeedSettleThresholdCmPerSec = 2.0f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Scale|Settle", meta = (ClampMin = "1.0", ClampMax = "90.0"))
+	float PayloadAngularSpeedSettleThresholdDegPerSec = 12.0f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Scale|Settle", meta = (ClampMin = "0.05", ClampMax = "1.0"))
 	float SettleHoldRequiredSeconds = 0.15f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Scale|Settle", meta = (ClampMin = "0.0005", ClampMax = "0.05"))
+	float MassStabilityEpsilonKg = 0.005f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Scale|Settle", meta = (ClampMin = "0.20", ClampMax = "2.0"))
+	float BoundedMassStabilitySettleSeconds = 0.55f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Scale|Settle", meta = (ClampMin = "3.0", ClampMax = "30.0"))
+	float MicroJitterMaxLinearSpeedCmPerSec = 10.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Scale|Settle", meta = (ClampMin = "1.5", ClampMax = "15.0"))
+	float MicroJitterMaxVerticalSpeedCmPerSec = 5.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Scale|Settle", meta = (ClampMin = "0.50", ClampMax = "3.0"))
+	float MaxPanPileSettleCeilingSeconds = 1.15f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Scale|Settle", meta = (ClampMin = "10.0", ClampMax = "100.0"))
+	float TumblingAbortLinearSpeedCmPerSec = 25.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Scale|Settle", meta = (ClampMin = "5.0", ClampMax = "60.0"))
+	float TumblingAbortVerticalSpeedCmPerSec = 15.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Scale|Settle", meta = (ClampMin = "3.0", ClampMax = "40.0"))
+	float CeilingMaxVerticalSpeedCmPerSec = 12.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Scale|Telemetry", meta = (ClampMin = "0.001", ClampMax = "0.05"))
 	float TelemetryDeadband = 0.01f;
@@ -156,15 +183,26 @@ private:
 		UPrimitiveComponent* OtherComp,
 		int32 OtherBodyIndex);
 
+	struct FConfirmedPileMotionSummary
+	{
+		int32 ConfirmedCount = 0;
+		bool bAllQuietForFastSettle = true;
+		float MaxLinearSpeedCmPerSec = 0.0f;
+		float MaxAbsVerticalSpeedCmPerSec = 0.0f;
+	};
+
 	int32 FindTrackedPayloadIndex(const AActor* PayloadActor) const;
 	bool IsPayloadWithinPanRecoveryWell(const AActor* PayloadActor) const;
 	bool IsInFlightPayloadRestingOnPanOrConfirmedStack(const AActor* CandidateActor, const UPrimitiveComponent* CandidatePrimitive) const;
 	void CascadeRestingStackedPayloads();
 	void RecomputeAnalyticalPanMass();
+	FConfirmedPileMotionSummary EvaluateConfirmedPileMotion() const;
 	bool AreAllPayloadsBelowSettleVelocity() const;
 	void WakeOverlappingPayloads();
+	void SleepConfirmedPayloadBodies();
+	void ResetSettleAccumulators();
 	void ApplyPanPlatformDisplacement(bool bSweep);
-	void SetSettledState(bool bNewSettled);
+	void SetSettledState(bool bNewSettled, const TCHAR* SettleModeTag = nullptr, int32 ConfirmedChunkCount = 0);
 	void EmitFillRatioTelemetry(float NormalizedFillRatio, bool bForceEmit = false);
 
 	UPROPERTY(Transient)
@@ -184,8 +222,12 @@ private:
 	float TargetQuotaMassKg = 10.0f;
 	float SettleDampingMultiplier = 1.0f;
 	float SettleHoldElapsedSeconds = 0.0f;
+	float StableMassReferenceKg = 0.0f;
+	float StableMassElapsedSeconds = 0.0f;
+	float PileCeilingElapsedSeconds = 0.0f;
 	float LastEmittedFillRatio = -1.0f;
 
+	bool bPanSpringConverged = true;
 	bool bHasContamination = false;
 	bool bIsSettled = true;
 };

@@ -378,6 +378,18 @@ void UInspectionShiftSubsystem::NotifySliceCommittedSummary(const FSliceResultSu
 		return;
 	}
 
+	UE_LOG(
+		LogTareAndTithe,
+		Log,
+		TEXT("SliceCommitted: Shift=%02d Ctr=%02d Outcome=%d SpawnedKg=%.2f RemainderKg=%.2f Chunks=%d VaporizedKg=%.2f"),
+		CurrentShiftNumber,
+		CurrentContractIndex + 1,
+		static_cast<int32>(SliceSummary.Outcome),
+		SliceSummary.SpawnedChunkMassKg,
+		SliceSummary.NewRemainderMassKg,
+		SliceSummary.SpawnedChunkCount,
+		SliceSummary.VaporizedSliverMassKg);
+
 	OnSliceCommittedSummary.Broadcast(SliceSummary);
 
 	if (SliceSummary.Outcome == ECommitSliceOutcome::DetonatedVein)
@@ -423,12 +435,12 @@ void UInspectionShiftSubsystem::NotifyPayloadBouncedOffScale(AActor* PayloadActo
 
 void UInspectionShiftSubsystem::NotifyPayloadDisposedToTare(AActor* PayloadActor, float ExplicitMassKg)
 {
-	AccountPayloadAsTareOnce(PayloadActor, ExplicitMassKg);
+	AccountPayloadAsTareOnce(PayloadActor, ExplicitMassKg, false);
 }
 
 void UInspectionShiftSubsystem::NotifyPayloadLostAsStrayTare(AActor* PayloadActor, float ExplicitMassKg)
 {
-	AccountPayloadAsTareOnce(PayloadActor, ExplicitMassKg);
+	AccountPayloadAsTareOnce(PayloadActor, ExplicitMassKg, true);
 }
 
 void UInspectionShiftSubsystem::NotifyScaleContaminationDetected(AActor* /*ContaminatedActor*/)
@@ -542,6 +554,20 @@ bool UInspectionShiftSubsystem::TryStampQuotaVerdict()
 	LastStampedDeviationKg = SettledMassKg - ActiveContract->TargetTitheMassKg;
 	bLastStampWasDirectorsCut = bPrecisionStamp;
 	ClearTransientRequisitionFeedback();
+
+	UE_LOG(
+		LogTareAndTithe,
+		Log,
+		TEXT("VerdictStamped: Shift=%02d Ctr=%02d Asset=%s SettledKg=%.2f TargetKg=%.2f DevKg=%+0.2f DirCut=%d AwardedScrip=%d TotalScrip=%d"),
+		CurrentShiftNumber,
+		CurrentContractIndex + 1,
+		*ActiveContract->GetName(),
+		SettledMassKg,
+		ActiveContract->TargetTitheMassKg,
+		LastStampedDeviationKg,
+		bPrecisionStamp ? 1 : 0,
+		AwardedScrip,
+		ScripBalance);
 
 	OnTelemetryImpulse.Broadcast(ETelemetryImpulseId::VerdictStamped, 1.0f, QueryReceiverLocationOrZero());
 
@@ -802,6 +828,18 @@ void UInspectionShiftSubsystem::TriggerContractFaultAtLocation(
 	}
 
 	LastFaultReason = FaultReason;
+	UE_LOG(
+		LogTareAndTithe,
+		Log,
+		TEXT("ContractFault: Shift=%02d Ctr=%02d Asset=%s Reason=%d PanMassKg=%.2f TareKg=%.2f RemainderKg=%.2f"),
+		CurrentShiftNumber,
+		CurrentContractIndex + 1,
+		IsValid(ActiveContract) ? *ActiveContract->GetName() : TEXT("None"),
+		static_cast<int32>(FaultReason),
+		CachedSnapshot.SettledScaleMassKg,
+		AccumulatedTareWasteKg,
+		RemainderMassKg);
+
 	SetShiftPhase(EShiftPhase::FaultResetDelay);
 	RefreshAndBroadcastSnapshot();
 
@@ -1129,6 +1167,17 @@ bool UInspectionShiftSubsystem::LoadAndBeginContract(int32 ContractIndex)
 
 	SetShiftPhase(EShiftPhase::ActiveInspection);
 	RefreshAndBroadcastSnapshot();
+	UE_LOG(
+		LogTareAndTithe,
+		Log,
+		TEXT("ContractLoaded: Shift=%02d Ctr=%02d Asset=%s InitialKg=%.2f TargetKg=%.2f TolKg=%.2f MaxTareKg=%.2f"),
+		CurrentShiftNumber,
+		CurrentContractIndex + 1,
+		*ActiveContract->GetName(),
+		InitialContractMassKg,
+		ActiveContract->TargetTitheMassKg,
+		GetEffectiveQuotaToleranceKg(ActiveContract),
+		GetEffectiveMaxTareWasteKg(ActiveContract));
 	OnActiveContractLoaded.Broadcast(ActiveContract, ActiveProgressionAsset, CurrentContractIndex);
 
 	return true;
@@ -1160,7 +1209,7 @@ void UInspectionShiftSubsystem::RecomputeInFlightMassFromSet()
 	InFlightMassKg = static_cast<float>(SumInFlightMassKg);
 }
 
-void UInspectionShiftSubsystem::AccountPayloadAsTareOnce(AActor* PayloadActor, float ExplicitMassKg)
+void UInspectionShiftSubsystem::AccountPayloadAsTareOnce(AActor* PayloadActor, float ExplicitMassKg, bool bIsStrayTare)
 {
 	if (IsValid(PayloadActor))
 	{
@@ -1178,6 +1227,18 @@ void UInspectionShiftSubsystem::AccountPayloadAsTareOnce(AActor* PayloadActor, f
 
 			DisposedChunksTareMassKg += SafeMassKg;
 			AccumulatedTareWasteKg = VaporizedTareMassKg + DisposedChunksTareMassKg;
+
+			if (bIsStrayTare)
+			{
+				UE_LOG(
+					LogTareAndTithe,
+					Log,
+					TEXT("ChunkStrayTare: Shift=%02d Ctr=%02d ChunkMassKg=%.2f TotalTareKg=%.2f"),
+					CurrentShiftNumber,
+					CurrentContractIndex + 1,
+					SafeMassKg,
+					AccumulatedTareWasteKg);
+			}
 		}
 	}
 
@@ -1365,7 +1426,7 @@ void UInspectionShiftSubsystem::HandleChunkWatchdogExpired(ASeveredChunkActor* E
 	const float ImpulseMagnitude = FMath::Clamp(ChunkMassKg / 10.0f, 0.05f, 1.0f);
 	OnTelemetryImpulse.Broadcast(ETelemetryImpulseId::ChunkTareDisposed, ImpulseMagnitude, ChunkWorldLocation);
 
-	AccountPayloadAsTareOnce(ExpiredChunk, ChunkMassKg);
+	AccountPayloadAsTareOnce(ExpiredChunk, ChunkMassKg, true);
 	IMassPayloadInterface::Execute_ReturnToChunkPool(ExpiredChunk);
 }
 

@@ -214,7 +214,7 @@ private:
 	bool LoadAndBeginContract(int32 ContractIndex);
 
 	void RecomputeInFlightMassFromSet();
-	void AccountPayloadAsTareOnce(AActor* PayloadActor, float ExplicitMassKg);
+	void AccountPayloadAsTareOnce(AActor* PayloadActor, float ExplicitMassKg, bool bIsStrayTare = false);
 	void RefreshAndBroadcastSnapshot();
 	void EvaluateContractHealth();
 

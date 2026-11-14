@@ -53,6 +53,7 @@ void UChunkPoolSubsystem::Deinitialize()
 
 	AvailableChunks.Empty();
 	AllPooledChunks.Empty();
+	ActiveAcquisitionOrder.Empty();
 
 	if (IsValid(DynamicMeshPool))
 	{
@@ -65,11 +66,15 @@ void UChunkPoolSubsystem::Deinitialize()
 
 ASeveredChunkActor* UChunkPoolSubsystem::AcquireChunk()
 {
+	TryRecycleOldestFloorStrayChunkIfLow();
+
 	while (AvailableChunks.Num() > 0)
 	{
 		TObjectPtr<ASeveredChunkActor> Candidate = AvailableChunks.Pop(EAllowShrinking::No);
 		if (IsValid(Candidate))
 		{
+			ActiveAcquisitionOrder.RemoveSingle(Candidate.Get());
+			ActiveAcquisitionOrder.Add(Candidate.Get());
 			return Candidate.Get();
 		}
 	}
@@ -81,7 +86,12 @@ ASeveredChunkActor* UChunkPoolSubsystem::AcquireChunk()
 	}
 
 	// Overflow path: dynamically expand pool so Conservation of Mass is never violated.
-	return SpawnPooledChunkInstance(*World);
+	ASeveredChunkActor* ExpandedChunk = SpawnPooledChunkInstance(*World);
+	if (IsValid(ExpandedChunk))
+	{
+		ActiveAcquisitionOrder.Add(ExpandedChunk);
+	}
+	return ExpandedChunk;
 }
 
 void UChunkPoolSubsystem::ReleaseChunk(ASeveredChunkActor* Chunk)
@@ -91,12 +101,15 @@ void UChunkPoolSubsystem::ReleaseChunk(ASeveredChunkActor* Chunk)
 		return;
 	}
 
+	ActiveAcquisitionOrder.RemoveSingle(Chunk);
 	Chunk->DeactivateToPool();
 	AvailableChunks.AddUnique(Chunk);
 }
 
 void UChunkPoolSubsystem::ReclaimAllActiveChunks()
 {
+	ActiveAcquisitionOrder.Reset();
+
 	for (const TObjectPtr<ASeveredChunkActor>& ChunkPtr : AllPooledChunks)
 	{
 		ASeveredChunkActor* Chunk = ChunkPtr.Get();
@@ -148,6 +161,48 @@ ASeveredChunkActor* UChunkPoolSubsystem::SpawnPooledChunkInstance(UWorld& InWorl
 	}
 
 	return ChunkActor;
+}
+
+void UChunkPoolSubsystem::TryRecycleOldestFloorStrayChunkIfLow()
+{
+	AvailableChunks.RemoveAll([](const TObjectPtr<ASeveredChunkActor>& Entry)
+	{
+		return !IsValid(Entry);
+	});
+
+	if (AvailableChunks.Num() > MinFreeChunksBeforeStrayRecycle)
+	{
+		return;
+	}
+
+	for (int32 Idx = 0; Idx < ActiveAcquisitionOrder.Num(); )
+	{
+		ASeveredChunkActor* Candidate = ActiveAcquisitionOrder[Idx].Get();
+		if (!IsValid(Candidate))
+		{
+			ActiveAcquisitionOrder.RemoveAt(Idx, EAllowShrinking::No);
+			continue;
+		}
+
+		const EChunkRoutingState State = IMassPayloadInterface::Execute_GetRoutingState(Candidate);
+		if (State == EChunkRoutingState::PooledInactive)
+		{
+			ActiveAcquisitionOrder.RemoveAt(Idx, EAllowShrinking::No);
+			continue;
+		}
+
+		if (State == EChunkRoutingState::LostAsStrayTare)
+		{
+			ReleaseChunk(Candidate);
+			if (AvailableChunks.Num() > MinFreeChunksBeforeStrayRecycle)
+			{
+				return;
+			}
+			continue;
+		}
+
+		++Idx;
+	}
 }
 
 void UChunkPoolSubsystem::HandlePooledChunkWatchdogExpired(ASeveredChunkActor* ExpiredChunk)

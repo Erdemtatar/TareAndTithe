@@ -857,6 +857,8 @@ void UInspectorHudBridgeComponent::PushTopRightPanel()
 
 	const float EffectiveStrain = FMath::Max(CachedClampStrain, CachedSnapshot.ClampStrainNormalized);
 
+	const bool bPhysicallySettling = IsScaleVisuallySettling();
+
 	if (CachedShiftPhase == EShiftPhase::FaultResetDelay)
 	{
 		VM.StatusBadgeText = LOCTEXT("BadgeFault", "[FAULT]");
@@ -882,13 +884,13 @@ void UInspectorHudBridgeComponent::PushTopRightPanel()
 		VM.AccentBarColor = FLinearColor(1.00f, 0.24f, 0.16f, 1.0f);
 		VM.IntercomTextColor = FLinearColor(1.00f, 0.42f, 0.24f, 1.0f);
 	}
-	else if (CachedSnapshot.bScaleSettledForStamp && CachedSnapshot.bIsWithinDirectorsCutWindow)
+	else if (!bPhysicallySettling && CachedSnapshot.bScaleSettledForStamp && CachedSnapshot.bIsWithinDirectorsCutWindow)
 	{
 		VM.StatusBadgeText = LOCTEXT("BadgeDirCut", "[DIR CUT]");
 		VM.AccentBarColor = FLinearColor(1.00f, 0.82f, 0.18f, 1.0f);
 		VM.IntercomTextColor = FLinearColor(1.00f, 0.86f, 0.28f, 1.0f);
 	}
-	else if (CachedSnapshot.bScaleSettledForStamp)
+	else if (!bPhysicallySettling && CachedSnapshot.bScaleSettledForStamp)
 	{
 		VM.StatusBadgeText = LOCTEXT("BadgeReady", "[READY]");
 		VM.AccentBarColor = FLinearColor(0.10f, 0.98f, 0.44f, 1.0f);
@@ -1071,8 +1073,12 @@ void UInspectorHudBridgeComponent::PushCenterAlertBanner()
 		}
 
 		// P2: Settled Quota Ready Callout
-		bLatchedDirectorsCutReady = CachedSnapshot.bScaleSettledForStamp && CachedSnapshot.bIsWithinDirectorsCutWindow;
-		bLatchedQuotaMetReady = CachedSnapshot.bScaleSettledForStamp &&
+		const bool bPhysicallySettling = IsScaleVisuallySettling();
+		bLatchedDirectorsCutReady = !bPhysicallySettling &&
+			CachedSnapshot.bScaleSettledForStamp &&
+			CachedSnapshot.bIsWithinDirectorsCutWindow;
+		bLatchedQuotaMetReady = !bPhysicallySettling &&
+			CachedSnapshot.bScaleSettledForStamp &&
 			CachedSnapshot.bIsWithinQuotaWindow &&
 			!CachedSnapshot.bIsWithinDirectorsCutWindow;
 
@@ -1215,6 +1221,8 @@ void UInspectorHudBridgeComponent::PushReticleCard()
 	const FLinearColor CrimsonColor(1.00f, 0.22f, 0.16f, 1.0f);
 	const FLinearColor NeutralIceColor(0.82f, 0.94f, 1.00f, 1.0f);
 
+	const bool bPhysicallySettling = IsScaleVisuallySettling();
+
 	// Line 1: Primary Need / Route / Stamp Status
 	if (CachedSnapshot.ActiveDiverterRoute == EDiverterRoute::TareChute)
 	{
@@ -1226,17 +1234,23 @@ void UInspectorHudBridgeComponent::PushReticleCard()
 		VM.PrimaryNeedOrStatusText = LOCTEXT("ReticleOverQuota", "OVER QUOTA!");
 		VM.PrimaryColor = CrimsonColor;
 	}
-	else if (CachedSnapshot.bIsWithinDirectorsCutWindow)
+	else if (!bPhysicallySettling && CachedSnapshot.bScaleSettledForStamp && CachedSnapshot.bIsWithinDirectorsCutWindow)
 	{
 		VM.PrimaryNeedOrStatusText = FText::FromString(
 			FString::Printf(TEXT("DIRECTOR'S CUT [E] +2 SCRIP (%.2f KG)"), SettledKg));
 		VM.PrimaryColor = GoldColor;
 	}
-	else if (CachedSnapshot.bIsWithinQuotaWindow || SettledKg >= (TargetKg - ToleranceKg - QuotaEpsilonKg))
+	else if (!bPhysicallySettling && CachedSnapshot.bScaleSettledForStamp && CachedSnapshot.bIsWithinQuotaWindow)
 	{
 		VM.PrimaryNeedOrStatusText = FText::FromString(
 			FString::Printf(TEXT("STAMP READY [E] +1 SCRIP (%.2f KG)"), SettledKg));
 		VM.PrimaryColor = EmeraldColor;
+	}
+	else if (bPhysicallySettling)
+	{
+		VM.PrimaryNeedOrStatusText = FText::FromString(
+			FString::Printf(TEXT("SETTLING... (%.2f KG)"), SettledKg));
+		VM.PrimaryColor = GoldColor;
 	}
 	else
 	{
@@ -1316,9 +1330,7 @@ void UInspectorHudBridgeComponent::PushBottomCrtConsole()
 
 	const bool bOvershoot = SettledKg > (MaxValidKg + QuotaEpsilonKg);
 	const bool bFaultActive = (CachedShiftPhase == EShiftPhase::FaultResetDelay);
-	const bool bPhysicallySettling =
-		(CachedSnapshot.InFlightMassKg > 0.01f) ||
-		(SettledKg > 0.01f && !CachedSnapshot.bIsReceiverPhysicallySettled && !bOvershoot);
+	const bool bPhysicallySettling = IsScaleVisuallySettling();
 
 	const FLinearColor SkyBlue(0.45f, 0.84f, 1.00f, 1.0f);
 	const FLinearColor Emerald(0.10f, 0.98f, 0.44f, 1.0f);
@@ -1502,6 +1514,23 @@ void UInspectorHudBridgeComponent::PushGraphicsQualityRow()
 	OverlayWidget->SetGraphicsQualityReadout(
 		FormatGraphicsQualityReadout(CachedGraphicsQualityLevel, CachedTsrScalePercent),
 		Phase12ECfg.bEnableControlsGraphicsRow);
+}
+
+bool UInspectorHudBridgeComponent::IsScaleVisuallySettling() const
+{
+	if (CachedShiftPhase != EShiftPhase::ActiveInspection)
+	{
+		return false;
+	}
+
+	const float SettledKg = FMath::Max(0.0f, CachedSnapshot.SettledScaleMassKg);
+	const float TargetKg = FMath::Max(0.0f, CachedSnapshot.TargetTitheMassKg);
+	const float TolKg = FMath::Max(0.0f, CachedSnapshot.QuotaToleranceKg);
+	const float MaxValidKg = TargetKg + TolKg;
+	const bool bOvershoot = SettledKg > (MaxValidKg + QuotaEpsilonKg);
+
+	return (CachedSnapshot.InFlightMassKg > 0.01f) ||
+		(SettledKg > 0.01f && !CachedSnapshot.bIsReceiverPhysicallySettled && !bOvershoot);
 }
 
 void UInspectorHudBridgeComponent::SnapRollingMassImmediate(float NewMassKg)

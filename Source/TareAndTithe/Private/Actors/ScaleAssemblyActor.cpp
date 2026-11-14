@@ -1546,7 +1546,7 @@ void AScaleAssemblyActor::RefreshStatusBannerReadout()
 		return;
 	}
 
-	if (CachedSnapshot.bScaleSettledForStamp || CachedSnapshot.bIsWithinQuotaWindow)
+	if (CachedSnapshot.bScaleSettledForStamp)
 	{
 		if (CachedSnapshot.bIsWithinDirectorsCutWindow)
 		{

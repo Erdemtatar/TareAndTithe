@@ -78,9 +78,7 @@ void AStrayFloorCatchActor::HandleCatchBoxBeginOverlap(
 	}
 
 	const EChunkRoutingState PreviousState = IMassPayloadInterface::Execute_GetRoutingState(OtherActor);
-	if (PreviousState == EChunkRoutingState::PooledInactive ||
-		PreviousState == EChunkRoutingState::ConsumedAsTare ||
-		PreviousState == EChunkRoutingState::LostAsStrayTare)
+	if (PreviousState != EChunkRoutingState::InFlight)
 	{
 		return;
 	}
@@ -103,5 +101,8 @@ void AStrayFloorCatchActor::HandleCatchBoxBeginOverlap(
 		}
 	}
 
-	IMassPayloadInterface::Execute_ReturnToChunkPool(OtherActor);
+	if (!bKeepStrayChunksVisibleOnCellFloor)
+	{
+		IMassPayloadInterface::Execute_ReturnToChunkPool(OtherActor);
+	}
 }

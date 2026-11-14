@@ -206,6 +206,7 @@ private:
 	void PushReticleCard();
 	void PushBottomCrtConsole();
 	void PushGraphicsQualityRow();
+	bool IsScaleVisuallySettling() const;
 	void SnapRollingMassImmediate(float NewMassKg);
 	void SyncTargetPanMassFromSnapshot(bool bForceSnap);
 	FPhase12EPresentationPolishConfig ResolvePhase12EConfig() const;

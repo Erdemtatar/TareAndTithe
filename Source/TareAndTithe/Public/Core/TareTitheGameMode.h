@@ -53,7 +53,7 @@ protected:
 	FVector DefaultScaleAssemblyLocation = FVector(260.0, 0.0, 14.0);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell")
-	FVector DefaultStrayCatchLocation = FVector(260.0, 0.0, -35.0);
+	FVector DefaultStrayCatchLocation = FVector(170.0, 0.0, -75.0);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GreyboxCell")
 	FVector DefaultDirectorBoothLocation = FVector(430.0, 0.0, 258.0);

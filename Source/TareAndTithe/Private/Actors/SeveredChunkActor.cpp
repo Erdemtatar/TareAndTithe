@@ -8,6 +8,7 @@
 #include "GeometryScript/CollisionFunctions.h"
 #include "Interfaces/QuotaReceiverInterface.h"
 #include "Subsystems/ChunkPoolSubsystem.h"
+#include "Subsystems/InspectionShiftSubsystem.h"
 #include "Engine/CollisionProfile.h"
 #include "Engine/HitResult.h"
 #include "Engine/World.h"
@@ -190,6 +191,7 @@ void ASeveredChunkActor::BeginPlay()
 void ASeveredChunkActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	ClearInFlightWatchdog();
+	ClearExteriorStationaryCheckTimer();
 	ClearTareAbyssFailsafeTimer();
 	CurrentScaleSupportReceiver.Reset();
 
@@ -217,6 +219,7 @@ void ASeveredChunkActor::ActivateFromSlice(
 	float InWatchdogSeconds)
 {
 	ClearInFlightWatchdog();
+	ClearExteriorStationaryCheckTimer();
 	ClearTareAbyssFailsafeTimer();
 	CurrentScaleSupportReceiver.Reset();
 
@@ -307,6 +310,7 @@ void ASeveredChunkActor::ActivateFromSlice(
 	}
 
 	StartInFlightWatchdog(ActiveWatchdogSeconds);
+	StartExteriorStationaryCheckTimer();
 }
 
 bool ASeveredChunkActor::TryRearmWatchdogIfActivelyFalling(float MaxDownwardVelocityZCmPerSec, float MinCellFloorZCm)
@@ -396,6 +400,7 @@ UMaterialInterface* ASeveredChunkActor::PrepareActiveChunkCutCapMaterial(
 void ASeveredChunkActor::DeactivateToPool()
 {
 	ClearInFlightWatchdog();
+	ClearExteriorStationaryCheckTimer();
 	ClearTareAbyssFailsafeTimer();
 	CurrentScaleSupportReceiver.Reset();
 
@@ -475,10 +480,12 @@ void ASeveredChunkActor::NotifyRoutingStateChanged_Implementation(EChunkRoutingS
 	{
 		bHasRearmedWatchdogOnce = false;
 		StartInFlightWatchdog(ActiveWatchdogSeconds);
+		StartExteriorStationaryCheckTimer();
 	}
 	else
 	{
 		ClearInFlightWatchdog();
+		ClearExteriorStationaryCheckTimer();
 	}
 }
 
@@ -572,7 +579,15 @@ void ASeveredChunkActor::HandleChunkMeshComponentHit(
 					HitComponent,
 					FVector(Hit.ImpactPoint),
 					NormalImpulse);
+				return;
 			}
+		}
+
+		// Belt-and-suspenders floor grate impact guard: strictly near the Z = -85 cm cell floor and outside scale/tare triggers.
+		if (Hit.ImpactPoint.Z <= static_cast<double>(FloorStrayImpactMaxZCm) &&
+			!IsOverlappingQuotaReceiverContainmentTrigger())
+		{
+			LatchInFlightAsExteriorStrayTare(FVector(Hit.ImpactPoint));
 		}
 		return;
 	}
@@ -667,6 +682,122 @@ void ASeveredChunkActor::HandleWatchdogExpired()
 	if (RoutingState == EChunkRoutingState::InFlight)
 	{
 		OnChunkWatchdogExpired.Broadcast(this);
+	}
+}
+
+void ASeveredChunkActor::StartExteriorStationaryCheckTimer()
+{
+	ClearExteriorStationaryCheckTimer();
+
+	if (UWorld* World = GetWorld())
+	{
+		const float SafeInterval = FMath::Clamp(ExteriorStationaryStrayTimeoutSeconds, 0.25f, 3.0f);
+		World->GetTimerManager().SetTimer(
+			ExteriorStationaryTimerHandle,
+			this,
+			&ASeveredChunkActor::HandleExteriorStationaryCheckElapsed,
+			SafeInterval,
+			true);
+	}
+}
+
+void ASeveredChunkActor::ClearExteriorStationaryCheckTimer()
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ExteriorStationaryTimerHandle);
+	}
+}
+
+void ASeveredChunkActor::HandleExteriorStationaryCheckElapsed()
+{
+	if (RoutingState != EChunkRoutingState::InFlight)
+	{
+		ClearExteriorStationaryCheckTimer();
+		return;
+	}
+
+	FVector LinearVel = GetVelocity();
+	if (IsValid(ChunkMeshComponent) && ChunkMeshComponent->IsSimulatingPhysics())
+	{
+		LinearVel = ChunkMeshComponent->GetPhysicsLinearVelocity();
+	}
+
+	const double SpeedThresholdSq = FMath::Square(static_cast<double>(ExteriorStationaryLinearSpeedThresholdCmPerSec));
+	if (LinearVel.SizeSquared() >= SpeedThresholdSq)
+	{
+		return;
+	}
+
+	if (IsOverlappingQuotaReceiverContainmentTrigger())
+	{
+		return;
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
+		{
+			UObject* ScaleReceiverObj = ShiftSubsystem->GetRegisteredQuotaReceiverObject();
+			if (IsValid(ScaleReceiverObj) &&
+				ScaleReceiverObj->Implements<UQuotaReceiverInterface>() &&
+				IQuotaReceiverInterface::Execute_TryRecoverPayloadOnReceiver(ScaleReceiverObj, this))
+			{
+				ShiftSubsystem->NotifyPayloadLandedOnScale(this);
+				return;
+			}
+		}
+	}
+
+	LatchInFlightAsExteriorStrayTare(GetActorLocation());
+}
+
+bool ASeveredChunkActor::IsOverlappingQuotaReceiverContainmentTrigger() const
+{
+	if (!IsValid(ChunkMeshComponent))
+	{
+		return false;
+	}
+
+	TArray<UPrimitiveComponent*> OverlappingComponents;
+	ChunkMeshComponent->GetOverlappingComponents(OverlappingComponents);
+	for (const UPrimitiveComponent* OverlappedComp : OverlappingComponents)
+	{
+		if (!IsValid(OverlappedComp) || OverlappedComp->GetCollisionEnabled() != ECollisionEnabled::QueryOnly)
+		{
+			continue;
+		}
+
+		const AActor* CompOwner = OverlappedComp->GetOwner();
+		if (IsValid(CompOwner) && CompOwner->Implements<UQuotaReceiverInterface>())
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void ASeveredChunkActor::LatchInFlightAsExteriorStrayTare(const FVector& WorldLocation)
+{
+	if (RoutingState != EChunkRoutingState::InFlight)
+	{
+		return;
+	}
+
+	NotifyRoutingStateChanged_Implementation(EChunkRoutingState::LostAsStrayTare);
+
+	if (UWorld* World = GetWorld())
+	{
+		if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
+		{
+			const float ImpulseMagnitude = FMath::Clamp(AnalyticalMassKg / 10.0f, 0.05f, 1.0f);
+			ShiftSubsystem->OnTelemetryImpulse.Broadcast(
+				ETelemetryImpulseId::ChunkTareDisposed,
+				ImpulseMagnitude,
+				WorldLocation);
+			ShiftSubsystem->NotifyPayloadLostAsStrayTare(this, AnalyticalMassKg);
+		}
 	}
 }
 

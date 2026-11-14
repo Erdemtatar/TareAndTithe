@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Components/ScaleWeighingComponent.h"
+#include "TareAndTithe.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/SceneComponent.h"
 #include "Data/MonolithContractDataAsset.h"
@@ -109,7 +110,8 @@ void UScaleWeighingComponent::ResetScaleState()
 	CurrentDisplacementZCm = 0.0;
 	TargetDisplacementZCm = 0.0;
 	VelocityZCmPerSec = 0.0;
-	SettleHoldElapsedSeconds = 0.0f;
+	bPanSpringConverged = true;
+	ResetSettleAccumulators();
 
 	ApplyPanPlatformDisplacement(false);
 	SetSettledState(true);
@@ -220,7 +222,9 @@ bool UScaleWeighingComponent::ConfirmPayloadScaleImpact(
 
 	RecomputeAnalyticalPanMass();
 
-	SettleHoldElapsedSeconds = 0.0f;
+	bPanSpringConverged = false;
+	WakeOverlappingPayloads();
+	ResetSettleAccumulators();
 	SetSettledState(false);
 	SetComponentTickEnabled(true);
 
@@ -286,49 +290,67 @@ void UScaleWeighingComponent::TickComponent(
 	if (bConfirmedMembershipPruned)
 	{
 		RecomputeAnalyticalPanMass();
+		ResetSettleAccumulators();
 	}
-
-	const float SafeMaxSubstep = FMath::Clamp(MaxSubstepDeltaSeconds, 0.001f, 0.016667f);
-	const int32 NumSubsteps = FMath::Max(1, FMath::CeilToInt(ClampedDelta / SafeMaxSubstep));
-	const double SubDt = static_cast<double>(ClampedDelta) / static_cast<double>(NumSubsteps);
 
 	const double SafeDampMult = FMath::Clamp(static_cast<double>(SettleDampingMultiplier), 0.5, 4.0);
-	const double OmegaN = FMath::Max(1.0, static_cast<double>(NaturalFrequencyRadPerSec) * SafeDampMult);
-	const double Zeta = FMath::Clamp(
-		static_cast<double>(DampingRatio) * (1.0 + 0.14 * (SafeDampMult - 1.0)),
-		0.05,
-		0.96);
-	const double MaxTravelDown = -static_cast<double>(MaxDepressionCm) * 1.25;
 
-	for (int32 StepIdx = 0; StepIdx < NumSubsteps; ++StepIdx)
+	if (!bPanSpringConverged)
 	{
-		const double DisplacementError = CurrentDisplacementZCm - TargetDisplacementZCm;
-		const double AccelZ = (-2.0 * Zeta * OmegaN * VelocityZCmPerSec) - (OmegaN * OmegaN * DisplacementError);
-		VelocityZCmPerSec += AccelZ * SubDt;
-		CurrentDisplacementZCm = FMath::Clamp(CurrentDisplacementZCm + (VelocityZCmPerSec * SubDt), MaxTravelDown, 2.0);
+		const float SafeMaxSubstep = FMath::Clamp(MaxSubstepDeltaSeconds, 0.001f, 0.016667f);
+		const int32 NumSubsteps = FMath::Max(1, FMath::CeilToInt(ClampedDelta / SafeMaxSubstep));
+		const double SubDt = static_cast<double>(ClampedDelta) / static_cast<double>(NumSubsteps);
+
+		const double OmegaN = FMath::Max(1.0, static_cast<double>(NaturalFrequencyRadPerSec) * SafeDampMult);
+		const double Zeta = FMath::Clamp(
+			static_cast<double>(DampingRatio) * (1.0 + 0.14 * (SafeDampMult - 1.0)),
+			0.05,
+			0.96);
+		const double MaxTravelDown = -static_cast<double>(MaxDepressionCm) * 1.25;
+
+		for (int32 StepIdx = 0; StepIdx < NumSubsteps; ++StepIdx)
+		{
+			const double DisplacementError = CurrentDisplacementZCm - TargetDisplacementZCm;
+			const double AccelZ = (-2.0 * Zeta * OmegaN * VelocityZCmPerSec) - (OmegaN * OmegaN * DisplacementError);
+			VelocityZCmPerSec += AccelZ * SubDt;
+			CurrentDisplacementZCm = FMath::Clamp(CurrentDisplacementZCm + (VelocityZCmPerSec * SubDt), MaxTravelDown, 2.0);
+		}
+
+		const bool bPanPosConverged = FMath::Abs(CurrentDisplacementZCm - TargetDisplacementZCm) < static_cast<double>(PanPositionSettleToleranceCm);
+		const bool bPanVelConverged = FMath::Abs(VelocityZCmPerSec) < static_cast<double>(PanVelocitySettleToleranceCmPerSec);
+
+		if (bPanPosConverged && bPanVelConverged)
+		{
+			CurrentDisplacementZCm = TargetDisplacementZCm;
+			VelocityZCmPerSec = 0.0;
+			ApplyPanPlatformDisplacement(false);
+			bPanSpringConverged = true;
+		}
+		else
+		{
+			ApplyPanPlatformDisplacement(true);
+			WakeOverlappingPayloads();
+			ResetSettleAccumulators();
+			SetSettledState(false);
+			return;
+		}
 	}
 
-	const bool bPanPosConverged = FMath::Abs(CurrentDisplacementZCm - TargetDisplacementZCm) < static_cast<double>(PanPositionSettleToleranceCm);
-	const bool bPanVelConverged = FMath::Abs(VelocityZCmPerSec) < static_cast<double>(PanVelocitySettleToleranceCmPerSec);
-
-	ApplyPanPlatformDisplacement(true);
-
-	if (!bPanPosConverged || !bPanVelConverged)
-	{
-		WakeOverlappingPayloads();
-	}
-
-	const bool bPayloadsQuiet = AreAllPayloadsBelowSettleVelocity();
+	const FConfirmedPileMotionSummary Motion = EvaluateConfirmedPileMotion();
 	const float EffectiveSettleHoldSeconds = FMath::Max(0.03f, SettleHoldRequiredSeconds / static_cast<float>(SafeDampMult));
-	if (bPanPosConverged && bPanVelConverged && bPayloadsQuiet)
+
+	if (Motion.ConfirmedCount == 0)
 	{
+		StableMassElapsedSeconds = 0.0f;
+		PileCeilingElapsedSeconds = 0.0f;
+		StableMassReferenceKg = 0.0f;
 		SettleHoldElapsedSeconds += ClampedDelta;
+
 		if (SettleHoldElapsedSeconds >= EffectiveSettleHoldSeconds)
 		{
 			if (ReconcileOverlappingPayloads(false))
 			{
-				// A resting or micro-bounced chunk was reconciled into/out of PanMassKg; let the spring converge to the updated target.
-				SettleHoldElapsedSeconds = 0.0f;
+				ResetSettleAccumulators();
 				SetSettledState(false);
 			}
 			else
@@ -340,10 +362,93 @@ void UScaleWeighingComponent::TickComponent(
 				SetComponentTickEnabled(false);
 			}
 		}
+		else
+		{
+			SetSettledState(false);
+		}
+		return;
+	}
+
+	// Path A: Fast Quiet Settle (0.15s / SafeDampMult) when all confirmed chunks are sleeping or below linear + angular thresholds.
+	if (Motion.bAllQuietForFastSettle)
+	{
+		SettleHoldElapsedSeconds += ClampedDelta;
 	}
 	else
 	{
 		SettleHoldElapsedSeconds = 0.0f;
+	}
+
+	// Path B: Bounded Mass-Stability Settle (0.55s / SafeDampMult) + Hard Pile Ceiling (1.15s / SafeDampMult) for wedged 26-DOP micro-jitter.
+	const bool bMassDrifted = FMath::Abs(PanMassKg - StableMassReferenceKg) > MassStabilityEpsilonKg;
+	const bool bGenuinelyTumbling =
+		(Motion.MaxLinearSpeedCmPerSec > TumblingAbortLinearSpeedCmPerSec) ||
+		(Motion.MaxAbsVerticalSpeedCmPerSec > TumblingAbortVerticalSpeedCmPerSec);
+
+	if (bMassDrifted || bGenuinelyTumbling)
+	{
+		StableMassReferenceKg = PanMassKg;
+		StableMassElapsedSeconds = 0.0f;
+		PileCeilingElapsedSeconds = 0.0f;
+	}
+	else
+	{
+		const bool bWithinMicroJitterEnvelope =
+			(Motion.MaxLinearSpeedCmPerSec <= MicroJitterMaxLinearSpeedCmPerSec) &&
+			(Motion.MaxAbsVerticalSpeedCmPerSec <= MicroJitterMaxVerticalSpeedCmPerSec);
+		if (bWithinMicroJitterEnvelope)
+		{
+			StableMassElapsedSeconds += ClampedDelta;
+		}
+		else
+		{
+			StableMassElapsedSeconds = FMath::Max(0.0f, StableMassElapsedSeconds - (2.0f * ClampedDelta));
+		}
+
+		const bool bWithinCeilingEnvelope =
+			(Motion.MaxLinearSpeedCmPerSec <= TumblingAbortLinearSpeedCmPerSec) &&
+			(Motion.MaxAbsVerticalSpeedCmPerSec <= CeilingMaxVerticalSpeedCmPerSec);
+		if (bWithinCeilingEnvelope)
+		{
+			PileCeilingElapsedSeconds += ClampedDelta;
+		}
+		else
+		{
+			PileCeilingElapsedSeconds = 0.0f;
+		}
+	}
+
+	const float EffectiveBoundedStabilitySeconds = FMath::Max(0.10f, BoundedMassStabilitySettleSeconds / static_cast<float>(SafeDampMult));
+	const float EffectiveCeilingSeconds = FMath::Max(0.25f, MaxPanPileSettleCeilingSeconds / static_cast<float>(SafeDampMult));
+
+	const bool bFastQuietReady = (SettleHoldElapsedSeconds >= EffectiveSettleHoldSeconds);
+	const bool bBoundedStabilityReady = (StableMassElapsedSeconds >= EffectiveBoundedStabilitySeconds);
+	const bool bCeilingReady = (PileCeilingElapsedSeconds >= EffectiveCeilingSeconds);
+
+	if (bFastQuietReady || bBoundedStabilityReady || bCeilingReady)
+	{
+		if (ReconcileOverlappingPayloads(false))
+		{
+			// A resting or micro-bounced chunk was reconciled into/out of PanMassKg; let the spring converge to the updated target.
+			ResetSettleAccumulators();
+			SetSettledState(false);
+		}
+		else
+		{
+			const TCHAR* SettleModeTag = bFastQuietReady
+				? TEXT("Quiet")
+				: (bBoundedStabilityReady ? TEXT("BoundedStability") : TEXT("Ceiling"));
+
+			CurrentDisplacementZCm = TargetDisplacementZCm;
+			VelocityZCmPerSec = 0.0;
+			ApplyPanPlatformDisplacement(false);
+			SleepConfirmedPayloadBodies();
+			SetSettledState(true, SettleModeTag, Motion.ConfirmedCount);
+			SetComponentTickEnabled(false);
+		}
+	}
+	else
+	{
 		SetSettledState(false);
 	}
 }
@@ -403,7 +508,7 @@ void UScaleWeighingComponent::HandlePanTriggerBeginOverlap(
 
 	IMassPayloadInterface::Execute_SetScaleSupportReceiverActor(OtherActor, GetOwner());
 	RecomputeAnalyticalPanMass();
-	SettleHoldElapsedSeconds = 0.0f;
+	ResetSettleAccumulators();
 	SetSettledState(false);
 	SetComponentTickEnabled(true);
 }
@@ -445,7 +550,7 @@ void UScaleWeighingComponent::HandlePanTriggerEndOverlap(
 		IMassPayloadInterface::Execute_NotifyRoutingStateChanged(OtherActor, EChunkRoutingState::InFlight);
 
 		RecomputeAnalyticalPanMass();
-		SettleHoldElapsedSeconds = 0.0f;
+		ResetSettleAccumulators();
 		SetSettledState(false);
 		SetComponentTickEnabled(true);
 
@@ -758,7 +863,7 @@ bool UScaleWeighingComponent::ReconcileOverlappingPayloads(bool bEnableTickOnCha
 
 		if (bEnableTickOnChange)
 		{
-			SettleHoldElapsedSeconds = 0.0f;
+			ResetSettleAccumulators();
 			SetSettledState(false);
 			SetComponentTickEnabled(true);
 		}
@@ -825,6 +930,7 @@ bool UScaleWeighingComponent::TryRecoverPayloadOnPan(AActor* PayloadActor)
 
 void UScaleWeighingComponent::RecomputeAnalyticalPanMass()
 {
+	const double PreviousTargetDisplacementZCm = TargetDisplacementZCm;
 	double TotalMassKg = 0.0;
 	bool bAnyContaminated = false;
 
@@ -855,13 +961,21 @@ void UScaleWeighingComponent::RecomputeAnalyticalPanMass()
 	bHasContamination = bAnyContaminated;
 	TargetDisplacementZCm = -static_cast<double>(FMath::Clamp(PanMassKg * DepressionCmPerKg, 0.0f, MaxDepressionCm));
 
+	if (FMath::Abs(TargetDisplacementZCm - PreviousTargetDisplacementZCm) > static_cast<double>(PanPositionSettleToleranceCm))
+	{
+		bPanSpringConverged = false;
+		WakeOverlappingPayloads();
+	}
+
 	const float NormalizedFill = FMath::Clamp(PanMassKg / FMath::Max(0.5f, TargetQuotaMassKg), 0.0f, 1.0f);
 	EmitFillRatioTelemetry(NormalizedFill);
 }
 
-bool UScaleWeighingComponent::AreAllPayloadsBelowSettleVelocity() const
+UScaleWeighingComponent::FConfirmedPileMotionSummary UScaleWeighingComponent::EvaluateConfirmedPileMotion() const
 {
-	const double MaxSpeedSq = FMath::Square(static_cast<double>(PayloadLinearSpeedSettleThresholdCmPerSec));
+	FConfirmedPileMotionSummary Summary;
+	const double MaxQuietLinSpeedSq = FMath::Square(static_cast<double>(PayloadLinearSpeedSettleThresholdCmPerSec));
+	const double MaxQuietAngSpeedDegSq = FMath::Square(static_cast<double>(PayloadAngularSpeedSettleThresholdDegPerSec));
 
 	for (const FTrackedPanPayload& Entry : TrackedPayloads)
 	{
@@ -870,20 +984,65 @@ bool UScaleWeighingComponent::AreAllPayloadsBelowSettleVelocity() const
 			continue;
 		}
 
-		const UPrimitiveComponent* PrimComp = Entry.PayloadPrimitive.Get();
-		if (IsValid(PrimComp) && PrimComp->IsSimulatingPhysics())
+		const AActor* Actor = Entry.PayloadActor.Get();
+		if (!IsValid(Actor) ||
+			!Actor->Implements<UMassPayloadInterface>() ||
+			IMassPayloadInterface::Execute_GetRoutingState(Actor) != EChunkRoutingState::OnScalePan)
 		{
-			if (PrimComp->GetPhysicsLinearVelocity().SizeSquared() >= MaxSpeedSq)
-			{
-				return false;
-			}
+			continue;
 		}
+
+		++Summary.ConfirmedCount;
+
+		UPrimitiveComponent* PrimComp = Entry.PayloadPrimitive.Get();
+		if (!IsValid(PrimComp) || !PrimComp->IsSimulatingPhysics())
+		{
+			continue;
+		}
+
+		if (!PrimComp->IsAnyRigidBodyAwake())
+		{
+			continue;
+		}
+
+		const FVector LinVel = PrimComp->GetPhysicsLinearVelocity();
+		const double LinSpeedSq = LinVel.SizeSquared();
+		const double AngSpeedDegSq = PrimComp->GetPhysicsAngularVelocityInDegrees().SizeSquared();
+
+		if (LinSpeedSq >= MaxQuietLinSpeedSq || AngSpeedDegSq >= MaxQuietAngSpeedDegSq)
+		{
+			Summary.bAllQuietForFastSettle = false;
+		}
+
+		Summary.MaxLinearSpeedCmPerSec = FMath::Max(
+			Summary.MaxLinearSpeedCmPerSec,
+			static_cast<float>(FMath::Sqrt(LinSpeedSq)));
+		Summary.MaxAbsVerticalSpeedCmPerSec = FMath::Max(
+			Summary.MaxAbsVerticalSpeedCmPerSec,
+			static_cast<float>(FMath::Abs(LinVel.Z)));
 	}
 
-	return true;
+	return Summary;
+}
+
+bool UScaleWeighingComponent::AreAllPayloadsBelowSettleVelocity() const
+{
+	return EvaluateConfirmedPileMotion().bAllQuietForFastSettle;
 }
 
 void UScaleWeighingComponent::WakeOverlappingPayloads()
+{
+	for (const FTrackedPanPayload& Entry : TrackedPayloads)
+	{
+		UPrimitiveComponent* PrimComp = Entry.PayloadPrimitive.Get();
+		if (IsValid(PrimComp) && PrimComp->IsSimulatingPhysics())
+		{
+			PrimComp->WakeAllRigidBodies();
+		}
+	}
+}
+
+void UScaleWeighingComponent::SleepConfirmedPayloadBodies()
 {
 	for (const FTrackedPanPayload& Entry : TrackedPayloads)
 	{
@@ -895,9 +1054,19 @@ void UScaleWeighingComponent::WakeOverlappingPayloads()
 		UPrimitiveComponent* PrimComp = Entry.PayloadPrimitive.Get();
 		if (IsValid(PrimComp) && PrimComp->IsSimulatingPhysics())
 		{
-			PrimComp->WakeAllRigidBodies();
+			PrimComp->SetPhysicsLinearVelocity(FVector::ZeroVector, false);
+			PrimComp->SetPhysicsAngularVelocityInRadians(FVector::ZeroVector, false);
+			PrimComp->PutAllRigidBodiesToSleep();
 		}
 	}
+}
+
+void UScaleWeighingComponent::ResetSettleAccumulators()
+{
+	SettleHoldElapsedSeconds = 0.0f;
+	StableMassElapsedSeconds = 0.0f;
+	PileCeilingElapsedSeconds = 0.0f;
+	StableMassReferenceKg = PanMassKg;
 }
 
 void UScaleWeighingComponent::ApplyPanPlatformDisplacement(bool bSweep)
@@ -911,7 +1080,7 @@ void UScaleWeighingComponent::ApplyPanPlatformDisplacement(bool bSweep)
 	PanPlatformComponent->SetRelativeLocation(TargetRelLocation, bSweep, nullptr, ETeleportType::None);
 }
 
-void UScaleWeighingComponent::SetSettledState(bool bNewSettled)
+void UScaleWeighingComponent::SetSettledState(bool bNewSettled, const TCHAR* SettleModeTag, int32 ConfirmedChunkCount)
 {
 	if (bIsSettled == bNewSettled)
 	{
@@ -919,6 +1088,16 @@ void UScaleWeighingComponent::SetSettledState(bool bNewSettled)
 	}
 
 	bIsSettled = bNewSettled;
+	if (bIsSettled && SettleModeTag != nullptr && ConfirmedChunkCount > 0)
+	{
+		UE_LOG(
+			LogTareAndTithe,
+			Log,
+			TEXT("ScaleSettled: Mode=%s PanMassKg=%.2f ChunkCount=%d"),
+			SettleModeTag,
+			PanMassKg,
+			ConfirmedChunkCount);
+	}
 	OnScaleSettledChanged.Broadcast(bIsSettled, PanMassKg);
 }
 

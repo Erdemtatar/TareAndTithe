@@ -45,8 +45,11 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "StrayCatch")
 	TObjectPtr<UBoxComponent> CatchBoxComponent;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StrayCatch", meta = (ClampMin = "50.0"))
-	FVector CatchBoxHalfExtentCm = FVector(250.0, 250.0, 40.0);
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "StrayCatch", meta = (ClampMin = "10.0"))
+	FVector CatchBoxHalfExtentCm = FVector(430.0, 420.0, 25.0);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StrayCatch")
+	bool bKeepStrayChunksVisibleOnCellFloor = true;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "StrayCatch|Telemetry", meta = (ClampMin = "0.5", ClampMax = "100.0"))
 	float ImpulseReferenceMassKg = 10.0f;

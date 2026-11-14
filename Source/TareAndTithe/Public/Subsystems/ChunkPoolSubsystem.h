@@ -17,6 +17,7 @@ class TAREANDTITHE_API UChunkPoolSubsystem : public UWorldSubsystem
 
 public:
 	static constexpr int32 DefaultPrewarmChunkCount = 16;
+	static constexpr int32 MinFreeChunksBeforeStrayRecycle = 2;
 
 	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
 	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
@@ -37,6 +38,7 @@ public:
 
 private:
 	ASeveredChunkActor* SpawnPooledChunkInstance(UWorld& InWorld);
+	void TryRecycleOldestFloorStrayChunkIfLow();
 	void HandlePooledChunkWatchdogExpired(ASeveredChunkActor* ExpiredChunk);
 
 	UPROPERTY(Transient)
@@ -47,4 +49,6 @@ private:
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<ASeveredChunkActor>> AvailableChunks;
+
+	TArray<TWeakObjectPtr<ASeveredChunkActor>> ActiveAcquisitionOrder;
 };

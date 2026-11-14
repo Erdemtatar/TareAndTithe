@@ -1356,28 +1356,40 @@ void AInspectorPawn::UpdateLaserReticleReadoutText()
 		const float TargetKg = FMath::Max(0.0f, CachedHudSnapshot.TargetTitheMassKg);
 		const float ToleranceKg = FMath::Max(0.0f, CachedHudSnapshot.QuotaToleranceKg);
 
+		const float MaxValidKg = TargetKg + ToleranceKg;
+		const bool bOvershoot = SettledKg > (MaxValidKg + QuotaFloatEpsilonKg);
+		const bool bPhysicallySettling =
+			(CachedShiftPhase == EShiftPhase::ActiveInspection) &&
+			((CachedHudSnapshot.InFlightMassKg > 0.01f) ||
+				(SettledKg > 0.01f && !CachedHudSnapshot.bIsReceiverPhysicallySettled && !bOvershoot));
+
 		if (CachedHudSnapshot.ActiveDiverterRoute == EDiverterRoute::TareChute)
 		{
 			LaserReticleReadout->SetTextRenderColor(ReticleAmberColor);
 			LaserReticleReadout->SetText(FText::FromString(TEXT("ROUTE: TARE SCRAP [SPACE]")));
 		}
-		else if (SettledKg > (TargetKg + ToleranceKg + QuotaFloatEpsilonKg))
+		else if (bOvershoot)
 		{
 			LaserReticleReadout->SetTextRenderColor(ReticleCrimsonColor);
 			LaserReticleReadout->SetText(FText::FromString(TEXT("OVER QUOTA!")));
 		}
-		else if (CachedHudSnapshot.bIsWithinDirectorsCutWindow)
+		else if (!bPhysicallySettling && CachedHudSnapshot.bScaleSettledForStamp && CachedHudSnapshot.bIsWithinDirectorsCutWindow)
 		{
 			LaserReticleReadout->SetTextRenderColor(ReticleGoldColor);
 			LaserReticleReadout->SetText(
 				FText::FromString(FString::Printf(TEXT("DIRECTOR'S CUT [E] +2 SCRIP (%.2f KG)"), SettledKg)));
 		}
-		else if (CachedHudSnapshot.bIsWithinQuotaWindow ||
-			SettledKg >= (TargetKg - ToleranceKg - QuotaFloatEpsilonKg))
+		else if (!bPhysicallySettling && CachedHudSnapshot.bScaleSettledForStamp && CachedHudSnapshot.bIsWithinQuotaWindow)
 		{
 			LaserReticleReadout->SetTextRenderColor(ReticleEmeraldColor);
 			LaserReticleReadout->SetText(
 				FText::FromString(FString::Printf(TEXT("STAMP READY [E] +1 SCRIP (%.2f KG)"), SettledKg)));
+		}
+		else if (bPhysicallySettling)
+		{
+			LaserReticleReadout->SetTextRenderColor(ReticleGoldColor);
+			LaserReticleReadout->SetText(
+				FText::FromString(FString::Printf(TEXT("SETTLING... (%.2f KG)"), SettledKg)));
 		}
 		else
 		{

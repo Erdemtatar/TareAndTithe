@@ -83,6 +83,15 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Chunk|Safety", meta = (ClampMin = "1.5", ClampMax = "15.0"))
 	float DefaultWatchdogSeconds = 6.0f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Chunk|Safety", meta = (ClampMin = "-120.0", ClampMax = "-45.0"))
+	float FloorStrayImpactMaxZCm = -72.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Chunk|Safety", meta = (ClampMin = "0.25", ClampMax = "3.0"))
+	float ExteriorStationaryStrayTimeoutSeconds = 0.85f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Chunk|Safety", meta = (ClampMin = "0.5", ClampMax = "15.0"))
+	float ExteriorStationaryLinearSpeedThresholdCmPerSec = 3.0f;
+
 private:
 	UFUNCTION()
 	void HandleChunkMeshComponentHit(
@@ -97,6 +106,11 @@ private:
 	void StartInFlightWatchdog(float DurationSeconds);
 	void ClearInFlightWatchdog();
 	void HandleWatchdogExpired();
+	void StartExteriorStationaryCheckTimer();
+	void ClearExteriorStationaryCheckTimer();
+	void HandleExteriorStationaryCheckElapsed();
+	bool IsOverlappingQuotaReceiverContainmentTrigger() const;
+	void LatchInFlightAsExteriorStrayTare(const FVector& WorldLocation);
 	void ClearTareAbyssFailsafeTimer();
 	void HandleTareAbyssFailsafeExpired();
 
@@ -123,5 +137,6 @@ private:
 	bool bHasRearmedWatchdogOnce = false;
 	EChunkRoutingState RoutingState = EChunkRoutingState::PooledInactive;
 	FTimerHandle WatchdogTimerHandle;
+	FTimerHandle ExteriorStationaryTimerHandle;
 	FTimerHandle TareAbyssFailsafeTimerHandle;
 };
