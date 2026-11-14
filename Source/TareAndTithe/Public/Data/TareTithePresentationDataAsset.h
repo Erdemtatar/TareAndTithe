@@ -6,6 +6,7 @@
 #include "Engine/DataAsset.h"
 #include "UObject/SoftObjectPtr.h"
 #include "Core/TareTitheTypes.h"
+#include "Interfaces/UpscalerControlInterface.h"
 #include "TareTithePresentationDataAsset.generated.h"
 
 class UMaterialInterface;
@@ -912,6 +913,45 @@ struct TAREANDTITHE_API FPhase12EPresentationPolishConfig
 	FPhase12EPresentationPolishConfig GetSanitized() const;
 };
 
+USTRUCT(BlueprintType)
+struct TAREANDTITHE_API FUpscalerPresentationConfig
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Upscaler|Defaults")
+	ETareUpscalerMode DefaultModeOnSupportedHardware = ETareUpscalerMode::SuperRes_Auto;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Upscaler|Defaults")
+	ETareUpscalerMode FallbackModeOnUnsupportedHardware = ETareUpscalerMode::NativeTSR;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Upscaler|NativeTSR", meta = (ClampMin = "50.0", ClampMax = "100.0"))
+	float NativeTsrScaleLowPercent = 65.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Upscaler|NativeTSR", meta = (ClampMin = "50.0", ClampMax = "100.0"))
+	float NativeTsrScaleMediumPercent = 75.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Upscaler|NativeTSR", meta = (ClampMin = "50.0", ClampMax = "100.0"))
+	float NativeTsrScaleHighPercent = 85.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Upscaler|NativeTSR", meta = (ClampMin = "50.0", ClampMax = "100.0"))
+	float NativeTsrScaleEpicPercent = 100.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Upscaler|Sharpening", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float TonemapperSharpenNativeTsr = 0.35f;
+
+	/** Zero tonemapper sharpening while hardware Super Resolution / Native AA is active to prevent ringing on 6.20f HDR laser seams. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Upscaler|Sharpening", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float TonemapperSharpenSuperResActive = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Upscaler|Controls")
+	bool bIncludeUltraPerformanceInCycle = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Upscaler|Controls")
+	bool bShowControlsUpscalerRow = true;
+
+	FUpscalerPresentationConfig GetSanitized() const;
+};
+
 UCLASS(BlueprintType)
 class TAREANDTITHE_API UTareTithePresentationDataAsset : public UPrimaryDataAsset
 {
@@ -1091,6 +1131,9 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Phase12EPolish")
 	FPhase12EPresentationPolishConfig Phase12EPolishConfig;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Upscaler")
+	FUpscalerPresentationConfig UpscalerConfig;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|System", meta = (ClampMin = "0.15", ClampMax = "2.0"))
 	float EscapeQuitHoldDurationSeconds = 0.35f;

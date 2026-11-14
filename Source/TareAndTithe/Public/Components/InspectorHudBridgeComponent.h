@@ -7,6 +7,7 @@
 #include "Core/TareTitheTypes.h"
 #include "Data/TareTithePresentationDataAsset.h"
 #include "Engine/TimerHandle.h"
+#include "Interfaces/UpscalerControlInterface.h"
 #include "Subsystems/InspectionShiftSubsystem.h"
 #include "UI/HudViewModels.h"
 #include "InspectorHudBridgeComponent.generated.h"
@@ -186,6 +187,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "InspectorHud|Diagnostics")
 	void OverrideViewportSizeForTest(FVector2D TestLocalViewportSize, bool bEnableOverride);
 
+	UFUNCTION(BlueprintPure, Category = "InspectorHud|Diagnostics")
+	FString GetLastGraphicsQualityReadoutForTest() const { return LastPushedGraphicsReadout; }
+
+	UFUNCTION(BlueprintPure, Category = "InspectorHud|Diagnostics")
+	FString GetLastUpscalerReadoutForTest() const { return LastPushedUpscalerReadout; }
+
 private:
 	void MountOverlayIfNeeded();
 	void UnmountOverlayDeterministic();
@@ -210,7 +217,10 @@ private:
 	void SnapRollingMassImmediate(float NewMassKg);
 	void SyncTargetPanMassFromSnapshot(bool bForceSnap);
 	FPhase12EPresentationPolishConfig ResolvePhase12EConfig() const;
-	static FText FormatGraphicsQualityReadout(int32 QualityLevel, float TsrScalePercent);
+	FUpscalerPresentationConfig ResolveUpscalerPresentationConfig() const;
+	void HandleGraphicsStateChanged(const FTareGraphicsStateSnapshot& NewState);
+	static FText FormatGraphicsQualityReadout(int32 QualityLevel);
+	static FText FormatUpscalerReadout(const FTareGraphicsStateSnapshot& Snapshot);
 
 	UFUNCTION()
 	void HandleShiftVerdict(EShiftVerdictType Verdict, EContractFaultReason FaultReason);
@@ -248,8 +258,10 @@ private:
 	TSharedPtr<STareTitheHudOverlay> OverlayWidget;
 	FDelegateHandle ViewportResizeDelegateHandle;
 	FDelegateHandle ReticleProjectionDelegateHandle;
+	FDelegateHandle GraphicsStateDelegateHandle;
 
 	FHudPresentationConfig ActiveHudConfig;
+	FTareGraphicsStateSnapshot CachedGraphicsState;
 	FContractRuntimeSnapshot CachedSnapshot;
 	FSlicePreviewTelemetry CachedPreview;
 
@@ -292,6 +304,8 @@ private:
 	FTimerHandle TutorialAutoDismissTimerHandle;
 	FString LastPushedCenterHeadline;
 	FString LastPushedCenterSubText;
+	FString LastPushedGraphicsReadout;
+	FString LastPushedUpscalerReadout;
 	int32 ActiveTutorialStageIndex = -1;
 	bool bActiveTutorialHint = false;
 	bool bShift1TutorialStageSeen[3] = { false, false, false };

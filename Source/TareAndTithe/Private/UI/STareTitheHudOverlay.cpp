@@ -464,7 +464,7 @@ public:
 			const TCHAR* KeyText;
 			const TCHAR* ActionText;
 		};
-		static const FControlRowSpec Rows[9] = {
+		static const FControlRowSpec Rows[10] = {
 			{ TEXT("[LMB]"),      TEXT("HOLD SLICE") },
 			{ TEXT("[SCROLL]"),   TEXT("ROLL (+SHIFT)") },
 			{ TEXT("[RMB]"),      TEXT("BEVEL / ABORT") },
@@ -472,7 +472,8 @@ public:
 			{ TEXT("[E]"),        TEXT("STAMP / NEXT") },
 			{ TEXT("[1-3]"),      TEXT("UPGRADES") },
 			{ TEXT("HOLD [R]"),   TEXT("PURGE CELL") },
-			{ TEXT("[F6-F9]"),    TEXT("GFX: HIGH (TSR 85%)") },
+			{ TEXT("[F6-F9]"),    TEXT("GFX: HIGH") },
+			{ TEXT("[F10]"),      TEXT("UPSCALE: TSR ONLY") },
 			{ TEXT("HOLD [ESC]"), TEXT("EXIT GAME") }
 		};
 		static constexpr int32 NumControlRows = UE_ARRAY_COUNT(Rows);
@@ -520,7 +521,7 @@ public:
 					.Font(ActionFont)
 					.Text(FText::FromString(Rows[Idx].ActionText))
 					.ColorAndOpacity(
-						(Idx == 7)
+						(Idx == 7 || Idx == 8)
 						? FLinearColor(0.56f, 0.92f, 1.00f, 0.96f)
 						: FLinearColor(0.84f, 0.90f, 0.96f, 0.94f))
 					.ShadowOffset(FVector2D(1.0f, 1.0f))
@@ -531,6 +532,10 @@ public:
 			if (Idx == 7)
 			{
 				GraphicsRowBox = RowBox;
+			}
+			else if (Idx == 8)
+			{
+				UpscalerRowBox = RowBox;
 			}
 			RowSlots.Add(RowSlotPtr);
 			KeyBlocks.Add(KeyBlock);
@@ -655,6 +660,26 @@ public:
 		Invalidate(EInvalidateWidgetReason::LayoutAndVolatility);
 	}
 
+	void SetUpscalerReadout(const FText& InUpscalerText, bool bInShowRow)
+	{
+		bShowUpscalerRow = bInShowRow;
+		if (ActionBlocks.IsValidIndex(8) && ActionBlocks[8].IsValid())
+		{
+			ActionBlocks[8]->SetText(InUpscalerText);
+		}
+		if (UpscalerRowBox.IsValid())
+		{
+			UpscalerRowBox->SetVisibility(bShowUpscalerRow ? EVisibility::HitTestInvisible : EVisibility::Collapsed);
+		}
+		if (RowSlots.IsValidIndex(8) && RowSlots[8] != nullptr)
+		{
+			const bool bCompact = (CachedRowPt > 0.0f && CachedRowPt < 10.0f);
+			const float TopPad = bShowUpscalerRow ? (bCompact ? 2.5f : 3.5f) : 0.0f;
+			RowSlots[8]->SetPadding(FMargin(0.0f, TopPad, 0.0f, 0.0f));
+		}
+		Invalidate(EInvalidateWidgetReason::LayoutAndVolatility);
+	}
+
 	void UpdateResponsiveTypography(float EffectiveCardWidth)
 	{
 		const bool bCompact = (EffectiveCardWidth < 250.0f);
@@ -700,7 +725,7 @@ public:
 		{
 			if (RowSlots[Idx] != nullptr)
 			{
-				const bool bRowHidden = (Idx == 7 && !bShowGraphicsRow);
+				const bool bRowHidden = (Idx == 7 && !bShowGraphicsRow) || (Idx == 8 && !bShowUpscalerRow);
 				const float TopPad = bRowHidden
 					? 0.0f
 					: (bCompact
@@ -776,12 +801,14 @@ private:
 	FHudPresentationConfig Config;
 	bool bExpanded = true;
 	bool bShowGraphicsRow = true;
+	bool bShowUpscalerRow = true;
 	float CachedHeaderPt = -1.0f;
 	float CachedRowPt = -1.0f;
 
 	TSharedPtr<SBox> ExpandedContainer;
 	TSharedPtr<SBox> CollapsedPillContainer;
 	TSharedPtr<SHorizontalBox> GraphicsRowBox;
+	TSharedPtr<SHorizontalBox> UpscalerRowBox;
 	TSharedPtr<STextBlock> HeaderTitleBlock;
 	TSharedPtr<STextBlock> HideHintBlock;
 	TSharedPtr<STextBlock> CollapsedPillTextBlock;
@@ -2065,7 +2092,7 @@ void STareTitheHudOverlay::RefreshReticleClampedOffset()
 			: ((ControlsDesired.X > 10.0f) ? ControlsDesired.X : 108.0f);
 		const float ControlsH = (ControlsDesired.Y > 10.0f)
 			? ControlsDesired.Y
-			: (bIsControlsCardExpanded ? 237.0f : 28.0f);
+			: (bIsControlsCardExpanded ? 256.0f : 28.0f);
 		const float ControlsTopY = TopLeftBottomY + 8.0f;
 		const float ControlsBottomY = ControlsTopY + ControlsH;
 		const float ControlsRightX = Margin + ControlsW;
@@ -2348,6 +2375,15 @@ void STareTitheHudOverlay::SetGraphicsQualityReadout(const FText& InQualityText,
 	if (LeftControlsCard.IsValid())
 	{
 		LeftControlsCard->SetGraphicsQualityReadout(InQualityText, bInShowRow);
+	}
+	RefreshReticleClampedOffset();
+}
+
+void STareTitheHudOverlay::SetUpscalerReadout(const FText& InUpscalerText, bool bInShowRow)
+{
+	if (LeftControlsCard.IsValid())
+	{
+		LeftControlsCard->SetUpscalerReadout(InUpscalerText, bInShowRow);
 	}
 	RefreshReticleClampedOffset();
 }

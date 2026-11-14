@@ -350,6 +350,9 @@ protected:
 	TObjectPtr<UInputAction> AssignedScalabilityEpicAction;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Input")
+	TObjectPtr<UInputAction> AssignedCycleUpscalerAction;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Input")
 	TObjectPtr<UInputAction> AssignedToggleControlsHudAction;
 
 private:
@@ -414,6 +417,7 @@ private:
 	void Input_ScalabilityMed(const FInputActionValue& Value);
 	void Input_ScalabilityHigh(const FInputActionValue& Value);
 	void Input_ScalabilityEpic(const FInputActionValue& Value);
+	void Input_CycleUpscaler(const FInputActionValue& Value);
 	void Input_ToggleControlsHud(const FInputActionValue& Value);
 
 	UPROPERTY()
@@ -487,6 +491,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> ActiveScalabilityEpicAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> ActiveCycleUpscalerAction;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> ActiveToggleControlsHudAction;

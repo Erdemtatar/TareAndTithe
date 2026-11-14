@@ -12,6 +12,13 @@
 	],
 	"Plugins": [
 		{
+			"Name": "DLSS",
+			"Enabled": true,
+			"SupportedTargetPlatforms": [
+				"Win64"
+			]
+		},
+		{
 			"Name": "EditorScriptingUtilities",
 			"Enabled": true
 		},

@@ -58,6 +58,7 @@ public:
 	void SetControlsCardExpanded(bool bInExpanded);
 	bool IsControlsCardExpanded() const { return bIsControlsCardExpanded; }
 	void SetGraphicsQualityReadout(const FText& InQualityText, bool bInShowRow);
+	void SetUpscalerReadout(const FText& InUpscalerText, bool bInShowRow);
 	void UpdateTopLeftPanel(const FTopLeftIndentureViewModel& ViewModel);
 	void UpdateTopRightPanel(const FTopRightDirectorViewModel& ViewModel);
 	void UpdateCenterAlertBanner(const FCenterAlertViewModel& ViewModel);

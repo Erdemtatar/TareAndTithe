@@ -278,3 +278,16 @@ FPhase12EPresentationPolishConfig FPhase12EPresentationPolishConfig::GetSanitize
 	Out.FaultAmbienceDuckDurationSeconds = FMath::Clamp(Out.FaultAmbienceDuckDurationSeconds, 0.10f, 0.60f);
 	return Out;
 }
+
+FUpscalerPresentationConfig FUpscalerPresentationConfig::GetSanitized() const
+{
+	FUpscalerPresentationConfig Out = *this;
+	Out.FallbackModeOnUnsupportedHardware = ETareUpscalerMode::NativeTSR;
+	Out.NativeTsrScaleLowPercent = FMath::Clamp(Out.NativeTsrScaleLowPercent, 50.0f, 100.0f);
+	Out.NativeTsrScaleMediumPercent = FMath::Clamp(Out.NativeTsrScaleMediumPercent, 50.0f, 100.0f);
+	Out.NativeTsrScaleHighPercent = FMath::Clamp(Out.NativeTsrScaleHighPercent, 50.0f, 100.0f);
+	Out.NativeTsrScaleEpicPercent = FMath::Clamp(Out.NativeTsrScaleEpicPercent, 50.0f, 100.0f);
+	Out.TonemapperSharpenNativeTsr = FMath::Clamp(Out.TonemapperSharpenNativeTsr, 0.0f, 1.0f);
+	Out.TonemapperSharpenSuperResActive = FMath::Clamp(Out.TonemapperSharpenSuperResActive, 0.0f, 1.0f);
+	return Out;
+}

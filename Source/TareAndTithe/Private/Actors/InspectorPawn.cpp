@@ -30,6 +30,7 @@
 #include "InputCoreTypes.h"
 #include "InputMappingContext.h"
 #include "Interfaces/SliceableTargetInterface.h"
+#include "Interfaces/UpscalerControlInterface.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -409,6 +410,10 @@ void AInspectorPawn::BeginPlay()
 			RefreshAimTargetAndFrameFromShift();
 			HandleShiftPhaseChanged(ShiftSubsystem->GetCurrentPhase());
 		}
+		else
+		{
+			ApplyPresentationData(nullptr);
+		}
 	}
 
 	UpdateLegacyReticleVisibility();
@@ -529,6 +534,10 @@ void AInspectorPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 	{
 		EnhancedInput->BindAction(ActiveScalabilityEpicAction, ETriggerEvent::Started, this, &AInspectorPawn::Input_ScalabilityEpic);
 	}
+	if (IsValid(ActiveCycleUpscalerAction))
+	{
+		EnhancedInput->BindAction(ActiveCycleUpscalerAction, ETriggerEvent::Started, this, &AInspectorPawn::Input_CycleUpscaler);
+	}
 	if (IsValid(ActiveToggleControlsHudAction))
 	{
 		EnhancedInput->BindAction(ActiveToggleControlsHudAction, ETriggerEvent::Started, this, &AInspectorPawn::Input_ToggleControlsHud);
@@ -584,6 +593,22 @@ void AInspectorPawn::ApplyPresentationData(const UTareTithePresentationDataAsset
 	if (IsValid(AudioTelemetryBridgeComponent))
 	{
 		AudioTelemetryBridgeComponent->ApplyPresentationData(InPresentationData);
+	}
+
+	TScriptInterface<IUpscalerControlInterface> UpscalerCtrl = IUpscalerControlInterface::Resolve(this);
+	if (UpscalerCtrl.GetInterface() != nullptr)
+	{
+		FUpscalerPresentationConfig EffectiveUpscalerCfg = IsValid(InPresentationData)
+			? InPresentationData->UpscalerConfig
+			: FUpscalerPresentationConfig();
+		if (IsValid(InPresentationData))
+		{
+			EffectiveUpscalerCfg.TonemapperSharpenNativeTsr = FMath::Clamp(
+				InPresentationData->CameraPostProcessConfig.TonemapperSharpen,
+				0.0f,
+				1.0f);
+		}
+		UpscalerCtrl->ApplyPresentationUpscalerConfig(EffectiveUpscalerCfg);
 	}
 
 	if (IsValid(InspectorHudBridgeComponent))
@@ -731,6 +756,7 @@ void AInspectorPawn::EnsureInputActionsAndMappingInitialized()
 	ResolveOrCreateAction(ActiveScalabilityMedAction, AssignedScalabilityMedAction, TEXT("IA_Transient_ScalabilityMed"), EInputActionValueType::Boolean);
 	ResolveOrCreateAction(ActiveScalabilityHighAction, AssignedScalabilityHighAction, TEXT("IA_Transient_ScalabilityHigh"), EInputActionValueType::Boolean);
 	ResolveOrCreateAction(ActiveScalabilityEpicAction, AssignedScalabilityEpicAction, TEXT("IA_Transient_ScalabilityEpic"), EInputActionValueType::Boolean);
+	ResolveOrCreateAction(ActiveCycleUpscalerAction, AssignedCycleUpscalerAction, TEXT("IA_Transient_CycleUpscaler"), EInputActionValueType::Boolean);
 	ResolveOrCreateAction(ActiveToggleControlsHudAction, AssignedToggleControlsHudAction, TEXT("IA_Transient_ToggleControlsHud"), EInputActionValueType::Boolean);
 
 	if (!IsValid(ActiveMappingContext))
@@ -743,8 +769,9 @@ void AInspectorPawn::EnsureInputActionsAndMappingInitialized()
 			const bool bNeedsMedBind = !IsValid(AssignedScalabilityMedAction) && IsValid(ActiveScalabilityMedAction);
 			const bool bNeedsHighBind = !IsValid(AssignedScalabilityHighAction) && IsValid(ActiveScalabilityHighAction);
 			const bool bNeedsEpicBind = !IsValid(AssignedScalabilityEpicAction) && IsValid(ActiveScalabilityEpicAction);
+			const bool bNeedsUpscalerBind = !IsValid(AssignedCycleUpscalerAction) && IsValid(ActiveCycleUpscalerAction);
 			if (!IsValid(TransientAuxControlsIMC) &&
-				(bNeedsToggleBind || bNeedsLowBind || bNeedsMedBind || bNeedsHighBind || bNeedsEpicBind))
+				(bNeedsToggleBind || bNeedsLowBind || bNeedsMedBind || bNeedsHighBind || bNeedsEpicBind || bNeedsUpscalerBind))
 			{
 				TransientAuxControlsIMC = NewObject<UInputMappingContext>(this, TEXT("IMC_Transient_AuxControlsToggle"));
 				if (bNeedsToggleBind)
@@ -766,6 +793,10 @@ void AInspectorPawn::EnsureInputActionsAndMappingInitialized()
 				if (bNeedsEpicBind)
 				{
 					TransientAuxControlsIMC->MapKey(ActiveScalabilityEpicAction, EKeys::F9);
+				}
+				if (bNeedsUpscalerBind)
+				{
+					TransientAuxControlsIMC->MapKey(ActiveCycleUpscalerAction, EKeys::F10);
 				}
 			}
 		}
@@ -789,6 +820,7 @@ void AInspectorPawn::EnsureInputActionsAndMappingInitialized()
 			TransientIMC->MapKey(ActiveScalabilityMedAction, EKeys::F7);
 			TransientIMC->MapKey(ActiveScalabilityHighAction, EKeys::F8);
 			TransientIMC->MapKey(ActiveScalabilityEpicAction, EKeys::F9);
+			TransientIMC->MapKey(ActiveCycleUpscalerAction, EKeys::F10);
 			TransientIMC->MapKey(ActiveToggleControlsHudAction, EKeys::H);
 			ActiveMappingContext = TransientIMC;
 		}
@@ -1504,6 +1536,13 @@ void AInspectorPawn::HandleFilteredTelemetryStream(ETelemetryStreamId StreamId, 
 void AInspectorPawn::ApplyNativeScalabilityPreset(int32 QualityLevel, float TsrResolutionScalePercent)
 {
 	const int32 ClampedQuality = FMath::Clamp(QualityLevel, 0, 3);
+	TScriptInterface<IUpscalerControlInterface> UpscalerCtrl = IUpscalerControlInterface::Resolve(this);
+	if (UpscalerCtrl.GetInterface() != nullptr)
+	{
+		UpscalerCtrl->ApplyScalabilityQualityLevel(ClampedQuality);
+		return;
+	}
+
 	const float ClampedScale = FMath::Clamp(TsrResolutionScalePercent, 50.0f, 100.0f);
 	if (UGameUserSettings* Settings = UGameUserSettings::GetGameUserSettings())
 	{
@@ -2058,6 +2097,15 @@ void AInspectorPawn::Input_ScalabilityHigh(const FInputActionValue& /*Value*/)
 void AInspectorPawn::Input_ScalabilityEpic(const FInputActionValue& /*Value*/)
 {
 	ApplyNativeScalabilityPreset(3, 100.0f);
+}
+
+void AInspectorPawn::Input_CycleUpscaler(const FInputActionValue& /*Value*/)
+{
+	TScriptInterface<IUpscalerControlInterface> UpscalerCtrl = IUpscalerControlInterface::Resolve(this);
+	if (UpscalerCtrl.GetInterface() != nullptr)
+	{
+		UpscalerCtrl->CycleUpscalerMode();
+	}
 }
 
 void AInspectorPawn::Input_ToggleControlsHud(const FInputActionValue& /*Value*/)

@@ -67,6 +67,8 @@ void UInspectorHudBridgeComponent::BeginPlay()
 	}
 	LastPushedCenterHeadline.Reset();
 	LastPushedCenterSubText.Reset();
+	LastPushedGraphicsReadout.Reset();
+	LastPushedUpscalerReadout.Reset();
 
 	ResetTransientTelemetryAndHysteresis();
 
@@ -91,11 +93,31 @@ void UInspectorHudBridgeComponent::BeginPlay()
 			CachedTsrScalePercent = CurrentScaleValue;
 		}
 	}
+	CachedGraphicsState = FTareGraphicsStateSnapshot();
+	CachedGraphicsState.ScalabilityQualityLevel = CachedGraphicsQualityLevel;
+	CachedGraphicsState.NativeTsrScalePercent = CachedTsrScalePercent;
+	CachedGraphicsState.EffectiveScreenPercentage = CachedTsrScalePercent;
 
 	UWorld* World = GetWorld();
 	if (!IsValid(World) || !World->IsGameWorld())
 	{
 		return;
+	}
+
+	TScriptInterface<IUpscalerControlInterface> UpscalerCtrl = IUpscalerControlInterface::Resolve(this);
+	if (UpscalerCtrl.GetInterface() != nullptr)
+	{
+		if (GraphicsStateDelegateHandle.IsValid())
+		{
+			UpscalerCtrl->OnGraphicsStateChanged().Remove(GraphicsStateDelegateHandle);
+			GraphicsStateDelegateHandle.Reset();
+		}
+		GraphicsStateDelegateHandle = UpscalerCtrl->OnGraphicsStateChanged().AddUObject(
+			this,
+			&UInspectorHudBridgeComponent::HandleGraphicsStateChanged);
+		CachedGraphicsState = UpscalerCtrl->GetGraphicsStateSnapshot();
+		CachedGraphicsQualityLevel = CachedGraphicsState.ScalabilityQualityLevel;
+		CachedTsrScalePercent = CachedGraphicsState.NativeTsrScalePercent;
 	}
 
 	if (UInspectionShiftSubsystem* ShiftSubsystem = World->GetSubsystem<UInspectionShiftSubsystem>())
@@ -157,6 +179,16 @@ void UInspectorHudBridgeComponent::EndPlay(const EEndPlayReason::Type EndPlayRea
 	{
 		BoundAudioBridgeComp->OnFilteredTelemetryStream.RemoveAll(this);
 		BoundAudioBridgeComp = nullptr;
+	}
+
+	if (GraphicsStateDelegateHandle.IsValid())
+	{
+		TScriptInterface<IUpscalerControlInterface> UpscalerCtrl = IUpscalerControlInterface::Resolve(this);
+		if (UpscalerCtrl.GetInterface() != nullptr)
+		{
+			UpscalerCtrl->OnGraphicsStateChanged().Remove(GraphicsStateDelegateHandle);
+		}
+		GraphicsStateDelegateHandle.Reset();
 	}
 
 	if (ViewportResizeDelegateHandle.IsValid())
@@ -286,6 +318,16 @@ void UInspectorHudBridgeComponent::NotifyScalabilityPresetApplied(int32 QualityL
 {
 	CachedGraphicsQualityLevel = FMath::Clamp(QualityLevel, 0, 3);
 	CachedTsrScalePercent = FMath::Clamp(TsrScalePercent, 50.0f, 100.0f);
+	CachedGraphicsState.ScalabilityQualityLevel = CachedGraphicsQualityLevel;
+	CachedGraphicsState.NativeTsrScalePercent = CachedTsrScalePercent;
+	PushGraphicsQualityRow();
+}
+
+void UInspectorHudBridgeComponent::HandleGraphicsStateChanged(const FTareGraphicsStateSnapshot& NewState)
+{
+	CachedGraphicsState = NewState;
+	CachedGraphicsQualityLevel = FMath::Clamp(NewState.ScalabilityQualityLevel, 0, 3);
+	CachedTsrScalePercent = FMath::Clamp(NewState.NativeTsrScalePercent, 50.0f, 100.0f);
 	PushGraphicsQualityRow();
 }
 
@@ -1511,9 +1553,17 @@ void UInspectorHudBridgeComponent::PushGraphicsQualityRow()
 	}
 
 	const FPhase12EPresentationPolishConfig Phase12ECfg = ResolvePhase12EConfig();
-	OverlayWidget->SetGraphicsQualityReadout(
-		FormatGraphicsQualityReadout(CachedGraphicsQualityLevel, CachedTsrScalePercent),
-		Phase12ECfg.bEnableControlsGraphicsRow);
+	const FUpscalerPresentationConfig UpscalerCfg = ResolveUpscalerPresentationConfig();
+
+	const FText GfxText = FormatGraphicsQualityReadout(CachedGraphicsState.ScalabilityQualityLevel);
+	const FText UpscalerText = FormatUpscalerReadout(CachedGraphicsState);
+	LastPushedGraphicsReadout = GfxText.ToString();
+	LastPushedUpscalerReadout = UpscalerText.ToString();
+
+	OverlayWidget->SetGraphicsQualityReadout(GfxText, Phase12ECfg.bEnableControlsGraphicsRow);
+	OverlayWidget->SetUpscalerReadout(
+		UpscalerText,
+		Phase12ECfg.bEnableControlsGraphicsRow && UpscalerCfg.bShowControlsUpscalerRow);
 }
 
 bool UInspectorHudBridgeComponent::IsScaleVisuallySettling() const
@@ -1578,16 +1628,45 @@ FPhase12EPresentationPolishConfig UInspectorHudBridgeComponent::ResolvePhase12EC
 		: FPhase12EPresentationPolishConfig();
 }
 
-FText UInspectorHudBridgeComponent::FormatGraphicsQualityReadout(int32 QualityLevel, float TsrScalePercent)
+FUpscalerPresentationConfig UInspectorHudBridgeComponent::ResolveUpscalerPresentationConfig() const
 {
-	static const TCHAR* TierNames[4] = { TEXT("LOW"), TEXT("MED"), TEXT("HIGH"), TEXT("EPIC") };
+	return IsValid(PresentationData)
+		? PresentationData->UpscalerConfig.GetSanitized()
+		: FUpscalerPresentationConfig();
+}
+
+FText UInspectorHudBridgeComponent::FormatGraphicsQualityReadout(int32 QualityLevel)
+{
+	static const TCHAR* TierNames[4] = { TEXT("LOW"), TEXT("MEDIUM"), TEXT("HIGH"), TEXT("EPIC") };
 	const int32 SafeTier = FMath::Clamp(QualityLevel, 0, 3);
-	const int32 RoundedPct = FMath::Clamp(FMath::RoundToInt(TsrScalePercent), 50, 100);
-	if (SafeTier == 3 && RoundedPct >= 100)
+	return FText::FromString(FString::Printf(TEXT("GFX: %s"), TierNames[SafeTier]));
+}
+
+FText UInspectorHudBridgeComponent::FormatUpscalerReadout(const FTareGraphicsStateSnapshot& Snapshot)
+{
+	switch (Snapshot.ActiveUpscalerMode)
 	{
-		return FText::FromString(FString::Printf(TEXT("GFX: %s (%d%%)"), TierNames[SafeTier], RoundedPct));
+	case ETareUpscalerMode::SuperRes_Auto:
+		return FText::FromString(TEXT("SUPER RES: AUTO"));
+	case ETareUpscalerMode::SuperRes_Quality:
+		return FText::FromString(TEXT("SUPER RES: QUALITY"));
+	case ETareUpscalerMode::SuperRes_Balanced:
+		return FText::FromString(TEXT("SUPER RES: BALANCED"));
+	case ETareUpscalerMode::SuperRes_Performance:
+		return FText::FromString(TEXT("SUPER RES: PERF"));
+	case ETareUpscalerMode::SuperRes_UltraPerformance:
+		return FText::FromString(TEXT("SUPER RES: ULTRA"));
+	case ETareUpscalerMode::SuperRes_NativeAA:
+		return FText::FromString(TEXT("SUPER RES: NATIVE AA"));
+	case ETareUpscalerMode::NativeTSR:
+	default:
+		if (Snapshot.SuperResAvailability == ETareSuperResAvailability::Available)
+		{
+			const int32 RoundedPct = FMath::Clamp(FMath::RoundToInt(Snapshot.NativeTsrScalePercent), 50, 100);
+			return FText::FromString(FString::Printf(TEXT("UPSCALE: TSR (%d%%)"), RoundedPct));
+		}
+		return FText::FromString(TEXT("UPSCALE: TSR ONLY"));
 	}
-	return FText::FromString(FString::Printf(TEXT("GFX: %s (TSR %d%%)"), TierNames[SafeTier], RoundedPct));
 }
 
 FText UInspectorHudBridgeComponent::FormatFaultStampHeadline(EContractFaultReason FaultReason)
