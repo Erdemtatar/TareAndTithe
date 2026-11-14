@@ -4,9 +4,10 @@
 
 * **Solo Developer (Submission Handle):** Erdem Tatar (`Homsetxi`)
 * **Engine & Codebase:** Unreal Engine 5.8 (`Blank` C++ Template — 100% C++ Gameplay & Slate UI, Zero Blueprint Gameplay Logic, Zero `USkeletalMesh` / Organic Animation)
-* **Target Categories:** *Best Overall: Unreal Engine*, *Solo Driver*, *Glass Box Dev Log*, *Render Royalty*, and *Hyper3D Rodin (`$10k` Prize Pool)*
+* **Target Categories:** *Best Overall: Unreal Engine*, *Solo Driver*, *Glass Box Dev Log*, *Render Royalty*, *Hyper3D Rodin (`$10k` Prize Pool)*, and *NVIDIA RTX*
 * **Pre-Jam Public Preparation Repo (Rule 7h):** `Erdemtatar/MegaJam2026-Prep` (`HEAD: 4495938` / tag `v1.0-prejam-freeze` — untouched throughout the jam)
-* **Sealed Baseline Submission (`main`):** `Homsetxi_TareAndTithe.zip` — **`460.65 MB`** (`v1.0-baseline-submission` @ `5dccd9c`, Native TSR, `< 1 GB` itch.io limit)
+* **Sealed Baseline Submission (`main`):** `Homsetxi_TareAndTithe.zip` — **`460.65 MB`** (`v1.0-baseline-submission` @ `5dccd9c` / `v1.0-baseline-main` @ `2f3dffa`, Native TSR, `< 1 GB` itch.io limit)
+* **Isolated RTX Submission (`feat/rtx-dlss`):** `Homsetxi_TareAndTithe.zip` — **`445.62 MB`** Win64 `Shipping` (`5a71320`, UE 5.8 NVIDIA DLSS 4.5 Super Resolution & DLAA via `[F10]`, automatic `TSR` fallback on non-RTX GPUs)
 * **Sourced (Non-Original) Pre-Made Assets (Rule 15c/15d):** **`None`** — All code, shaders, procedural meshes, AI-generated 3D station props, and audio assets were created specifically for this jam under strict commercial-licensing and zero third-party branding (`0` external logos) rules.
 * **Production Timeline:** Initial `.uproject`, C++ codebase, procedural shaders, MetaSounds graphs, and all AI-generated assets were created strictly after `November 12, 2026, 00:00 AM ET`.
 
@@ -178,11 +179,34 @@ Tested on my target baseline hardware (**Intel Core i7-11800H, NVIDIA RTX 3060 L
 
 ---
 
-## 7. Transparent AI Tool Inventory & Glass Box Declaration
+## 7. Phase 14 (Final 30h): Isolated UE 5.8 DLSS 4.5 Neural Reconstruction (`feat/rtx-dlss`)
+
+With ~30 hours remaining before submission, I froze sliceable geometry at 6 verified monolith profiles (rejecting late-hour mesh scope creep) and executed `AGENT_RULES.md` §6.2 (**`Baseline-Zip-First` Gate**): zero third-party upscaler dependencies touched the project until the verified **`460.65 MB`** Native TSR archive was vaulted and tagged on `main` (`2f3dffa`). Only then did I branch into **`feat/rtx-dlss` (`5a71320`)**:
+
+1. **Scope Discipline & Engine-Level Binary Isolation (`DLSS-SR` + `DLAA` Only, Zero Frame Generation):**
+   * I rejected copying third-party `.dll` binaries into `TareAndTithe/Plugins/` (which would pollute Git history), installing strictly **`DLSS`** and **`StreamlineNGXCommon`** (`UE 5.8 NVIDIA DLSS 4.5 v8.9.0`, NGX `310.9.16`) under `Engine/Plugins/Marketplace` with conditional `WITH_TARETITHE_DLSS=1` detection in `TareAndTithe.Build.cs` (`0` `.umap`/`.uasset`/`.dll` diffs in Git; `46.45s` cold UBT compile with `0` errors / `0` warnings; **`445.62 MB`** Win64 `Shipping` archive bundling `nvngx_dlss.dll`).
+   * I deliberately excluded `StreamlineDLSSG` (Frame Generation) and `DLSS-RR`: optical-flow swapchain hooks restrict support to DX12 RTX 40/50 GPUs, carry UE 5.8 frame-skip/resize issues (`6706974`, `6699882`), bloat archives by hundreds of megabytes, and induce post-tonemap ghosting across my pure-C++ `STareTitheHudOverlay` reticle—whereas Transformer-based DLSS Super Resolution + DLAA preserves razor-sharp UI readability across all RTX generations.
+2. **Tier-1 Zero-Tick `UUpscalerSettingsSubsystem` & `[F10]` Vendor-Neutral Judge Bridge:**
+   * Rejecting `AInspectorPawn` bloat, all reconstruction state lives inside `UUpscalerSettingsSubsystem` (`UGameInstanceSubsystem`, `0.00 ms` idle CPU cost, zero ticking) behind a narrow zero-`Cast<>` `IUpscalerControlInterface` contract, isolating `#include "DLSSLibrary.h"` to a single `.cpp` translation unit.
+   * Both `SuperRes_*` (defaulting to `SuperRes_Auto` with `PIE`/`(0,0)` startup fallback to `SuperRes_Quality`) and `SuperRes_NativeAA` (`100.0f` DLAA) run exclusively via non-deprecated `UDLSSLibrary::EnableDLSS(true)` and `UDLSSLibrary::GetDLSSModeInformation` (avoiding deprecated `SetDLSSMode`/`EnableDLAA` and removed `r.NGX.DLSS.Sharpness`/`DilateMotionVectors` CVars).
+   * **Judge `[F10]` Bridge (Rule 15d Trademark Hygiene):** Because in-game UI strips all third-party brand strings (`0` vendor logos or false *"Frame Multiplier"* labels), pressing **`[F10]`** on `SLeftControlsCard` cycles **`SUPER RES: AUTO / QUALITY / BALANCED / PERF / ULTRA / NATIVE AA`**—directly driving **UE 5.8 NVIDIA DLSS 4.5 Super Resolution and DLAA** under the hood—before wrapping back to **`UPSCALE: TSR`**.
+3. **Neutralizing Four `v8.9.0` Engine, Shader & Non-RTX Hardware Traps:**
+   * **`[F6–F9]` Scalability Hook Preservation:** Because `UGameUserSettings::SetOverallScalabilityLevel(0)` (`Low`) resets `r.AntiAliasingMethod` and clobbers `r.ScreenPercentage`, the subsystem re-enforces `r.AntiAliasingMethod = 4`, `r.TemporalAA.Upscaler = 1`, and `r.NGX.DLSS.DenoiserMode = 0` after every tier change so the NGX view extension never silently detaches.
+   * **Known Issue `6907033` & `6.20f` HDR Seam Ringing Guard:** Returning to `NativeTSR` explicitly calls `UDLSSLibrary::EnableDLSS(false)` and forces `r.NGX.DLSS.Enable = 0` to neutralize `v8.9.0` Known Issue `6907033` (where DLSS-SR remains active after selecting a built-in upscaler) while restoring tier TSR percentages (`65%–100%`) and `r.Tonemapper.Sharpen = 0.35f`. Whenever neural reconstruction is active, `r.Tonemapper.Sharpen` locks to `0.0f` to eliminate double-sharpening negative-lobe ringing along `6.20f` HDR laser cut seams.
+   * **Header-Verified Config & Non-RTX / Driver Fallback Shield:** Inspecting `DLSSSettings.h` directly caught the triple-`S` property `bShowDLSSSDebugOnScreenMessages=False` (suppressing non-Shipping yellow debug banners) alongside `bEnableDLSSVulkan=False` (preventing packaged Vulkan crash `5356855`). Runtime activation requires `IsRHIDeviceNVIDIA()`, `QueryDLSSSupport() == UDLSSSupport::Supported`, and `IsDLSSSupported()` (compatible across both NVIDIA Game Ready and Studio `572.16+` drivers)—ensuring AMD GPUs, Intel GPUs, and older drivers boot cleanly into **`UPSCALE: TSR ONLY`**.
+
+> ![Standalone Win64 Shipping RTX Build and SLeftControlsCard F10 SUPER RES QUALITY Callout](DevLogImages/IMAGE_11.jpg)
+>
+> *Caption: Standalone Win64 `Shipping` build on `feat/rtx-dlss` (`5a71320`, `445.62 MB`)—`[F10]` vendor-neutral `SLeftControlsCard` readout (`SUPER RES: QUALITY`) driving UE 5.8 NVIDIA DLSS 4.5 Super Resolution & DLAA with zero in-game vendor branding.*
+
+---
+
+## 8. Transparent AI Tool & SDK Inventory (Glass Box Declaration)
 
 * **Google Gemini:** End-to-end Lead C++ Systems Architect, 3D geometry/physics derivations, code review, rule auditing, and release engineering.
 * **Antigravity:** Local C++ and headless Python execution agent operating strictly under `DOCS/AGENT_RULES.md` Pre-Code Approval Gates.
 * **Anthropic Console (`Claude API` — `$0.33` single-screenshot query):** Cold-eye visual hierarchy critique on a single mid-development screenshot, informing Phase 12D rear grate suppression and vertical pipe framing.
 * **Hyper3D Rodin Gen-2.5:** `11` custom industrial `.glb` meshes and `27` embedded 2K PBR station textures integrated via headless `GeometryScript` automation.
 * **fal.ai (`ElevenLabs Sound Effects v3` & `Mirelo SFX 2.0`):** `6` commercial-licensed `48 kHz` 16-bit industrial foley `.wav` files (`< $1.00` spend), combined with UE 5.8 MetaSounds and Python-synthesized PA intercom audio.
-* **Evaluated & Explicitly Bypassed Tools (Not Used in Final Build):** `PBRgen` (`0` textures — bypassed in favor of procedural UE5 materials), `WeLoveIndies` free pack (rejected due to Non-Commercial license), and `OpenAI` (not used).
+* **NVIDIA DLSS 4.5 UE 5.8 Plugin (`v8.9.0`, NGX SDK `310.9.16` — `feat/rtx-dlss` only):** Transformer-based Super Resolution (`DLSS-SR`) and Native AA (`DLAA`) driven via `UUpscalerSettingsSubsystem` (`[F10]`), with automatic `TSR` fallback on non-RTX hardware.
+* **Evaluated & Explicitly Bypassed Tools (Not Used in Final Build):** `PBRgen` (`0` textures — bypassed in favor of procedural UE5 materials), `StreamlineDLSSG` / `DLSS-RR` (rejected to prevent Slate reticle ghosting and archive bloat), `WeLoveIndies` free pack (rejected due to Non-Commercial license), and `OpenAI` (not used).
