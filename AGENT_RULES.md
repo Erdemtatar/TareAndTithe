@@ -65,6 +65,7 @@ Do NOT default to ticking every component, and NEVER disguise continuous per-fra
 ---
 
 ## 6. NATIVE RENDERING SCALABILITY & LEGAL COMPLIANCE GUARDRAILS
-1. **Native UE5 TSR & Scalability Only:** Graphics settings must rely exclusively on native `UGameUserSettings` scalability groups (`Low / Medium / High / Epic`) and built-in Unreal Engine **TSR (Temporal Super Resolution)** screen percentage controls. Do NOT integrate or reference any third-party upscaling SDKs.
-2. **100% English Only:** All C++ identifiers, comments, `UE_LOG` messages, DataAsset descriptions, and user-facing `FText` strings must be written strictly in clear English.
-3. **Zero Third-Party Trademarks:** Never place third-party brand names, hardware vendor names, AI tool names, or external trademarks anywhere inside in-game UI text, settings menus, splash screens, or credits.
+1. **Baseline `main` Branch — Native UE5 TSR & Scalability First:** On `main`, graphics settings rely on native `UGameUserSettings` scalability groups (`Low / Medium / High / Epic`) and built-in Unreal Engine **TSR (Temporal Super Resolution)**.
+2. **Hard Submission-Zip Gate Before DLSS Integration:** **STRICT RULE — ZERO DLSS / third-party upscaling plugin integration, `.uproject` / `.Build.cs` plugin dependencies, or DLSS UI controls may begin until a submission-ready, verified `< 950 MB` standalone `.zip` package has been built and archived from `main`.** Only AFTER the submission-ready baseline `.zip` exists may UE 5.8 DLSS integration (for the RTX award category) proceed, and it MUST be executed exclusively on a dedicated isolated git branch (e.g., `feat/rtx-dlss`) so the verified baseline submission package is never put at risk.
+3. **100% English Only:** All C++ identifiers, comments, `UE_LOG` messages, DataAsset descriptions, and user-facing `FText` strings must remain 100% in clear English.
+4. **Baseline Trademark Cleanliness:** Keep `main` free of third-party AI/vendor brand names in in-game UI; any required RTX/DLSS option nomenclature belongs strictly to the post-baseline isolated `feat/rtx-dlss` branch after the baseline `.zip` is secured.
