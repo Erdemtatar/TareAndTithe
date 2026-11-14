@@ -69,6 +69,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Rig")
 	UClampTorqueSolverComponent* GetClampTorqueSolverComponent() const { return ClampTorqueSolverComponent; }
 
+	UFUNCTION(BlueprintPure, Category = "Rig|Test")
+	int32 GetActiveHydUpgradeTierForTest() const { return static_cast<int32>(CachedHydUpgradeLevel); }
+
+	UFUNCTION(BlueprintPure, Category = "Rig|Test")
+	int32 GetActiveScanUpgradeTierForTest() const { return static_cast<int32>(CachedScanUpgradeLevel); }
+
 	FOnTelemetryStreamSignature OnTelemetryStream;
 	FOnTelemetryImpulseSignature OnTelemetryImpulse;
 
@@ -104,6 +110,43 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rig|Lighting")
 	TObjectPtr<UMoltenThermalLightComponent> MoltenThermalLightComponent;
+
+	// Phase 12-FIX4 [1] HYD & [3] SCAN Pre-Created Stationary Upgrade Hardware Visuals on ClampPivotRoot (NoCollision, CastShadow=false)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rig|Upgrades")
+	TObjectPtr<UStaticMeshComponent> HydUpgradeCylinderLeftL1;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rig|Upgrades")
+	TObjectPtr<UStaticMeshComponent> HydUpgradeCylinderRightL1;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rig|Upgrades")
+	TObjectPtr<UStaticMeshComponent> HydUpgradeAccumulatorLeftL2;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rig|Upgrades")
+	TObjectPtr<UStaticMeshComponent> HydUpgradeAccumulatorRightL2;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rig|Upgrades")
+	TObjectPtr<UStaticMeshComponent> ScanUpgradePodLeftL1;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rig|Upgrades")
+	TObjectPtr<UStaticMeshComponent> ScanUpgradePodRightL1;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rig|Upgrades")
+	TObjectPtr<UStaticMeshComponent> ScanUpgradeLensLeftL1;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rig|Upgrades")
+	TObjectPtr<UStaticMeshComponent> ScanUpgradeLensRightL1;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rig|Upgrades")
+	TObjectPtr<UStaticMeshComponent> ScanUpgradeArrayLeftL2;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rig|Upgrades")
+	TObjectPtr<UStaticMeshComponent> ScanUpgradeArrayRightL2;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rig|Upgrades")
+	TObjectPtr<UStaticMeshComponent> ScanUpgradeEmitterLeftL2;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rig|Upgrades")
+	TObjectPtr<UStaticMeshComponent> ScanUpgradeEmitterRightL2;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rig|Materials", meta = (DisplayName = "Outer Shell Override Material (M_SlagOuter_Master)"))
 	TObjectPtr<UMaterialInterface> OuterShellOverrideMaterial;
@@ -158,6 +201,8 @@ protected:
 
 private:
 	void EnsureGreyboxMaterialsInitialized();
+	void ApplyUpgradeHardwareMaterials();
+	void UpdateRigUpgradeHardwareVisuals(uint8 HydLevel, uint8 ScanLevel);
 	void FitClampJawToActiveMonolith();
 	UMaterialInterface* ResolveEffectiveOuterMaterial(const UMonolithContractDataAsset* Contract = nullptr) const;
 	UMaterialInterface* ResolveEffectiveCutCapMaterial(const UMonolithContractDataAsset* Contract = nullptr) const;
@@ -176,6 +221,9 @@ private:
 	TObjectPtr<UStaticMesh> FallbackCubeMesh;
 
 	UPROPERTY()
+	TObjectPtr<UStaticMesh> FallbackCylinderMesh;
+
+	UPROPERTY()
 	TObjectPtr<UMaterialInterface> BaseGreyboxShapeMaterial;
 
 	UPROPERTY(Transient)
@@ -191,6 +239,9 @@ private:
 	TObjectPtr<UMaterialInterface> AutoResolvedCutCapMasterMaterial;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> AutoResolvedUpgradeSteelMaterial;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> FallbackOuterMID;
 
 	UPROPERTY(Transient)
@@ -199,5 +250,13 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> ClampJawMID;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> FallbackUpgradeSteelMID;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> ScanOpticalSensorMID;
+
+	uint8 CachedHydUpgradeLevel = 0;
+	uint8 CachedScanUpgradeLevel = 0;
 	bool bHasCustomClampJawMesh = false;
 };

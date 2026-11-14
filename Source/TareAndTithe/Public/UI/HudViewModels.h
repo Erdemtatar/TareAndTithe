@@ -90,7 +90,6 @@ struct FBottomCrtConsoleViewModel
 	FLinearColor RouteBadgeColor = FLinearColor(0.05f, 0.90f, 1.00f, 1.0f);
 	FText OperationalStatusText;
 	FLinearColor OperationalStatusColor = FLinearColor(0.45f, 0.84f, 1.00f, 1.0f);
-	FText ControlLegendText;
 	float NormalizedMassFill = 0.0f;
 	float NormalizedValidMin = 0.72f;
 	float NormalizedValidMax = 0.88f;
@@ -103,8 +102,11 @@ struct FHudResolvedLayoutTelemetry
 	FVector2D LocalViewportSize = FVector2D::ZeroVector;
 	float EffectiveCornerPanelWidth = 0.0f;
 	float EffectiveBottomConsoleWidth = 0.0f;
+	float EffectiveControlsCardWidth = 0.0f;
 	FVector2D TopLeftMin = FVector2D::ZeroVector;
 	FVector2D TopLeftMax = FVector2D::ZeroVector;
+	FVector2D ControlsCardMin = FVector2D::ZeroVector;
+	FVector2D ControlsCardMax = FVector2D::ZeroVector;
 	FVector2D TopRightMin = FVector2D::ZeroVector;
 	FVector2D TopRightMax = FVector2D::ZeroVector;
 	FVector2D CenterBannerMin = FVector2D::ZeroVector;
@@ -113,12 +115,16 @@ struct FHudResolvedLayoutTelemetry
 	FVector2D ReticleCardMax = FVector2D::ZeroVector;
 	FVector2D BottomConsoleMin = FVector2D::ZeroVector;
 	FVector2D BottomConsoleMax = FVector2D::ZeroVector;
+	float BottomConsoleMassBottomLocalY = 0.0f;
+	float BottomConsoleAnalogBarTopLocalY = 0.0f;
 	float TopLeftDesiredWidth = 0.0f;
 	float TopRightDesiredWidth = 0.0f;
 	float TopLeftHeaderBottomLocalY = 0.0f;
 	float TopLeftDividerLocalY = 0.0f;
 	float TopRightHeaderBottomLocalY = 0.0f;
 	float TopRightDividerLocalY = 0.0f;
+	bool bControlsCardExpanded = true;
+	bool bControlsCardArranged = false;
 	bool bCenterBannerArranged = false;
 	bool bReticleCardArranged = false;
 };

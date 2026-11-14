@@ -509,6 +509,10 @@ void AInspectorPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 	{
 		EnhancedInput->BindAction(ActiveScalabilityEpicAction, ETriggerEvent::Started, this, &AInspectorPawn::Input_ScalabilityEpic);
 	}
+	if (IsValid(ActiveToggleControlsHudAction))
+	{
+		EnhancedInput->BindAction(ActiveToggleControlsHudAction, ETriggerEvent::Started, this, &AInspectorPawn::Input_ToggleControlsHud);
+	}
 }
 
 void AInspectorPawn::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -706,12 +710,18 @@ void AInspectorPawn::EnsureInputActionsAndMappingInitialized()
 	ResolveOrCreateAction(ActiveScalabilityMedAction, AssignedScalabilityMedAction, TEXT("IA_Transient_ScalabilityMed"), EInputActionValueType::Boolean);
 	ResolveOrCreateAction(ActiveScalabilityHighAction, AssignedScalabilityHighAction, TEXT("IA_Transient_ScalabilityHigh"), EInputActionValueType::Boolean);
 	ResolveOrCreateAction(ActiveScalabilityEpicAction, AssignedScalabilityEpicAction, TEXT("IA_Transient_ScalabilityEpic"), EInputActionValueType::Boolean);
+	ResolveOrCreateAction(ActiveToggleControlsHudAction, AssignedToggleControlsHudAction, TEXT("IA_Transient_ToggleControlsHud"), EInputActionValueType::Boolean);
 
 	if (!IsValid(ActiveMappingContext))
 	{
 		if (IsValid(AssignedMappingContext))
 		{
 			ActiveMappingContext = AssignedMappingContext;
+			if (!IsValid(AssignedToggleControlsHudAction) && !IsValid(TransientAuxControlsIMC) && IsValid(ActiveToggleControlsHudAction))
+			{
+				TransientAuxControlsIMC = NewObject<UInputMappingContext>(this, TEXT("IMC_Transient_AuxControlsToggle"));
+				TransientAuxControlsIMC->MapKey(ActiveToggleControlsHudAction, EKeys::H);
+			}
 		}
 		else
 		{
@@ -733,6 +743,7 @@ void AInspectorPawn::EnsureInputActionsAndMappingInitialized()
 			TransientIMC->MapKey(ActiveScalabilityMedAction, EKeys::F7);
 			TransientIMC->MapKey(ActiveScalabilityHighAction, EKeys::F8);
 			TransientIMC->MapKey(ActiveScalabilityEpicAction, EKeys::F9);
+			TransientIMC->MapKey(ActiveToggleControlsHudAction, EKeys::H);
 			ActiveMappingContext = TransientIMC;
 		}
 	}
@@ -757,6 +768,10 @@ void AInspectorPawn::ApplyMappingContextToLocalPlayer()
 		if (!InputSubsystem->HasMappingContext(ActiveMappingContext))
 		{
 			InputSubsystem->AddMappingContext(ActiveMappingContext, 0);
+		}
+		if (IsValid(TransientAuxControlsIMC) && !InputSubsystem->HasMappingContext(TransientAuxControlsIMC))
+		{
+			InputSubsystem->AddMappingContext(TransientAuxControlsIMC, 1);
 		}
 	}
 }
@@ -922,91 +937,42 @@ void AInspectorPawn::InitializeLaserSheetDynamicMaterial()
 
 void AInspectorPawn::UpdateLaserSheetMaterialVisuals()
 {
+	const FLaserSheetPresentationConfig SheetCfg = IsValid(PresentationData)
+		? PresentationData->LaserSheetConfig.GetSanitized()
+		: FLaserSheetPresentationConfig();
+
+	FLaserSlicePaletteColors Palette;
+	Palette.VeinDropYellowColor = SheetCfg.VeinDropYellowColor;
+	Palette.IsotopeProximityAmberColor = SheetCfg.IsotopeProximityAmberColor;
+	Palette.OvershootMagentaColor = SheetCfg.OvershootMagentaColor;
+	Palette.OvershootEmissiveGain = SheetCfg.OvershootEmissiveGain;
+
+	const bool bIsFaultLockoutPhase = (CachedShiftPhase == EShiftPhase::FaultResetDelay);
+	const FLaserSliceVisualEvaluation Eval = EvaluateLaserSliceVisualState(
+		CachedHudSnapshot,
+		CachedPreviewTelemetry,
+		bCachedIntersectsMonolith,
+		bIsFaultLockoutPhase,
+		CachedVeinProximityNormalized,
+		CachedLaserChargeNormalized,
+		Palette);
+
+	LastEvaluatedLaserState = Eval.AimState;
+	LastEvaluatedLaserFinalEmissive = Eval.LaserFinalEmissive;
+
 	if (!IsValid(LaserSheetMID) && !IsValid(LaserFrameMID))
 	{
 		return;
 	}
 
-	constexpr float QuotaFloatEpsilonKg = 1.0e-3f;
-	const FLaserSheetPresentationConfig SheetCfg = IsValid(PresentationData)
-		? PresentationData->LaserSheetConfig.GetSanitized()
-		: FLaserSheetPresentationConfig();
-
-	const FLinearColor SafeIdleColor(0.04f, 0.52f, 0.78f, 1.0f);
-	const FLinearColor IntersectCyanColor(0.08f, 0.88f, 1.00f, 1.0f);
-	const FLinearColor WindowMatchEmeraldColor(0.04f, 0.96f, 0.36f, 1.0f);
-	const FLinearColor TarePurgeReadyColor(0.06f, 0.94f, 0.62f, 1.0f);
-	const FLinearColor VeinDropYellowColor = SheetCfg.VeinDropYellowColor;
-	const FLinearColor IsotopeProximityAmberColor = SheetCfg.IsotopeProximityAmberColor;
-	const FLinearColor DangerCrimsonColor(1.00f, 0.05f, 0.03f, 1.0f);
-	const FLinearColor CapacitorHotWhiteColor(1.00f, 0.94f, 0.78f, 1.0f);
-
-	const bool bValidContact = HasValidPredictiveSliceContact();
-	const bool bDirectVeinHit = bCachedIntersectsMonolith && CachedPreviewTelemetry.bWillDetonate;
-	const bool bMatchesQuotaWindow = DoesCurrentSliceEstimateLandInQuotaWindow();
-	const float EstSeveredKg = FMath::Max(0.0f, CachedPreviewTelemetry.EstimatedSeveredMassKg);
-	const float ProjectedTareKg = FMath::Max(0.0f, CachedHudSnapshot.AccumulatedTareWasteKg) + EstSeveredKg;
-	const float MaxTareKg = FMath::Max(0.0f, CachedHudSnapshot.MaxAllowedTareWasteKg);
-	const bool bTareOverflowRisk = ProjectedTareKg > (MaxTareKg + QuotaFloatEpsilonKg);
-
-	FLinearColor BaseHue = SafeIdleColor;
-	bool bHighlightReadySheet = bMatchesQuotaWindow;
-
-	if (bDirectVeinHit)
-	{
-		BaseHue = DangerCrimsonColor;
-	}
-	else if (bValidContact)
-	{
-		if (CachedPreviewTelemetry.bSeveredHalfContainsVein)
-		{
-			if (CachedHudSnapshot.ActiveDiverterRoute == EDiverterRoute::TitheScale)
-			{
-				const float DangerAlpha = FMath::Clamp((CachedVeinProximityNormalized - 0.5f) * 2.0f, 0.0f, 1.0f);
-				BaseHue = FMath::Lerp(VeinDropYellowColor, DangerCrimsonColor, DangerAlpha);
-			}
-			else if (bTareOverflowRisk)
-			{
-				BaseHue = DangerCrimsonColor;
-			}
-			else
-			{
-				const float CriticalVeinAlpha = FMath::Clamp((CachedVeinProximityNormalized - 0.65f) / 0.35f, 0.0f, 1.0f);
-				BaseHue = FMath::Lerp(TarePurgeReadyColor, DangerCrimsonColor, CriticalVeinAlpha);
-				bHighlightReadySheet = (CriticalVeinAlpha <= KINDA_SMALL_NUMBER);
-			}
-		}
-		else if (CachedHudSnapshot.ActiveDiverterRoute == EDiverterRoute::TareChute && bTareOverflowRisk)
-		{
-			BaseHue = DangerCrimsonColor;
-		}
-		else
-		{
-			const FLinearColor CleanContactHue = bMatchesQuotaWindow ? WindowMatchEmeraldColor : IntersectCyanColor;
-			if (CachedVeinProximityNormalized <= 0.0f)
-			{
-				BaseHue = CleanContactHue;
-			}
-			else if (CachedVeinProximityNormalized < 0.5f)
-			{
-				BaseHue = FMath::Lerp(CleanContactHue, IsotopeProximityAmberColor, CachedVeinProximityNormalized * 2.0f);
-			}
-			else
-			{
-				BaseHue = FMath::Lerp(IsotopeProximityAmberColor, DangerCrimsonColor, (CachedVeinProximityNormalized - 0.5f) * 2.0f);
-			}
-		}
-	}
-
-	const float ChargeBlend = FMath::Clamp(CachedLaserChargeNormalized * 0.75f, 0.0f, 0.75f);
-	const float EmissiveBoost = 1.0f + (CachedVeinProximityNormalized * 1.25f) + (CachedLaserChargeNormalized * 3.0f);
-	const FLinearColor FinalColor = FMath::Lerp(BaseHue, CapacitorHotWhiteColor, ChargeBlend) * EmissiveBoost;
+	const FLinearColor BaseHue = Eval.LaserBaseHue;
+	const FLinearColor FinalColor = Eval.LaserFinalEmissive;
 
 	const FMonolithCutMaskVolume CutMask = IsValid(LaserPlaneAimComponent)
 		? LaserPlaneAimComponent->GetLastCuttableMaskVolume()
 		: FMonolithCutMaskVolume();
 	const float CutMaskActiveScalar = (bCachedIntersectsMonolith && CutMask.bIsValid) ? 1.0f : 0.0f;
-	const float DirectVeinHitScalar = bDirectVeinHit ? 1.0f : 0.0f;
+	const float DirectVeinHitScalar = Eval.bDirectVeinHit ? 1.0f : 0.0f;
 
 	auto ApplySharedParameters = [&](UMaterialInstanceDynamic* TargetMID, float OpacityScalar)
 	{
@@ -1027,10 +993,7 @@ void AInspectorPawn::UpdateLaserSheetMaterialVisuals()
 		TargetMID->SetScalarParameterValue(TEXT("LaserCharge"), CachedLaserChargeNormalized);
 	};
 
-	const float SheetOpacity = (bValidContact || bDirectVeinHit)
-		? (bHighlightReadySheet ? 0.48f : 0.42f)
-		: 0.18f;
-	ApplySharedParameters(LaserSheetMID, SheetOpacity);
+	ApplySharedParameters(LaserSheetMID, Eval.SheetOpacity);
 	ApplySharedParameters(LaserFrameMID, 1.0f);
 
 	if (IsValid(LaserSheetMID))
@@ -1077,7 +1040,7 @@ bool AInspectorPawn::HasValidPredictiveSliceContact() const
 {
 	return bCachedIntersectsMonolith &&
 		CachedPreviewTelemetry.bHasValidMassEstimate &&
-		(CachedPreviewTelemetry.EstimatedSeveredMassKg > MinPredictiveContactMassKg);
+		(CachedPreviewTelemetry.EstimatedSeveredMassKg >= FMath::Max(0.05f, MinPredictiveContactMassKg));
 }
 
 bool AInspectorPawn::DoesCurrentSliceEstimateLandInQuotaWindow() const
@@ -1384,103 +1347,25 @@ void AInspectorPawn::UpdateLaserReticleReadoutText()
 
 	if (IsValid(LaserReticleYieldReadout))
 	{
-		if (!bValidContact && !bDirectVeinHit)
-		{
-			LaserReticleYieldReadout->SetTextRenderColor(ReticleLoadCellColor);
-			LaserReticleYieldReadout->SetText(FText::FromString(TEXT("CUT EST: --- (NO CONTACT)")));
-		}
-		else
-		{
-			constexpr float QuotaFloatEpsilonKg = 1.0e-3f;
-			const float EstSeveredKg = FMath::Max(0.0f, CachedPreviewTelemetry.EstimatedSeveredMassKg);
-			const float EstRemainderKg = FMath::Max(0.0f, CachedPreviewTelemetry.EstimatedRemainderMassKg);
-			const float ProjectedTareKg = FMath::Max(0.0f, CachedHudSnapshot.AccumulatedTareWasteKg) + EstSeveredKg;
-			const float MaxTareKg = FMath::Max(0.0f, CachedHudSnapshot.MaxAllowedTareWasteKg);
-			const bool bTareOverflow = ProjectedTareKg > (MaxTareKg + QuotaFloatEpsilonKg);
+		const FLaserSheetPresentationConfig SheetCfg = IsValid(PresentationData)
+			? PresentationData->LaserSheetConfig.GetSanitized()
+			: FLaserSheetPresentationConfig();
+		FLaserSlicePaletteColors Palette;
+		Palette.VeinDropYellowColor = SheetCfg.VeinDropYellowColor;
+		Palette.IsotopeProximityAmberColor = SheetCfg.IsotopeProximityAmberColor;
+		Palette.OvershootMagentaColor = SheetCfg.OvershootMagentaColor;
+		Palette.OvershootEmissiveGain = SheetCfg.OvershootEmissiveGain;
 
-			if (bDirectVeinHit)
-			{
-				LaserReticleYieldReadout->SetTextRenderColor(ReticleCrimsonColor);
-				LaserReticleYieldReadout->SetText(
-					FText::FromString(FString::Printf(TEXT("CUT EST: +%.2f KG [VEIN INTERSECT]"), EstSeveredKg)));
-			}
-			else if (CachedPreviewTelemetry.bSeveredHalfContainsVein)
-			{
-				if (CachedHudSnapshot.ActiveDiverterRoute == EDiverterRoute::TitheScale)
-				{
-					LaserReticleYieldReadout->SetTextRenderColor(ReticleVeinDropWarningColor);
-					LaserReticleYieldReadout->SetText(
-						FText::FromString(FString::Printf(TEXT("CUT EST: +%.2f KG | VEIN IN DROP! [SPACE] -> TARE"), EstSeveredKg)));
-				}
-				else if (bTareOverflow)
-				{
-					LaserReticleYieldReadout->SetTextRenderColor(ReticleCrimsonColor);
-					LaserReticleYieldReadout->SetText(
-						FText::FromString(FString::Printf(TEXT("SCRAP EST: %.2f KG [TARE OVERFLOW RISK!]"), EstSeveredKg)));
-				}
-				else
-				{
-					LaserReticleYieldReadout->SetTextRenderColor(ReticlePurgeReadyColor);
-					LaserReticleYieldReadout->SetText(
-						FText::FromString(FString::Printf(TEXT("SCRAP EST: %.2f KG [TARE PURGE READY]"), EstSeveredKg)));
-				}
-			}
-			else if (CachedHudSnapshot.ActiveDiverterRoute == EDiverterRoute::TareChute)
-			{
-				if (bTareOverflow)
-				{
-					LaserReticleYieldReadout->SetTextRenderColor(ReticleCrimsonColor);
-					LaserReticleYieldReadout->SetText(
-						FText::FromString(FString::Printf(TEXT("SCRAP EST: %.2f KG [TARE OVERFLOW RISK!]"), EstSeveredKg)));
-				}
-				else
-				{
-					LaserReticleYieldReadout->SetTextRenderColor(ReticleAmberColor);
-					LaserReticleYieldReadout->SetText(
-						FText::FromString(FString::Printf(TEXT("SCRAP EST: %.2f KG (LEFT %.1f KG)"), EstSeveredKg, EstRemainderKg)));
-				}
-			}
-			else
-			{
-				const float SettledKg = FMath::Max(0.0f, CachedHudSnapshot.SettledScaleMassKg);
-				const float InFlightKg = FMath::Max(0.0f, CachedHudSnapshot.InFlightMassKg);
-				const float TargetKg = FMath::Max(0.0f, CachedHudSnapshot.TargetTitheMassKg);
-				const float ToleranceKg = FMath::Max(0.0f, CachedHudSnapshot.QuotaToleranceKg);
-				const float MinWinKg = FMath::Max(0.0f, TargetKg - ToleranceKg);
-				const float MaxWinKg = TargetKg + ToleranceKg;
-				const float ProjectedScaleKg = SettledKg + InFlightKg + EstSeveredKg;
-
-				if (ProjectedScaleKg > (MaxWinKg + QuotaFloatEpsilonKg))
-				{
-					LaserReticleYieldReadout->SetTextRenderColor(ReticleCrimsonColor);
-					LaserReticleYieldReadout->SetText(
-						FText::FromString(FString::Printf(TEXT("CUT EST: +%.2f KG -> %.2f [OVER!]"), EstSeveredKg, ProjectedScaleKg)));
-				}
-				else if (ProjectedScaleKg >= (MinWinKg - QuotaFloatEpsilonKg))
-				{
-					const float DirCutTolKg = FMath::Max(0.15f, CachedHudSnapshot.DirectorsCutToleranceKg);
-					if (FMath::Abs(ProjectedScaleKg - TargetKg) <= (DirCutTolKg + QuotaFloatEpsilonKg))
-					{
-						LaserReticleYieldReadout->SetTextRenderColor(ReticleGoldColor);
-						LaserReticleYieldReadout->SetText(
-							FText::FromString(FString::Printf(TEXT("CUT EST: +%.2f KG [DIRECTOR'S CUT!]"), EstSeveredKg)));
-					}
-					else
-					{
-						LaserReticleYieldReadout->SetTextRenderColor(ReticleEmeraldColor);
-						LaserReticleYieldReadout->SetText(
-							FText::FromString(FString::Printf(TEXT("CUT EST: +%.2f KG [IN WINDOW!]"), EstSeveredKg)));
-					}
-				}
-				else
-				{
-					const float StillNeedKg = FMath::Max(0.01f, TargetKg - ProjectedScaleKg);
-					LaserReticleYieldReadout->SetTextRenderColor(ReticleCyanColor);
-					LaserReticleYieldReadout->SetText(
-						FText::FromString(FString::Printf(TEXT("CUT EST: +%.2f KG (NEED +%.2f)"), EstSeveredKg, StillNeedKg)));
-				}
-			}
-		}
+		const FLaserSliceVisualEvaluation Eval = EvaluateLaserSliceVisualState(
+			CachedHudSnapshot,
+			CachedPreviewTelemetry,
+			bCachedIntersectsMonolith,
+			CachedShiftPhase == EShiftPhase::FaultResetDelay,
+			CachedVeinProximityNormalized,
+			CachedLaserChargeNormalized,
+			Palette);
+		LaserReticleYieldReadout->SetTextRenderColor(Eval.ReticleYieldColor.ToFColor(true));
+		LaserReticleYieldReadout->SetText(FText::FromString(Eval.ReticleYieldLine));
 	}
 
 	if (IsValid(LaserReticleLoadReadout))
@@ -1633,6 +1518,7 @@ void AInspectorPawn::HandleCapacitorTelemetryStream(ETelemetryStreamId StreamId,
 	{
 		CachedLaserChargeNormalized = FMath::Clamp(NormalizedValue, 0.0f, 1.0f);
 		UpdateLaserSheetMaterialVisuals();
+		UpdateLaserReticleReadoutText();
 	}
 
 	OnTelemetryStream.Broadcast(StreamId, NormalizedValue);
@@ -1715,9 +1601,13 @@ void AInspectorPawn::HandleShiftPhaseChanged(EShiftPhase NewPhase)
 	CachedShiftPhase = NewPhase;
 	const bool bActiveInspection = (NewPhase == EShiftPhase::ActiveInspection);
 
-	if (!bActiveInspection && IsValid(LaserCapacitorComponent))
+	if (!bActiveInspection)
 	{
-		LaserCapacitorComponent->ResetCapacitorState();
+		CachedLaserChargeNormalized = 0.0f;
+		if (IsValid(LaserCapacitorComponent))
+		{
+			LaserCapacitorComponent->ResetCapacitorState();
+		}
 	}
 
 	if (IsValid(LaserPlaneAimComponent))
@@ -1732,6 +1622,7 @@ void AInspectorPawn::HandleShiftPhaseChanged(EShiftPhase NewPhase)
 	}
 
 	UpdateLegacyReticleVisibility();
+	UpdateLaserSheetMaterialVisuals();
 	if (bActiveInspection)
 	{
 		LastBroadcastReticleUV = FVector2D(-1.0f, -1.0f);
@@ -1855,6 +1746,11 @@ void AInspectorPawn::SetCapacitorChargeForTest(float NormalizedCharge)
 {
 	CachedLaserChargeNormalized = FMath::Clamp(NormalizedCharge, 0.0f, 1.0f);
 	UpdateLaserSheetMaterialVisuals();
+	UpdateLaserReticleReadoutText();
+	if (IsValid(InspectorHudBridgeComponent))
+	{
+		InspectorHudBridgeComponent->SetLaserChargeForTest(CachedLaserChargeNormalized);
+	}
 }
 
 void AInspectorPawn::ToggleDiverterRouteForTest()
@@ -1866,6 +1762,43 @@ void AInspectorPawn::ToggleDiverterRouteForTest()
 			ShiftSubsystem->RequestToggleDiverter();
 		}
 	}
+}
+
+void AInspectorPawn::ToggleControlsHudForTest()
+{
+	Input_ToggleControlsHud(FInputActionValue(true));
+}
+
+bool AInspectorPawn::IsControlsToggleBoundToHKeyForTest() const
+{
+	if (!IsValid(ActiveToggleControlsHudAction))
+	{
+		return false;
+	}
+
+	auto CheckContextMapsH = [this](const UInputMappingContext* Context) -> bool
+	{
+		if (!IsValid(Context))
+		{
+			return false;
+		}
+		for (const FEnhancedActionKeyMapping& Mapping : Context->GetMappings())
+		{
+			if (Mapping.Action == ActiveToggleControlsHudAction && Mapping.Key == EKeys::H)
+			{
+				return true;
+			}
+		}
+		return false;
+	};
+
+	return CheckContextMapsH(ActiveMappingContext) || CheckContextMapsH(TransientAuxControlsIMC);
+}
+
+bool AInspectorPawn::IsMouseCursorHiddenGameOnlyForTest() const
+{
+	const APlayerController* PC = GetController<APlayerController>();
+	return IsValid(PC) && !PC->bShowMouseCursor;
 }
 
 FMonolithCutMaskVolume AInspectorPawn::GetCachedCuttableMaskForTest() const
@@ -2061,4 +1994,19 @@ void AInspectorPawn::Input_ScalabilityHigh(const FInputActionValue& /*Value*/)
 void AInspectorPawn::Input_ScalabilityEpic(const FInputActionValue& /*Value*/)
 {
 	ApplyNativeScalabilityPreset(3, 100.0f);
+}
+
+void AInspectorPawn::Input_ToggleControlsHud(const FInputActionValue& /*Value*/)
+{
+	if (IsValid(InspectorHudBridgeComponent))
+	{
+		InspectorHudBridgeComponent->ToggleControlsCardVisibility();
+	}
+
+	if (APlayerController* PC = GetController<APlayerController>())
+	{
+		FInputModeGameOnly GameOnlyInput;
+		PC->SetInputMode(GameOnlyInput);
+		PC->SetShowMouseCursor(false);
+	}
 }

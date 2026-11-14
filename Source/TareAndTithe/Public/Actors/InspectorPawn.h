@@ -76,6 +76,21 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inspector|Diagnostics")
 	void ToggleDiverterRouteForTest();
 
+	UFUNCTION(BlueprintCallable, Category = "Inspector|Diagnostics")
+	void ToggleControlsHudForTest();
+
+	UFUNCTION(BlueprintPure, Category = "Inspector|Diagnostics")
+	bool IsControlsToggleBoundToHKeyForTest() const;
+
+	UFUNCTION(BlueprintPure, Category = "Inspector|Diagnostics")
+	bool IsMouseCursorHiddenGameOnlyForTest() const;
+
+	UFUNCTION(BlueprintPure, Category = "Inspector|Diagnostics")
+	ELaserSliceVisualState GetCurrentLaserVisualStateForTest() const { return LastEvaluatedLaserState; }
+
+	UFUNCTION(BlueprintPure, Category = "Inspector|Diagnostics")
+	FLinearColor GetCurrentLaserFinalEmissiveForTest() const { return LastEvaluatedLaserFinalEmissive; }
+
 	UFUNCTION(BlueprintPure, Category = "Inspector|Diagnostics")
 	FSlicePreviewTelemetry GetCachedPreviewTelemetryForTest() const { return CachedPreviewTelemetry; }
 
@@ -334,6 +349,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Input")
 	TObjectPtr<UInputAction> AssignedScalabilityEpicAction;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inspector|Input")
+	TObjectPtr<UInputAction> AssignedToggleControlsHudAction;
+
 private:
 	void ApplyLockedCameraExposureSettings();
 	void EnsureInputActionsAndMappingInitialized();
@@ -393,6 +411,7 @@ private:
 	void Input_ScalabilityMed(const FInputActionValue& Value);
 	void Input_ScalabilityHigh(const FInputActionValue& Value);
 	void Input_ScalabilityEpic(const FInputActionValue& Value);
+	void Input_ToggleControlsHud(const FInputActionValue& Value);
 
 	UPROPERTY()
 	TObjectPtr<UStaticMesh> FallbackCubeMesh;
@@ -466,10 +485,18 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> ActiveScalabilityEpicAction;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> ActiveToggleControlsHudAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputMappingContext> TransientAuxControlsIMC;
+
 	FTimerHandle ManualResetHoldTimerHandle;
 	FShiftHudSnapshot CachedHudSnapshot;
 	FSlicePreviewTelemetry CachedPreviewTelemetry;
 	FVector2D LastBroadcastReticleUV = FVector2D(-1.0f, -1.0f);
+	FLinearColor LastEvaluatedLaserFinalEmissive = FLinearColor(0.04f, 0.52f, 0.78f, 1.0f);
+	ELaserSliceVisualState LastEvaluatedLaserState = ELaserSliceVisualState::IdleOrSafeCyan;
 	EShiftPhase CachedShiftPhase = EShiftPhase::WaitingForStations;
 	float CachedVeinProximityNormalized = 0.0f;
 	float CachedClampStrainNormalized = 0.0f;

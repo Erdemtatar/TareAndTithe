@@ -22,7 +22,7 @@ int32 UInspectorHudBridgeComponent::GActiveMountedOverlayCount = 0;
 namespace
 {
 	constexpr float QuotaEpsilonKg = 1.0e-3f;
-	constexpr float MinPredictiveMassKg = 0.01f;
+	constexpr float MinPredictiveMassKg = 0.05f;
 	constexpr double VeinDropEdgeDebounceSeconds = 0.18;
 }
 
@@ -43,6 +43,7 @@ void UInspectorHudBridgeComponent::BeginPlay()
 	Super::BeginPlay();
 
 	bActiveTutorialHint = false;
+	bControlsCardExpanded = true;
 	ActiveTutorialStageIndex = -1;
 	for (int32 Idx = 0; Idx < 3; ++Idx)
 	{
@@ -108,6 +109,7 @@ void UInspectorHudBridgeComponent::EndPlay(const EEndPlayReason::Type EndPlayRea
 	if (IsValid(BoundLaserCapacitorComp))
 	{
 		BoundLaserCapacitorComp->OnSliceCommittedResult.RemoveAll(this);
+		BoundLaserCapacitorComp->OnTelemetryStream.RemoveAll(this);
 		BoundLaserCapacitorComp = nullptr;
 	}
 	if (IsValid(BoundAudioBridgeComp))
@@ -147,11 +149,13 @@ void UInspectorHudBridgeComponent::BindPawnTelemetrySources(
 	if (IsValid(BoundLaserCapacitorComp))
 	{
 		BoundLaserCapacitorComp->OnSliceCommittedResult.RemoveAll(this);
+		BoundLaserCapacitorComp->OnTelemetryStream.RemoveAll(this);
 	}
 	BoundLaserCapacitorComp = InLaserCapacitorComp;
 	if (IsValid(BoundLaserCapacitorComp))
 	{
 		BoundLaserCapacitorComp->OnSliceCommittedResult.AddUObject(this, &UInspectorHudBridgeComponent::HandleSliceCommittedResult);
+		BoundLaserCapacitorComp->OnTelemetryStream.AddUObject(this, &UInspectorHudBridgeComponent::HandleCapacitorTelemetryStream);
 	}
 
 	if (IsValid(BoundAudioBridgeComp))
@@ -228,6 +232,7 @@ void UInspectorHudBridgeComponent::MountOverlayIfNeeded()
 	SAssignNew(OverlayWidget, STareTitheHudOverlay)
 		.HudConfig(ActiveHudConfig)
 		.InitialLocalViewportSize(InitialLocalSize);
+	OverlayWidget->SetControlsCardExpanded(bControlsCardExpanded);
 
 	ViewportClient->AddViewportWidgetContent(OverlayWidget.ToSharedRef(), 10);
 	MountedViewportClient = ViewportClient;
@@ -298,6 +303,7 @@ void UInspectorHudBridgeComponent::ResetTransientTelemetryAndHysteresis()
 	// Correction E: Explicit contract & intro reset hygiene so stale hazard/strain latches never bleed across resets.
 	CachedClampStrain = 0.0f;
 	CachedClampFatigue = 0.0f;
+	CachedLaserCharge = 0.0f;
 	CachedPreview = FSlicePreviewTelemetry();
 
 	bLatchedIsotopeHazard = false;
@@ -482,6 +488,10 @@ void UInspectorHudBridgeComponent::HandleShiftPhaseChanged(EShiftPhase NewPhase)
 {
 	CachedShiftPhase = NewPhase;
 	bCachedReticleVisible = (NewPhase == EShiftPhase::ActiveInspection);
+	if (NewPhase != EShiftPhase::ActiveInspection)
+	{
+		CachedLaserCharge = 0.0f;
+	}
 
 	if (NewPhase == EShiftPhase::ContractIntro)
 	{
@@ -607,6 +617,15 @@ void UInspectorHudBridgeComponent::HandleFilteredTelemetryStream(ETelemetryStrea
 		CachedClampFatigue = FMath::Clamp(NormalizedValue, 0.0f, 1.0f);
 		PushReticleCard();
 		PushCenterAlertBanner();
+	}
+}
+
+void UInspectorHudBridgeComponent::HandleCapacitorTelemetryStream(ETelemetryStreamId StreamId, float NormalizedValue)
+{
+	if (StreamId == ETelemetryStreamId::LaserCharge)
+	{
+		CachedLaserCharge = FMath::Clamp(NormalizedValue, 0.0f, 1.0f);
+		PushReticleCard();
 	}
 }
 
@@ -863,7 +882,7 @@ void UInspectorHudBridgeComponent::PushCenterAlertBanner()
 		// P1b: Severed Drop Contains Vein While Routed to Tithe (Instant Clear on [SPACE])
 		const bool bValidContact = CachedPreview.bIntersectsMonolith &&
 			CachedPreview.bHasValidMassEstimate &&
-			(CachedPreview.EstimatedSeveredMassKg > MinPredictiveMassKg);
+			(CachedPreview.EstimatedSeveredMassKg >= MinPredictiveMassKg);
 		const bool bRawVeinInTitheDrop = bValidContact &&
 			CachedPreview.bSeveredHalfContainsVein &&
 			(CachedSnapshot.ActiveDiverterRoute == EDiverterRoute::TitheScale);
@@ -997,6 +1016,28 @@ void UInspectorHudBridgeComponent::PushCenterAlertBanner()
 
 void UInspectorHudBridgeComponent::PushReticleCard()
 {
+	const FLaserSheetPresentationConfig SheetCfg = IsValid(PresentationData)
+		? PresentationData->LaserSheetConfig.GetSanitized()
+		: FLaserSheetPresentationConfig();
+	FLaserSlicePaletteColors Palette;
+	Palette.VeinDropYellowColor = SheetCfg.VeinDropYellowColor;
+	Palette.IsotopeProximityAmberColor = SheetCfg.IsotopeProximityAmberColor;
+	Palette.OvershootMagentaColor = SheetCfg.OvershootMagentaColor;
+	Palette.OvershootEmissiveGain = SheetCfg.OvershootEmissiveGain;
+
+	const FLaserSliceVisualEvaluation Eval = EvaluateLaserSliceVisualState(
+		CachedSnapshot,
+		CachedPreview,
+		CachedPreview.bIntersectsMonolith,
+		CachedShiftPhase == EShiftPhase::FaultResetDelay,
+		CachedPreview.VeinProximityNormalized,
+		CachedLaserCharge,
+		Palette);
+
+	LastEvaluatedReticleState = Eval.AimState;
+	LastEvaluatedReticleYieldText = Eval.ReticleYieldLine;
+	LastEvaluatedReticleYieldColor = Eval.ReticleYieldColor;
+
 	if (!OverlayWidget.IsValid())
 	{
 		return;
@@ -1021,7 +1062,6 @@ void UInspectorHudBridgeComponent::PushReticleCard()
 	const FLinearColor GoldColor(1.00f, 0.84f, 0.18f, 1.0f);
 	const FLinearColor AmberColor(1.00f, 0.66f, 0.10f, 1.0f);
 	const FLinearColor CrimsonColor(1.00f, 0.22f, 0.16f, 1.0f);
-	const FLinearColor PurgeMintColor(0.08f, 0.96f, 0.66f, 1.0f);
 	const FLinearColor NeutralIceColor(0.82f, 0.94f, 1.00f, 1.0f);
 
 	// Line 1: Primary Need / Route / Stamp Status
@@ -1056,111 +1096,12 @@ void UInspectorHudBridgeComponent::PushReticleCard()
 	}
 	VM.AccentColor = VM.PrimaryColor;
 
-	// Line 2: Predictive Slice / Scrap Yield Estimate
-	const bool bValidContact = CachedPreview.bIntersectsMonolith &&
-		CachedPreview.bHasValidMassEstimate &&
-		(CachedPreview.EstimatedSeveredMassKg > MinPredictiveMassKg);
-	const bool bDirectVeinHit = CachedPreview.bIntersectsMonolith && CachedPreview.bWillDetonate;
-
-	if (!bValidContact && !bDirectVeinHit)
+	// Line 2: Shared 6-State Predictive Slice / Scrap Yield Estimate (1:1 synchronized with M_LaserSheet_Master MID)
+	VM.YieldEstimateText = FText::FromString(Eval.ReticleYieldLine);
+	VM.YieldColor = Eval.ReticleYieldColor;
+	if (Eval.bOverrideReticleAccent)
 	{
-		VM.YieldEstimateText = LOCTEXT("ReticleNoContact", "CUT EST: --- (NO CONTACT)");
-		VM.YieldColor = NeutralIceColor;
-	}
-	else
-	{
-		const float EstSeveredKg = FMath::Max(0.0f, CachedPreview.EstimatedSeveredMassKg);
-		const float EstRemainderKg = FMath::Max(0.0f, CachedPreview.EstimatedRemainderMassKg);
-		const float ProjectedTareKg = FMath::Max(0.0f, CachedSnapshot.AccumulatedTareWasteKg) + EstSeveredKg;
-		const float MaxTareKg = FMath::Max(0.0f, CachedSnapshot.MaxAllowedTareWasteKg);
-		const bool bTareOverflow = ProjectedTareKg > (MaxTareKg + QuotaEpsilonKg);
-
-		if (bDirectVeinHit)
-		{
-			VM.YieldEstimateText = FText::FromString(
-				FString::Printf(TEXT("CUT EST: +%.2f KG [VEIN INTERSECT]"), EstSeveredKg));
-			VM.YieldColor = CrimsonColor;
-			VM.AccentColor = CrimsonColor;
-		}
-		else if (CachedPreview.bSeveredHalfContainsVein)
-		{
-			if (CachedSnapshot.ActiveDiverterRoute == EDiverterRoute::TitheScale)
-			{
-				VM.YieldEstimateText = FText::FromString(
-					FString::Printf(TEXT("CUT EST: +%.2f KG [VEIN -> SPACE]"), EstSeveredKg));
-				VM.YieldColor = AmberColor;
-				VM.AccentColor = AmberColor;
-			}
-			else if (bTareOverflow)
-			{
-				VM.YieldEstimateText = FText::FromString(
-					FString::Printf(TEXT("SCRAP EST: %.2f KG [TARE OVERFLOW!]"), EstSeveredKg));
-				VM.YieldColor = CrimsonColor;
-				VM.AccentColor = CrimsonColor;
-			}
-			else
-			{
-				VM.YieldEstimateText = FText::FromString(
-					FString::Printf(TEXT("SCRAP EST: %.2f KG [PURGE READY]"), EstSeveredKg));
-				VM.YieldColor = PurgeMintColor;
-			}
-		}
-		else if (CachedSnapshot.ActiveDiverterRoute == EDiverterRoute::TareChute)
-		{
-			if (bTareOverflow)
-			{
-				VM.YieldEstimateText = FText::FromString(
-					FString::Printf(TEXT("SCRAP EST: %.2f KG [TARE OVERFLOW!]"), EstSeveredKg));
-				VM.YieldColor = CrimsonColor;
-				VM.AccentColor = CrimsonColor;
-			}
-			else
-			{
-				VM.YieldEstimateText = FText::FromString(
-					FString::Printf(TEXT("SCRAP EST: %.2f KG (LEFT %.1f KG)"), EstSeveredKg, EstRemainderKg));
-				VM.YieldColor = AmberColor;
-			}
-		}
-		else
-		{
-			const float InFlightKg = FMath::Max(0.0f, CachedSnapshot.InFlightMassKg);
-			const float MinWinKg = FMath::Max(0.0f, TargetKg - ToleranceKg);
-			const float MaxWinKg = TargetKg + ToleranceKg;
-			const float ProjectedScaleKg = SettledKg + InFlightKg + EstSeveredKg;
-
-			if (ProjectedScaleKg > (MaxWinKg + QuotaEpsilonKg))
-			{
-				VM.YieldEstimateText = FText::FromString(
-					FString::Printf(TEXT("CUT EST: +%.2f -> %.2f KG [OVER!]"), EstSeveredKg, ProjectedScaleKg));
-				VM.YieldColor = CrimsonColor;
-				VM.AccentColor = CrimsonColor;
-			}
-			else if (ProjectedScaleKg >= (MinWinKg - QuotaEpsilonKg))
-			{
-				const float DirCutTolKg = FMath::Max(0.15f, CachedSnapshot.DirectorsCutToleranceKg);
-				if (FMath::Abs(ProjectedScaleKg - TargetKg) <= (DirCutTolKg + QuotaEpsilonKg))
-				{
-					VM.YieldEstimateText = FText::FromString(
-						FString::Printf(TEXT("CUT EST: +%.2f KG [DIRECTOR'S CUT!]"), EstSeveredKg));
-					VM.YieldColor = GoldColor;
-					VM.AccentColor = GoldColor;
-				}
-				else
-				{
-					VM.YieldEstimateText = FText::FromString(
-						FString::Printf(TEXT("CUT EST: +%.2f KG [IN WINDOW!]"), EstSeveredKg));
-					VM.YieldColor = EmeraldColor;
-					VM.AccentColor = EmeraldColor;
-				}
-			}
-			else
-			{
-				const float StillNeedKg = FMath::Max(0.01f, TargetKg - ProjectedScaleKg);
-				VM.YieldEstimateText = FText::FromString(
-					FString::Printf(TEXT("CUT EST: +%.2f KG (NEED +%.2f)"), EstSeveredKg, StillNeedKg));
-				VM.YieldColor = CyanColor;
-			}
-		}
+		VM.AccentColor = Eval.ReticleYieldColor;
 	}
 
 	// Line 3: Clamp Load & Torque Strain
@@ -1331,10 +1272,6 @@ void UInspectorHudBridgeComponent::PushBottomCrtConsole()
 		VM.OperationalStatusText = LOCTEXT("CrtStatusReady", "SCALE READY - HOLD [LMB] TO SLICE MONOLITH INTO TITHE");
 		VM.OperationalStatusColor = SkyBlue;
 	}
-
-	VM.ControlLegendText = LOCTEXT(
-		"CrtControlLegend",
-		"LMB: SLICE  |  SCROLL: ROLL  |  RMB: BEVEL  |  [SPACE]: ROUTE  |  [E]: STAMP  |  [1-3]: UPGRADE  |  HOLD [R]: RESET");
 
 	OverlayWidget->UpdateBottomCrtConsole(VM);
 }
@@ -1585,6 +1522,61 @@ void UInspectorHudBridgeComponent::OverrideCornerWidthForTest(float TestCornerWi
 	if (OverlayWidget.IsValid())
 	{
 		OverlayWidget->ApplyHudConfig(ActiveHudConfig);
+		PushAllPanels();
+	}
+}
+
+void UInspectorHudBridgeComponent::ToggleControlsCardVisibility()
+{
+	SetControlsCardExpanded(!bControlsCardExpanded);
+}
+
+void UInspectorHudBridgeComponent::SetControlsCardExpanded(bool bExpanded)
+{
+	bControlsCardExpanded = bExpanded;
+	if (OverlayWidget.IsValid())
+	{
+		OverlayWidget->SetControlsCardExpanded(bControlsCardExpanded);
+		PushReticleCard();
+	}
+}
+
+FVector2D UInspectorHudBridgeComponent::GetControlsCardBoundsMin() const
+{
+	return OverlayWidget.IsValid() ? OverlayWidget->GetResolvedLayoutTelemetry().ControlsCardMin : FVector2D::ZeroVector;
+}
+
+FVector2D UInspectorHudBridgeComponent::GetControlsCardBoundsMax() const
+{
+	return OverlayWidget.IsValid() ? OverlayWidget->GetResolvedLayoutTelemetry().ControlsCardMax : FVector2D::ZeroVector;
+}
+
+float UInspectorHudBridgeComponent::GetLastEffectiveControlsCardWidth() const
+{
+	return OverlayWidget.IsValid() ? OverlayWidget->GetResolvedLayoutTelemetry().EffectiveControlsCardWidth : 0.0f;
+}
+
+float UInspectorHudBridgeComponent::GetBottomConsoleMassBottomLocalY() const
+{
+	return OverlayWidget.IsValid() ? OverlayWidget->GetResolvedLayoutTelemetry().BottomConsoleMassBottomLocalY : 0.0f;
+}
+
+float UInspectorHudBridgeComponent::GetBottomConsoleAnalogBarTopLocalY() const
+{
+	return OverlayWidget.IsValid() ? OverlayWidget->GetResolvedLayoutTelemetry().BottomConsoleAnalogBarTopLocalY : 0.0f;
+}
+
+void UInspectorHudBridgeComponent::SetLaserChargeForTest(float NormalizedCharge)
+{
+	CachedLaserCharge = FMath::Clamp(NormalizedCharge, 0.0f, 1.0f);
+	PushReticleCard();
+}
+
+void UInspectorHudBridgeComponent::OverrideViewportSizeForTest(FVector2D TestLocalViewportSize, bool bEnableOverride)
+{
+	if (OverlayWidget.IsValid())
+	{
+		OverlayWidget->SetViewportSizeOverrideForTest(TestLocalViewportSize, bEnableOverride);
 		PushAllPanels();
 	}
 }

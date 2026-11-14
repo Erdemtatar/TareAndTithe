@@ -11,6 +11,7 @@
 class SBox;
 class SOverlay;
 class STopLeftIndenturePanel;
+class SLeftControlsCard;
 class STopRightDirectorPanel;
 class SCenterAlertBanner;
 class SReticleReadoutCard;
@@ -53,6 +54,9 @@ public:
 	// One-way push updates from UInspectorHudBridgeComponent (zero UObject pointers inside Slate)
 	void ApplyHudConfig(const FHudPresentationConfig& InConfig);
 	void SetLocalViewportSize(const FVector2D& InLocalViewportSize);
+	void SetViewportSizeOverrideForTest(const FVector2D& InTestViewportSize, bool bEnableOverride);
+	void SetControlsCardExpanded(bool bInExpanded);
+	bool IsControlsCardExpanded() const { return bIsControlsCardExpanded; }
 	void UpdateTopLeftPanel(const FTopLeftIndentureViewModel& ViewModel);
 	void UpdateTopRightPanel(const FTopRightDirectorViewModel& ViewModel);
 	void UpdateCenterAlertBanner(const FCenterAlertViewModel& ViewModel);
@@ -71,8 +75,10 @@ private:
 	void RefreshCenterBannerOffset();
 	EActiveTimerReturnType HandleDeferredViewportSync(double InCurrentTime, float InDeltaTime);
 
+	TSharedPtr<SBox> ViewportTestOverrideBox;
 	TSharedPtr<SOverlay> RootOverlay;
 	TSharedPtr<SBox> TopLeftWidthBox;
+	TSharedPtr<SBox> LeftControlsWidthBox;
 	TSharedPtr<SBox> TopRightWidthBox;
 	TSharedPtr<SBox> BottomConsoleWidthBox;
 	TSharedPtr<SBox> CenterBannerWidthBox;
@@ -84,6 +90,7 @@ private:
 	SOverlay::FOverlaySlot* CenterBannerOverlaySlot = nullptr;
 
 	TSharedPtr<STopLeftIndenturePanel> TopLeftPanel;
+	TSharedPtr<SLeftControlsCard> LeftControlsCard;
 	TSharedPtr<STopRightDirectorPanel> TopRightPanel;
 	TSharedPtr<SCenterAlertBanner> CenterAlertBanner;
 	TSharedPtr<SReticleReadoutCard> ReticleReadoutCard;
@@ -91,10 +98,14 @@ private:
 
 	FHudPresentationConfig ActiveConfig;
 	FVector2D EffectiveLocalViewportSize = FVector2D(1536.0f, 864.0f);
+	mutable FVector2D CachedUnoverriddenViewportSize = FVector2D(1536.0f, 864.0f);
 	FVector2D CachedReticleNormalizedUV = FVector2D(0.68f, 0.42f);
 	float CachedEffectiveCornerWidth = 522.2f;
+	float CachedEffectiveControlsWidth = 192.0f;
 	float CachedEffectiveBottomWidth = 720.0f;
 	uint64 LastObservedBannerGeneration = 0;
+	bool bIsControlsCardExpanded = true;
+	bool bHasTestViewportSizeOverride = false;
 	bool bIsCenterBannerTerminalStamp = false;
 
 	mutable FVector2D PendingObservedLocalSize = FVector2D::ZeroVector;

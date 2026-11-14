@@ -416,6 +416,299 @@ private:
 // ============================================================================
 // 2. TOP-RIGHT DIRECTOR OVERLOOK PANEL (+50% EXPANDED, PROPORTIONAL TYPOGRAPHY)
 // ============================================================================
+// ============================================================================
+// 1B. FAR-LEFT COMPACT CONTROLS CARD (WIDTH <= 245 PX, [H] TOGGLE MICRO-PILL)
+// ============================================================================
+class SLeftControlsCard : public SCompoundWidget
+{
+public:
+	static constexpr float PadLeftPx = 10.0f;
+	static constexpr float PadTopPx = 7.0f;
+	static constexpr float PadRightPx = 10.0f;
+	static constexpr float PadBottomPx = 7.0f;
+
+	SLATE_BEGIN_ARGS(SLeftControlsCard)
+	{
+		_Visibility = EVisibility::HitTestInvisible;
+	}
+	SLATE_END_ARGS()
+
+	void Construct(const FArguments& /*InArgs*/)
+	{
+		SetVisibility(EVisibility::HitTestInvisible);
+
+		const FSlateFontInfo HeaderFont = FCoreStyle::GetDefaultFontStyle("Bold", 9);
+		const FSlateFontInfo ToggleHintFont = FCoreStyle::GetDefaultFontStyle("Bold", 8);
+		const FSlateFontInfo KeyFont = FCoreStyle::GetDefaultFontStyle("Bold", 8);
+		const FSlateFontInfo ActionFont = FCoreStyle::GetDefaultFontStyle("Regular", 8);
+
+		struct FControlRowSpec
+		{
+			const TCHAR* KeyText;
+			const TCHAR* ActionText;
+		};
+		static const FControlRowSpec Rows[7] = {
+			{ TEXT("[LMB]"),    TEXT("HOLD SLICE") },
+			{ TEXT("[SCROLL]"), TEXT("ROLL (+SHIFT)") },
+			{ TEXT("[RMB]"),    TEXT("BEVEL / ABORT") },
+			{ TEXT("[SPACE]"),  TEXT("TITHE / TARE") },
+			{ TEXT("[E]"),      TEXT("STAMP / NEXT") },
+			{ TEXT("[1-3]"),    TEXT("UPGRADES") },
+			{ TEXT("HOLD [R]"), TEXT("PURGE CELL") }
+		};
+
+		TSharedRef<SVerticalBox> RowsList = SNew(SVerticalBox)
+			.Visibility(EVisibility::HitTestInvisible);
+
+		for (int32 Idx = 0; Idx < 7; ++Idx)
+		{
+			TSharedPtr<STextBlock> KeyBlock;
+			TSharedPtr<STextBlock> ActionBlock;
+
+			RowsList->AddSlot()
+			.AutoHeight()
+			.Padding(0.0f, (Idx == 0) ? 4.0f : 2.0f, 0.0f, 0.0f)
+			[
+				SNew(SHorizontalBox)
+				.Visibility(EVisibility::HitTestInvisible)
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				[
+					SAssignNew(KeyBlock, STextBlock)
+					.Visibility(EVisibility::HitTestInvisible)
+					.Font(KeyFont)
+					.Text(FText::FromString(Rows[Idx].KeyText))
+					.ColorAndOpacity(FLinearColor(1.00f, 0.80f, 0.18f, 0.96f))
+					.ShadowOffset(FVector2D(1.0f, 1.0f))
+					.ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.88f))
+				]
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				.HAlign(HAlign_Right)
+				.VAlign(VAlign_Center)
+				.Padding(4.0f, 0.0f, 0.0f, 0.0f)
+				[
+					SAssignNew(ActionBlock, STextBlock)
+					.Visibility(EVisibility::HitTestInvisible)
+					.Justification(ETextJustify::Right)
+					.Font(ActionFont)
+					.Text(FText::FromString(Rows[Idx].ActionText))
+					.ColorAndOpacity(FLinearColor(0.84f, 0.90f, 0.96f, 0.94f))
+					.ShadowOffset(FVector2D(1.0f, 1.0f))
+					.ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.88f))
+				]
+			];
+
+			KeyBlocks.Add(KeyBlock);
+			ActionBlocks.Add(ActionBlock);
+		}
+
+		ChildSlot
+		[
+			SNew(SVerticalBox)
+			.Visibility(EVisibility::HitTestInvisible)
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				SAssignNew(ExpandedContainer, SBox)
+				.Visibility(EVisibility::HitTestInvisible)
+				.Padding(FMargin(PadLeftPx, PadTopPx, PadRightPx, PadBottomPx))
+				[
+					SNew(SVerticalBox)
+					.Visibility(EVisibility::HitTestInvisible)
+
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 0.0f, 0.0f, 3.0f)
+					[
+						SNew(SHorizontalBox)
+						.Visibility(EVisibility::HitTestInvisible)
+
+						+ SHorizontalBox::Slot()
+						.FillWidth(1.0f)
+						.VAlign(VAlign_Center)
+						[
+							SAssignNew(HeaderTitleBlock, STextBlock)
+							.Visibility(EVisibility::HitTestInvisible)
+							.Font(HeaderFont)
+							.Text(FText::FromString(TEXT("CONTROLS")))
+							.ColorAndOpacity(FLinearColor(0.05f, 0.88f, 1.00f, 1.0f))
+							.ShadowOffset(FVector2D(1.0f, 1.0f))
+							.ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.88f))
+						]
+
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.VAlign(VAlign_Center)
+						.Padding(4.0f, 0.0f, 0.0f, 0.0f)
+						[
+							SAssignNew(HideHintBlock, STextBlock)
+							.Visibility(EVisibility::HitTestInvisible)
+							.Font(ToggleHintFont)
+							.Text(FText::FromString(TEXT("[H] HIDE")))
+							.ColorAndOpacity(FLinearColor(0.54f, 0.86f, 1.00f, 0.95f))
+							.ShadowOffset(FVector2D(1.0f, 1.0f))
+							.ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.85f))
+						]
+					]
+
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					[
+						RowsList
+					]
+				]
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				SAssignNew(CollapsedPillContainer, SBox)
+				.Visibility(EVisibility::Collapsed)
+				.Padding(FMargin(9.0f, 4.0f, 9.0f, 4.0f))
+				[
+					SAssignNew(CollapsedPillTextBlock, STextBlock)
+					.Visibility(EVisibility::HitTestInvisible)
+					.Font(ToggleHintFont)
+					.Text(FText::FromString(TEXT("[H] CONTROLS")))
+					.ColorAndOpacity(FLinearColor(0.05f, 0.88f, 1.00f, 0.96f))
+					.ShadowOffset(FVector2D(1.0f, 1.0f))
+					.ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.88f))
+				]
+			]
+		];
+	}
+
+	void SetConfig(const FHudPresentationConfig& InCfg)
+	{
+		Config = InCfg;
+	}
+
+	void SetExpanded(bool bInExpanded)
+	{
+		bExpanded = bInExpanded;
+		if (ExpandedContainer.IsValid())
+		{
+			ExpandedContainer->SetVisibility(bExpanded ? EVisibility::HitTestInvisible : EVisibility::Collapsed);
+		}
+		if (CollapsedPillContainer.IsValid())
+		{
+			CollapsedPillContainer->SetVisibility(bExpanded ? EVisibility::Collapsed : EVisibility::HitTestInvisible);
+		}
+		Invalidate(EInvalidateWidgetReason::LayoutAndVolatility);
+	}
+
+	bool IsExpanded() const { return bExpanded; }
+
+	void UpdateResponsiveTypography(float EffectiveCardWidth)
+	{
+		const bool bCompact = (EffectiveCardWidth < 212.0f);
+		const int32 HeaderPt = bCompact ? 8 : 9;
+		const int32 HintPt = bCompact ? 7 : 8;
+		const int32 RowPt = bCompact ? 7 : 8;
+		if (HeaderPt == CachedHeaderPt && RowPt == CachedRowPt)
+		{
+			return;
+		}
+		CachedHeaderPt = HeaderPt;
+		CachedRowPt = RowPt;
+
+		if (HeaderTitleBlock.IsValid())
+		{
+			HeaderTitleBlock->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", HeaderPt));
+		}
+		if (HideHintBlock.IsValid())
+		{
+			HideHintBlock->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", HintPt));
+		}
+		if (CollapsedPillTextBlock.IsValid())
+		{
+			CollapsedPillTextBlock->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", HintPt));
+		}
+		const FSlateFontInfo KeyFont = FCoreStyle::GetDefaultFontStyle("Bold", RowPt);
+		const FSlateFontInfo ActionFont = FCoreStyle::GetDefaultFontStyle("Regular", RowPt);
+		for (const TSharedPtr<STextBlock>& KeyBlk : KeyBlocks)
+		{
+			if (KeyBlk.IsValid())
+			{
+				KeyBlk->SetFont(KeyFont);
+			}
+		}
+		for (const TSharedPtr<STextBlock>& ActBlk : ActionBlocks)
+		{
+			if (ActBlk.IsValid())
+			{
+				ActBlk->SetFont(ActionFont);
+			}
+		}
+	}
+
+	virtual int32 OnPaint(
+		const FPaintArgs& Args,
+		const FGeometry& AllottedGeometry,
+		const FSlateRect& MyCullingRect,
+		FSlateWindowElementList& OutDrawElements,
+		int32 LayerId,
+		const FWidgetStyle& InWidgetStyle,
+		bool bParentEnabled) const override
+	{
+		const FVector2D Size = AllottedGeometry.GetLocalSize();
+		const float Alpha = bExpanded ? Config.CornerPanelOpacity : FMath::Min(0.82f, Config.CornerPanelOpacity);
+		const FLinearColor FillColor = TareTitheHudPaint::WithAlpha(Config.PanelAnthraciteTint, Alpha);
+		const FLinearColor BorderColor = Config.PanelBorderGunmetalTint;
+		const FLinearColor AccentCyan(0.05f, 0.86f, 1.00f, 0.92f);
+
+		TareTitheHudPaint::DrawSolidBox(OutDrawElements, LayerId, AllottedGeometry, FVector2D::ZeroVector, Size, FillColor);
+		TareTitheHudPaint::DrawPerimeterBorder(OutDrawElements, LayerId + 1, AllottedGeometry, FVector2D::ZeroVector, Size, 1.0f, BorderColor);
+		TareTitheHudPaint::DrawSolidBox(OutDrawElements, LayerId + 2, AllottedGeometry, FVector2D::ZeroVector, FVector2D(3.0f, Size.Y), AccentCyan);
+
+		if (bExpanded)
+		{
+			const float HeaderH = (HeaderTitleBlock.IsValid() && HeaderTitleBlock->GetDesiredSize().Y > 4.0f)
+				? HeaderTitleBlock->GetDesiredSize().Y
+				: 13.0f;
+			const float DividerY = PadTopPx + HeaderH + 2.0f;
+			TareTitheHudPaint::DrawSolidBox(
+				OutDrawElements,
+				LayerId + 1,
+				AllottedGeometry,
+				FVector2D(PadLeftPx - 2.0f, DividerY),
+				FVector2D(FMath::Max(0.0f, Size.X - (PadLeftPx + PadRightPx - 4.0f)), 1.0f),
+				FLinearColor(0.20f, 0.26f, 0.32f, 0.45f));
+		}
+
+		return SCompoundWidget::OnPaint(
+			Args,
+			AllottedGeometry,
+			MyCullingRect,
+			OutDrawElements,
+			LayerId + 3,
+			InWidgetStyle,
+			bParentEnabled);
+	}
+
+private:
+	FHudPresentationConfig Config;
+	bool bExpanded = true;
+	int32 CachedHeaderPt = -1;
+	int32 CachedRowPt = -1;
+
+	TSharedPtr<SBox> ExpandedContainer;
+	TSharedPtr<SBox> CollapsedPillContainer;
+	TSharedPtr<STextBlock> HeaderTitleBlock;
+	TSharedPtr<STextBlock> HideHintBlock;
+	TSharedPtr<STextBlock> CollapsedPillTextBlock;
+	TArray<TSharedPtr<STextBlock>> KeyBlocks;
+	TArray<TSharedPtr<STextBlock>> ActionBlocks;
+};
+
+// ============================================================================
+// 2. TOP-RIGHT DIRECTOR OVERLOOK INTERCOM PANEL
+// ============================================================================
 class STopRightDirectorPanel : public SCompoundWidget
 {
 public:
@@ -1085,17 +1378,16 @@ public:
 		const FSlateFontInfo MassHeroFont = FCoreStyle::GetDefaultFontStyle("Bold", 17);
 		const FSlateFontInfo BadgeFont = FCoreStyle::GetDefaultFontStyle("Bold", 9);
 		const FSlateFontInfo StatusFont = FCoreStyle::GetDefaultFontStyle("Bold", 9);
-		const FSlateFontInfo LegendFont = FCoreStyle::GetDefaultFontStyle("Regular", 8);
 
 		ChildSlot
-		.Padding(FMargin(14.0f, 9.0f, 14.0f, 8.0f))
+		.Padding(FMargin(14.0f, 8.0f, 14.0f, 7.0f))
 		[
 			SNew(SVerticalBox)
 			.Visibility(EVisibility::HitTestInvisible)
 
 			+ SVerticalBox::Slot()
 			.AutoHeight()
-			.Padding(0.0f, 0.0f, 0.0f, 4.0f)
+			.Padding(0.0f, 0.0f, 0.0f, 3.0f)
 			[
 				SNew(SHorizontalBox)
 				.Visibility(EVisibility::HitTestInvisible)
@@ -1130,7 +1422,7 @@ public:
 
 			+ SVerticalBox::Slot()
 			.AutoHeight()
-			.Padding(0.0f, 2.0f, 0.0f, 8.0f)
+			.Padding(0.0f, 2.0f, 0.0f, 6.0f)
 			[
 				SNew(SHorizontalBox)
 				.Visibility(EVisibility::HitTestInvisible)
@@ -1172,9 +1464,9 @@ public:
 
 			+ SVerticalBox::Slot()
 			.AutoHeight()
-			.Padding(0.0f, 0.0f, 0.0f, 4.0f)
+			.Padding(0.0f, 0.0f, 0.0f, 3.0f)
 			[
-				SNew(SBox)
+				SAssignNew(AnalogBarSpacerBox, SBox)
 				.Visibility(EVisibility::HitTestInvisible)
 				.HeightOverride(7.0f)
 			]
@@ -1182,23 +1474,12 @@ public:
 			+ SVerticalBox::Slot()
 			.AutoHeight()
 			.HAlign(HAlign_Center)
-			.Padding(0.0f, 1.0f, 0.0f, 4.0f)
+			.Padding(0.0f, 1.0f, 0.0f, 1.0f)
 			[
 				SAssignNew(OperationalStatusBlock, STextBlock)
 				.Visibility(EVisibility::HitTestInvisible)
 				.Justification(ETextJustify::Center)
 				.Font(StatusFont)
-			]
-
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			.HAlign(HAlign_Center)
-			[
-				SAssignNew(ControlLegendBlock, STextBlock)
-				.Visibility(EVisibility::HitTestInvisible)
-				.Justification(ETextJustify::Center)
-				.Font(LegendFont)
-				.ColorAndOpacity(FLinearColor(0.84f, 0.82f, 0.72f, 0.88f))
 			]
 		];
 	}
@@ -1240,11 +1521,10 @@ public:
 			OperationalStatusBlock->SetText(VM.OperationalStatusText);
 			OperationalStatusBlock->SetColorAndOpacity(VM.OperationalStatusColor);
 		}
-		if (ControlLegendBlock.IsValid())
-		{
-			ControlLegendBlock->SetText(VM.ControlLegendText);
-		}
 	}
+
+	float GetLastMassReadoutBottomLocalY() const { return LastMassReadoutBottomLocalY; }
+	float GetLastAnalogBarTopLocalY() const { return LastAnalogBarTopLocalY; }
 
 	virtual int32 OnPaint(
 		const FPaintArgs& Args,
@@ -1303,15 +1583,44 @@ public:
 			2.0f,
 			FLinearColor(0.08f, 0.78f, 0.92f, 0.75f));
 
+		const int32 OutLayerId = SCompoundWidget::OnPaint(
+			Args,
+			AllottedGeometry,
+			MyCullingRect,
+			OutDrawElements,
+			LayerId + 3,
+			InWidgetStyle,
+			bParentEnabled);
+
+		if (MassReadoutBlock.IsValid())
+		{
+			const FGeometry& MassGeom = MassReadoutBlock->GetPaintSpaceGeometry();
+			if (MassGeom.GetLocalSize().Y > 0.0f)
+			{
+				LastMassReadoutBottomLocalY = AllottedGeometry.AbsoluteToLocal(
+					MassGeom.GetAbsolutePositionAtCoordinates(FVector2D(0.0f, 1.0f))).Y;
+			}
+		}
+
 		const float BarLeftX = 16.0f;
 		const float BarWidth = FMath::Max(0.0f, Size.X - 32.0f);
-		const float BarTopY = FMath::Max(40.0f, Size.Y - 47.0f);
+		float BarTopY = FMath::Max(38.0f, Size.Y - 31.0f);
+		if (AnalogBarSpacerBox.IsValid())
+		{
+			const FGeometry& SpacerGeom = AnalogBarSpacerBox->GetPaintSpaceGeometry();
+			if (SpacerGeom.GetLocalSize().Y > 0.0f)
+			{
+				BarTopY = AllottedGeometry.AbsoluteToLocal(SpacerGeom.GetAbsolutePosition()).Y + 1.0f;
+			}
+		}
+		LastAnalogBarTopLocalY = BarTopY;
 		const float BarHeight = 5.0f;
+		const int32 BarLayerId = OutLayerId + 1;
 		if (BarWidth > 20.0f)
 		{
 			TareTitheHudPaint::DrawSolidBox(
 				OutDrawElements,
-				LayerId + 3,
+				BarLayerId,
 				AllottedGeometry,
 				FVector2D(BarLeftX, BarTopY),
 				FVector2D(BarWidth, BarHeight),
@@ -1323,7 +1632,7 @@ public:
 			{
 				TareTitheHudPaint::DrawSolidBox(
 					OutDrawElements,
-					LayerId + 3,
+					BarLayerId,
 					AllottedGeometry,
 					FVector2D(ValidMinX, BarTopY - 1.0f),
 					FVector2D(ValidMaxX - ValidMinX, BarHeight + 2.0f),
@@ -1336,7 +1645,7 @@ public:
 			{
 				TareTitheHudPaint::DrawSolidBox(
 					OutDrawElements,
-					LayerId + 3,
+					BarLayerId,
 					AllottedGeometry,
 					FVector2D(DirMinX, BarTopY - 1.0f),
 					FVector2D(DirMaxX - DirMinX, BarHeight + 2.0f),
@@ -1348,7 +1657,7 @@ public:
 			{
 				TareTitheHudPaint::DrawSolidBox(
 					OutDrawElements,
-					LayerId + 4,
+					BarLayerId + 1,
 					AllottedGeometry,
 					FVector2D(BarLeftX, BarTopY),
 					FVector2D(FillW, BarHeight),
@@ -1356,27 +1665,22 @@ public:
 			}
 		}
 
-		return SCompoundWidget::OnPaint(
-			Args,
-			AllottedGeometry,
-			MyCullingRect,
-			OutDrawElements,
-			LayerId + 5,
-			InWidgetStyle,
-			bParentEnabled);
+		return BarLayerId + 2;
 	}
 
 private:
 	FHudPresentationConfig Config;
 	FBottomCrtConsoleViewModel CurrentVM;
+	mutable float LastMassReadoutBottomLocalY = 0.0f;
+	mutable float LastAnalogBarTopLocalY = 0.0f;
 
+	TSharedPtr<SBox> AnalogBarSpacerBox;
 	TSharedPtr<STextBlock> ConsoleHeaderBlock;
 	TSharedPtr<STextBlock> WindowsSummaryBlock;
 	TSharedPtr<STextBlock> MassReadoutBlock;
 	TSharedPtr<STextBlock> TareBadgeBlock;
 	TSharedPtr<STextBlock> RouteBadgeBlock;
 	TSharedPtr<STextBlock> OperationalStatusBlock;
-	TSharedPtr<STextBlock> ControlLegendBlock;
 };
 
 // ============================================================================
@@ -1395,9 +1699,11 @@ void STareTitheHudOverlay::Construct(const FArguments& InArgs)
 	EffectiveLocalViewportSize = FVector2D(
 		FMath::Max(320.0f, InArgs._InitialLocalViewportSize.X),
 		FMath::Max(240.0f, InArgs._InitialLocalViewportSize.Y));
+	CachedUnoverriddenViewportSize = EffectiveLocalViewportSize;
 	SetVisibility(EVisibility::HitTestInvisible);
 
 	SAssignNew(TopLeftPanel, STopLeftIndenturePanel);
+	SAssignNew(LeftControlsCard, SLeftControlsCard);
 	SAssignNew(TopRightPanel, STopRightDirectorPanel);
 	SAssignNew(CenterAlertBanner, SCenterAlertBanner);
 	SAssignNew(ReticleReadoutCard, SReticleReadoutCard);
@@ -1405,18 +1711,41 @@ void STareTitheHudOverlay::Construct(const FArguments& InArgs)
 
 	ChildSlot
 	[
-		SAssignNew(RootOverlay, SOverlay)
+		SAssignNew(ViewportTestOverrideBox, SBox)
 		.Visibility(EVisibility::HitTestInvisible)
+		[
+			SAssignNew(RootOverlay, SOverlay)
+			.Visibility(EVisibility::HitTestInvisible)
 
 		+ SOverlay::Slot()
 		.Expose(TopLeftOverlaySlot)
 		.HAlign(HAlign_Left)
 		.VAlign(VAlign_Top)
 		[
-			SAssignNew(TopLeftWidthBox, SBox)
+			SNew(SVerticalBox)
 			.Visibility(EVisibility::HitTestInvisible)
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.HAlign(HAlign_Left)
 			[
-				TopLeftPanel.ToSharedRef()
+				SAssignNew(TopLeftWidthBox, SBox)
+				.Visibility(EVisibility::HitTestInvisible)
+				[
+					TopLeftPanel.ToSharedRef()
+				]
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.HAlign(HAlign_Left)
+			.Padding(0.0f, 8.0f, 0.0f, 0.0f)
+			[
+				SAssignNew(LeftControlsWidthBox, SBox)
+				.Visibility(EVisibility::HitTestInvisible)
+				[
+					LeftControlsCard.ToSharedRef()
+				]
 			]
 		]
 
@@ -1465,6 +1794,7 @@ void STareTitheHudOverlay::Construct(const FArguments& InArgs)
 				CenterAlertBanner.ToSharedRef()
 			]
 		]
+		]
 	];
 
 	ApplyHudConfig(ActiveConfig);
@@ -1498,6 +1828,29 @@ void STareTitheHudOverlay::RefreshResponsiveMetrics()
 	if (TopRightPanel.IsValid())
 	{
 		TopRightPanel->UpdateResponsiveTypography(CachedEffectiveCornerWidth);
+	}
+
+	// Sub-System 2 + Correction 4: Strict Width <= 232 <= 245 px and U_right <= 0.135 across 100% and 125% DPI.
+	const float MaxAllowedControlsWidthForU = FMath::FloorToFloat((LocalW * 0.135f) - Margin - 0.5f);
+	CachedEffectiveControlsWidth = FMath::Clamp(
+		FMath::Min(232.0f, MaxAllowedControlsWidthForU),
+		FMath::Min(132.0f, MaxAllowedControlsWidthForU),
+		245.0f);
+
+	if (LeftControlsCard.IsValid())
+	{
+		LeftControlsCard->UpdateResponsiveTypography(CachedEffectiveControlsWidth);
+	}
+	if (LeftControlsWidthBox.IsValid())
+	{
+		if (bIsControlsCardExpanded)
+		{
+			LeftControlsWidthBox->SetWidthOverride(CachedEffectiveControlsWidth);
+		}
+		else
+		{
+			LeftControlsWidthBox->SetWidthOverride(FOptionalSize());
+		}
 	}
 	if (TopLeftOverlaySlot != nullptr)
 	{
@@ -1579,6 +1932,36 @@ void STareTitheHudOverlay::RefreshReticleClampedOffset()
 	CardPos.X = FMath::Clamp(CardPos.X, Margin, FMath::Max(Margin, LocalSize.X - Margin - SafeW));
 	CardPos.Y = FMath::Clamp(CardPos.Y, Margin, FMath::Max(Margin, LocalSize.Y - Margin - SafeH));
 
+	const float TopLeftRightX = Margin + CachedEffectiveCornerWidth;
+	const float TopLeftBottomY = Margin + ((TopLeftPanel.IsValid() && TopLeftPanel->GetDesiredSize().Y > 10.0f)
+		? TopLeftPanel->GetDesiredSize().Y
+		: 118.0f);
+	if (CardPos.X < TopLeftRightX + 8.0f && CardPos.Y < TopLeftBottomY + 8.0f)
+	{
+		CardPos.Y = TopLeftBottomY + 8.0f;
+	}
+
+	if (LeftControlsCard.IsValid())
+	{
+		const FVector2D ControlsDesired = LeftControlsCard->GetDesiredSize();
+		const float ControlsW = bIsControlsCardExpanded
+			? CachedEffectiveControlsWidth
+			: ((ControlsDesired.X > 10.0f) ? ControlsDesired.X : 108.0f);
+		const float ControlsH = (ControlsDesired.Y > 10.0f)
+			? ControlsDesired.Y
+			: (bIsControlsCardExpanded ? 148.0f : 24.0f);
+		const float ControlsTopY = TopLeftBottomY + 8.0f;
+		const float ControlsBottomY = ControlsTopY + ControlsH;
+		const float ControlsRightX = Margin + ControlsW;
+
+		if (CardPos.X < ControlsRightX + 8.0f &&
+			CardPos.Y + SafeH > ControlsTopY - 6.0f &&
+			CardPos.Y < ControlsBottomY + 6.0f)
+		{
+			CardPos.X = FMath::Min(ControlsRightX + 8.0f, FMath::Max(Margin, LocalSize.X - Margin - SafeW));
+		}
+	}
+
 	const float TopRightLeftX = LocalSize.X - Margin - CachedEffectiveCornerWidth;
 	const float TopRightBottomY = Margin + ((TopRightPanel.IsValid() && TopRightPanel->GetDesiredSize().Y > 10.0f)
 		? TopRightPanel->GetDesiredSize().Y
@@ -1645,7 +2028,13 @@ EActiveTimerReturnType STareTitheHudOverlay::HandleDeferredViewportSync(double /
 void STareTitheHudOverlay::OnArrangeChildren(const FGeometry& AllottedGeometry, FArrangedChildren& ArrangedChildren) const
 {
 	const FVector2D ObservedLocalSize = AllottedGeometry.GetLocalSize();
-	if (ObservedLocalSize.X > 1.0f &&
+	if (ObservedLocalSize.X > 1.0f && ObservedLocalSize.Y > 1.0f)
+	{
+		CachedUnoverriddenViewportSize = ObservedLocalSize;
+	}
+
+	if (!bHasTestViewportSizeOverride &&
+		ObservedLocalSize.X > 1.0f &&
 		ObservedLocalSize.Y > 1.0f &&
 		!ObservedLocalSize.Equals(EffectiveLocalViewportSize, 0.5f) &&
 		!bViewportSyncScheduled)
@@ -1679,12 +2068,20 @@ int32 STareTitheHudOverlay::OnPaint(
 		InWidgetStyle,
 		bParentEnabled);
 
-	// Capture ground-truth painted local coordinates after child CachedGeometry is updated in the identical desktop-space AllottedGeometry.
-	LastResolvedLayout.LocalViewportSize = AllottedGeometry.GetLocalSize();
-	LastResolvedLayout.EffectiveCornerPanelWidth = CachedEffectiveCornerWidth;
-	LastResolvedLayout.EffectiveBottomConsoleWidth = CachedEffectiveBottomWidth;
+	const FGeometry& ReferenceGeom = (bHasTestViewportSizeOverride && RootOverlay.IsValid())
+		? RootOverlay->GetPaintSpaceGeometry()
+		: AllottedGeometry;
 
-	auto RecordChildLocalBounds = [&AllottedGeometry](
+	// Capture ground-truth painted local coordinates after child CachedGeometry is updated in the identical desktop-space ReferenceGeom.
+	LastResolvedLayout.LocalViewportSize = ReferenceGeom.GetLocalSize().X > 1.0f
+		? ReferenceGeom.GetLocalSize()
+		: EffectiveLocalViewportSize;
+	LastResolvedLayout.EffectiveCornerPanelWidth = CachedEffectiveCornerWidth;
+	LastResolvedLayout.EffectiveControlsCardWidth = CachedEffectiveControlsWidth;
+	LastResolvedLayout.EffectiveBottomConsoleWidth = CachedEffectiveBottomWidth;
+	LastResolvedLayout.bControlsCardExpanded = bIsControlsCardExpanded;
+
+	auto RecordChildLocalBounds = [&ReferenceGeom](
 		const TSharedPtr<SWidget>& Widget,
 		FVector2D& OutMin,
 		FVector2D& OutMax) -> bool
@@ -1701,14 +2098,23 @@ int32 STareTitheHudOverlay::OnPaint(
 		{
 			return false;
 		}
-		OutMin = AllottedGeometry.AbsoluteToLocal(ChildGeom.GetAbsolutePosition());
-		OutMax = AllottedGeometry.AbsoluteToLocal(ChildGeom.GetAbsolutePositionAtCoordinates(FVector2D(1.0f, 1.0f)));
+		OutMin = ReferenceGeom.AbsoluteToLocal(ChildGeom.GetAbsolutePosition());
+		OutMax = ReferenceGeom.AbsoluteToLocal(ChildGeom.GetAbsolutePositionAtCoordinates(FVector2D(1.0f, 1.0f)));
 		return true;
 	};
 
 	RecordChildLocalBounds(TopLeftPanel, LastResolvedLayout.TopLeftMin, LastResolvedLayout.TopLeftMax);
+	LastResolvedLayout.bControlsCardArranged = RecordChildLocalBounds(
+		LeftControlsCard,
+		LastResolvedLayout.ControlsCardMin,
+		LastResolvedLayout.ControlsCardMax);
 	RecordChildLocalBounds(TopRightPanel, LastResolvedLayout.TopRightMin, LastResolvedLayout.TopRightMax);
 	RecordChildLocalBounds(BottomCrtConsole, LastResolvedLayout.BottomConsoleMin, LastResolvedLayout.BottomConsoleMax);
+	if (BottomCrtConsole.IsValid())
+	{
+		LastResolvedLayout.BottomConsoleMassBottomLocalY = BottomCrtConsole->GetLastMassReadoutBottomLocalY();
+		LastResolvedLayout.BottomConsoleAnalogBarTopLocalY = BottomCrtConsole->GetLastAnalogBarTopLocalY();
+	}
 	LastResolvedLayout.bCenterBannerArranged = RecordChildLocalBounds(
 		CenterAlertBanner,
 		LastResolvedLayout.CenterBannerMin,
@@ -1741,6 +2147,10 @@ void STareTitheHudOverlay::ApplyHudConfig(const FHudPresentationConfig& InConfig
 	{
 		TopLeftPanel->SetConfig(ActiveConfig);
 	}
+	if (LeftControlsCard.IsValid())
+	{
+		LeftControlsCard->SetConfig(ActiveConfig);
+	}
 	if (TopRightPanel.IsValid())
 	{
 		TopRightPanel->SetConfig(ActiveConfig);
@@ -1762,14 +2172,59 @@ void STareTitheHudOverlay::ApplyHudConfig(const FHudPresentationConfig& InConfig
 
 void STareTitheHudOverlay::SetLocalViewportSize(const FVector2D& InLocalViewportSize)
 {
+	if (bHasTestViewportSizeOverride)
+	{
+		return;
+	}
 	const FVector2D ClampedSize(
 		FMath::Max(320.0f, InLocalViewportSize.X),
 		FMath::Max(240.0f, InLocalViewportSize.Y));
+	CachedUnoverriddenViewportSize = ClampedSize;
 	if (!EffectiveLocalViewportSize.Equals(ClampedSize, 0.25f))
 	{
 		EffectiveLocalViewportSize = ClampedSize;
 		RefreshResponsiveMetrics();
 	}
+}
+
+void STareTitheHudOverlay::SetViewportSizeOverrideForTest(const FVector2D& InTestViewportSize, bool bEnableOverride)
+{
+	bHasTestViewportSizeOverride = bEnableOverride;
+	const FVector2D TargetSize = bEnableOverride ? InTestViewportSize : CachedUnoverriddenViewportSize;
+	EffectiveLocalViewportSize = FVector2D(
+		FMath::Max(320.0f, TargetSize.X),
+		FMath::Max(240.0f, TargetSize.Y));
+	if (bEnableOverride)
+	{
+		ChildSlot.HAlign(HAlign_Left).VAlign(VAlign_Top);
+		if (ViewportTestOverrideBox.IsValid())
+		{
+			ViewportTestOverrideBox->SetWidthOverride(EffectiveLocalViewportSize.X);
+			ViewportTestOverrideBox->SetHeightOverride(EffectiveLocalViewportSize.Y);
+		}
+	}
+	else
+	{
+		ChildSlot.HAlign(HAlign_Fill).VAlign(VAlign_Fill);
+		if (ViewportTestOverrideBox.IsValid())
+		{
+			ViewportTestOverrideBox->SetWidthOverride(FOptionalSize());
+			ViewportTestOverrideBox->SetHeightOverride(FOptionalSize());
+		}
+	}
+	RefreshResponsiveMetrics();
+	Invalidate(EInvalidateWidgetReason::LayoutAndVolatility);
+}
+
+void STareTitheHudOverlay::SetControlsCardExpanded(bool bInExpanded)
+{
+	bIsControlsCardExpanded = bInExpanded;
+	if (LeftControlsCard.IsValid())
+	{
+		LeftControlsCard->SetExpanded(bIsControlsCardExpanded);
+	}
+	RefreshResponsiveMetrics();
+	Invalidate(EInvalidateWidgetReason::LayoutAndVolatility);
 }
 
 void STareTitheHudOverlay::UpdateTopLeftPanel(const FTopLeftIndentureViewModel& ViewModel)

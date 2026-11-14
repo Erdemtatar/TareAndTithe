@@ -98,6 +98,17 @@ enum class ETelemetryImpulseId : uint8
 	FaultTriggered      UMETA(DisplayName = "Contract Fault Triggered")
 };
 
+UENUM(BlueprintType)
+enum class ELaserSliceVisualState : uint8
+{
+	IdleOrSafeCyan             UMETA(DisplayName = "P6 Idle / Under-Quota Safe Cyan"),
+	IsotopeProximityAmber      UMETA(DisplayName = "P5 Isotope Proximity Amber"),
+	ValidQuotaOrPurgeEmerald   UMETA(DisplayName = "P4 Valid Quota Window / Tare Purge Emerald"),
+	TitheQuotaOvershootMagenta UMETA(DisplayName = "P3 Tithe Quota Overshoot Magenta"),
+	VeinHazardYellow           UMETA(DisplayName = "P2 Vein In Tithe Drop Yellow"),
+	FaultOrCriticalRed         UMETA(DisplayName = "P1 Fault / Vein Intersect / Tare Overflow Red")
+};
+
 USTRUCT(BlueprintType)
 struct FVolatileVeinDefinition
 {
@@ -293,6 +304,253 @@ struct FContractRuntimeSnapshot
 };
 
 using FShiftHudSnapshot = FContractRuntimeSnapshot;
+
+struct FLaserSlicePaletteColors
+{
+	FLinearColor SafeIdleColor = FLinearColor(0.04f, 0.52f, 0.78f, 1.0f);
+	FLinearColor IntersectCyanColor = FLinearColor(0.08f, 0.88f, 1.00f, 1.0f);
+	FLinearColor WindowMatchEmeraldColor = FLinearColor(0.04f, 0.96f, 0.36f, 1.0f);
+	FLinearColor TarePurgeReadyColor = FLinearColor(0.06f, 0.94f, 0.62f, 1.0f);
+	FLinearColor VeinDropYellowColor = FLinearColor(1.00f, 0.88f, 0.04f, 1.0f);
+	FLinearColor IsotopeProximityAmberColor = FLinearColor(1.00f, 0.36f, 0.02f, 1.0f);
+	FLinearColor OvershootMagentaColor = FLinearColor(0.94f, 0.04f, 0.78f, 1.0f);
+	float OvershootEmissiveGain = 1.45f;
+	FLinearColor DangerCrimsonColor = FLinearColor(1.00f, 0.05f, 0.03f, 1.0f);
+	FLinearColor CapacitorHotWhiteColor = FLinearColor(1.00f, 0.94f, 0.78f, 1.0f);
+};
+
+struct FLaserSliceVisualEvaluation
+{
+	ELaserSliceVisualState AimState = ELaserSliceVisualState::IdleOrSafeCyan;
+	FLinearColor LaserBaseHue = FLinearColor(0.04f, 0.52f, 0.78f, 1.0f);
+	FLinearColor LaserFinalEmissive = FLinearColor(0.04f, 0.52f, 0.78f, 1.0f);
+	float SheetOpacity = 0.18f;
+	FString ReticleYieldLine;
+	FLinearColor ReticleYieldColor = FLinearColor(0.82f, 0.94f, 1.00f, 1.0f);
+	bool bOverrideReticleAccent = false;
+	bool bValidContact = false;
+	bool bDirectVeinHit = false;
+	bool bIsCapacitorSlicing = false;
+};
+
+/**
+ * Single shared source-of-truth 6-state evaluator consumed identically by 3D M_LaserSheet_Master MID
+ * and 2D STareTitheHudOverlay reticle readout so laser hue and reticle text never diverge.
+ * Priority: P1 FaultOrCriticalRed > P2 VeinHazardYellow > P3 TitheQuotaOvershootMagenta
+ *         > P4 ValidQuotaOrPurgeEmerald > P5 IsotopeProximityAmber > P6 IdleOrSafeCyan,
+ * plus continuous active capacitor heat-surge modulation when LaserChargeNormalized > 0.02f.
+ */
+inline FLaserSliceVisualEvaluation EvaluateLaserSliceVisualState(
+	const FContractRuntimeSnapshot& Snapshot,
+	const FSlicePreviewTelemetry& Preview,
+	bool bIntersectsMonolith,
+	bool bIsFaultLockoutPhase,
+	float VeinProximityNormalized,
+	float LaserChargeNormalized,
+	const FLaserSlicePaletteColors& Palette = FLaserSlicePaletteColors())
+{
+	constexpr float QuotaEps = 1.0e-3f;
+	constexpr float MinValidContactMassKg = 0.05f;
+	constexpr float MaxUnchargedBloomSafeEmissive = 1.58f;
+
+	FLaserSliceVisualEvaluation Out;
+	Out.bValidContact = bIntersectsMonolith &&
+		Preview.bHasValidMassEstimate &&
+		(Preview.EstimatedSeveredMassKg >= MinValidContactMassKg);
+	Out.bDirectVeinHit = bIntersectsMonolith && Preview.bWillDetonate;
+
+	const float EstSeveredKg = FMath::Max(0.0f, Preview.EstimatedSeveredMassKg);
+	const float EstRemainderKg = FMath::Max(0.0f, Preview.EstimatedRemainderMassKg);
+	const float SettledKg = FMath::Max(0.0f, Snapshot.SettledScaleMassKg);
+	const float InFlightKg = FMath::Max(0.0f, Snapshot.InFlightMassKg);
+	const float TargetKg = FMath::Max(0.0f, Snapshot.TargetTitheMassKg);
+	const float ToleranceKg = FMath::Max(0.0f, Snapshot.QuotaToleranceKg);
+	const float DirCutTolKg = FMath::Max(0.15f, Snapshot.DirectorsCutToleranceKg);
+	const float MinWinKg = FMath::Max(0.0f, TargetKg - ToleranceKg);
+	const float MaxWinKg = TargetKg + ToleranceKg;
+	const float ProjectedScaleKg = SettledKg + InFlightKg + EstSeveredKg;
+	const float ProjectedTareKg = FMath::Max(0.0f, Snapshot.AccumulatedTareWasteKg) + EstSeveredKg;
+	const float MaxTareKg = FMath::Max(0.0f, Snapshot.MaxAllowedTareWasteKg);
+	const bool bTareOverflowRisk = ProjectedTareKg > (MaxTareKg + QuotaEps);
+	const EDiverterRoute Route = Snapshot.ActiveDiverterRoute;
+	const float SafeProx = FMath::Clamp(VeinProximityNormalized, 0.0f, 1.0f);
+	const float SafeCharge = FMath::Clamp(LaserChargeNormalized, 0.0f, 1.0f);
+
+	const FLinearColor UiCyan(0.05f, 0.90f, 1.00f, 1.0f);
+	const FLinearColor UiEmerald(0.10f, 0.98f, 0.44f, 1.0f);
+	const FLinearColor UiGold(1.00f, 0.84f, 0.18f, 1.0f);
+	const FLinearColor UiYellowGold(1.00f, 0.88f, 0.08f, 1.0f);
+	const FLinearColor UiAmber(1.00f, 0.66f, 0.10f, 1.0f);
+	const FLinearColor UiCrimson(1.00f, 0.22f, 0.16f, 1.0f);
+	const FLinearColor UiPurgeMint(0.08f, 0.96f, 0.66f, 1.0f);
+	const FLinearColor UiOvershootMagenta(0.98f, 0.22f, 0.86f, 1.0f);
+	const FLinearColor UiNeutralIce(0.82f, 0.94f, 1.00f, 1.0f);
+
+	float AimEmissiveGain = 1.0f;
+
+	// P1: Fault Lockout / Direct Vein Intersect / Tare Overflow
+	if (bIsFaultLockoutPhase || Out.bDirectVeinHit || (Out.bValidContact && Route == EDiverterRoute::TareChute && bTareOverflowRisk))
+	{
+		Out.AimState = ELaserSliceVisualState::FaultOrCriticalRed;
+		Out.LaserBaseHue = Palette.DangerCrimsonColor;
+		AimEmissiveGain = 1.0f + (SafeProx * 0.45f);
+		Out.SheetOpacity = (bIsFaultLockoutPhase && !Out.bValidContact && !Out.bDirectVeinHit) ? 0.24f : 0.46f;
+		Out.ReticleYieldColor = UiCrimson;
+		Out.bOverrideReticleAccent = true;
+
+		if (bIsFaultLockoutPhase)
+		{
+			Out.ReticleYieldLine = TEXT("STATION FAULT - AUTO-RESET");
+		}
+		else if (Out.bDirectVeinHit)
+		{
+			Out.ReticleYieldLine = FString::Printf(TEXT("CUT EST: +%.2f KG [VEIN INTERSECT]"), EstSeveredKg);
+		}
+		else
+		{
+			Out.ReticleYieldLine = FString::Printf(TEXT("SCRAP EST: %.2f KG [TARE OVERFLOW!]"), EstSeveredKg);
+		}
+	}
+	// P2: Contaminated Severed Half Routed to Tithe Scale
+	else if (Out.bValidContact && Preview.bSeveredHalfContainsVein && Route == EDiverterRoute::TitheScale)
+	{
+		Out.AimState = ELaserSliceVisualState::VeinHazardYellow;
+		const float CrimsonAlpha = FMath::Clamp((SafeProx - 0.65f) / 0.35f, 0.0f, 1.0f);
+		Out.LaserBaseHue = FMath::Lerp(Palette.VeinDropYellowColor, Palette.DangerCrimsonColor, CrimsonAlpha);
+		AimEmissiveGain = 1.15f;
+		Out.SheetOpacity = 0.46f;
+		Out.ReticleYieldLine = FString::Printf(TEXT("CUT EST: +%.2f KG [VEIN -> SPACE]"), EstSeveredKg);
+		Out.ReticleYieldColor = UiYellowGold;
+		Out.bOverrideReticleAccent = true;
+	}
+	// P3: Tithe Quota Overshoot (OvershootMagenta — strictly never triggers on TareChute)
+	else if (Out.bValidContact && Route == EDiverterRoute::TitheScale && !Preview.bSeveredHalfContainsVein && ProjectedScaleKg > (MaxWinKg + QuotaEps))
+	{
+		Out.AimState = ELaserSliceVisualState::TitheQuotaOvershootMagenta;
+		Out.LaserBaseHue = Palette.OvershootMagentaColor;
+		AimEmissiveGain = Palette.OvershootEmissiveGain;
+		Out.SheetOpacity = 0.46f;
+		Out.ReticleYieldLine = FString::Printf(TEXT("CUT EST: +%.2f -> %.2f KG [OVER!]"), EstSeveredKg, ProjectedScaleKg);
+		Out.ReticleYieldColor = UiOvershootMagenta;
+		Out.bOverrideReticleAccent = true;
+	}
+	// P4: Valid Tithe Quota Window (including Director's Cut) OR Clean Tare Vein Purge
+	else if (Out.bValidContact &&
+		((Route == EDiverterRoute::TitheScale && !Preview.bSeveredHalfContainsVein && ProjectedScaleKg >= (MinWinKg - QuotaEps) && ProjectedScaleKg <= (MaxWinKg + QuotaEps)) ||
+		 (Route == EDiverterRoute::TareChute && Preview.bSeveredHalfContainsVein && !bTareOverflowRisk)))
+	{
+		Out.AimState = ELaserSliceVisualState::ValidQuotaOrPurgeEmerald;
+		Out.SheetOpacity = 0.48f;
+		AimEmissiveGain = 1.15f;
+
+		if (Route == EDiverterRoute::TareChute)
+		{
+			Out.LaserBaseHue = Palette.TarePurgeReadyColor;
+			Out.ReticleYieldLine = FString::Printf(TEXT("SCRAP EST: %.2f KG [PURGE READY]"), EstSeveredKg);
+			Out.ReticleYieldColor = UiPurgeMint;
+		}
+		else
+		{
+			Out.LaserBaseHue = Palette.WindowMatchEmeraldColor;
+			Out.bOverrideReticleAccent = true;
+			if (FMath::Abs(ProjectedScaleKg - TargetKg) <= (DirCutTolKg + QuotaEps))
+			{
+				Out.ReticleYieldLine = FString::Printf(TEXT("CUT EST: +%.2f KG [DIRECTOR'S CUT!]"), EstSeveredKg);
+				Out.ReticleYieldColor = UiGold;
+			}
+			else
+			{
+				Out.ReticleYieldLine = FString::Printf(TEXT("CUT EST: +%.2f KG [IN WINDOW!]"), EstSeveredKg);
+				Out.ReticleYieldColor = UiEmerald;
+			}
+		}
+	}
+	// P5: Passive Isotope Proximity Warning (>= 0.35f) on Under-Quota Tithe or Clean Tare Scrap
+	else if (Out.bValidContact && !Preview.bSeveredHalfContainsVein && SafeProx >= 0.35f)
+	{
+		Out.AimState = ELaserSliceVisualState::IsotopeProximityAmber;
+		const float CrimsonAlpha = FMath::Clamp((SafeProx - 0.35f) / 0.65f, 0.0f, 1.0f);
+		Out.LaserBaseHue = FMath::Lerp(Palette.IsotopeProximityAmberColor, Palette.DangerCrimsonColor, CrimsonAlpha * 0.65f);
+		AimEmissiveGain = 1.25f;
+		Out.SheetOpacity = 0.46f;
+		Out.ReticleYieldLine = FString::Printf(TEXT("CUT EST: +%.2f KG [ISOTOPE PROX!]"), EstSeveredKg);
+		Out.ReticleYieldColor = UiAmber;
+		Out.bOverrideReticleAccent = true;
+	}
+	// P6: Idle No-Contact OR Safe Under-Quota Tithe OR Safe Non-Vein Tare Scrap
+	else
+	{
+		Out.AimState = ELaserSliceVisualState::IdleOrSafeCyan;
+		if (!Out.bValidContact)
+		{
+			Out.LaserBaseHue = Palette.SafeIdleColor;
+			Out.SheetOpacity = 0.18f;
+			Out.ReticleYieldLine = TEXT("CUT EST: --- (NO CONTACT)");
+			Out.ReticleYieldColor = UiNeutralIce;
+		}
+		else if (Route == EDiverterRoute::TareChute)
+		{
+			Out.LaserBaseHue = Palette.IntersectCyanColor;
+			Out.SheetOpacity = 0.42f;
+			Out.ReticleYieldLine = FString::Printf(TEXT("SCRAP EST: %.2f KG (LEFT %.1f KG)"), EstSeveredKg, EstRemainderKg);
+			Out.ReticleYieldColor = UiCyan;
+		}
+		else
+		{
+			Out.LaserBaseHue = Palette.IntersectCyanColor;
+			Out.SheetOpacity = 0.42f;
+			const float StillNeedKg = FMath::Max(0.01f, TargetKg - ProjectedScaleKg);
+			Out.ReticleYieldLine = FString::Printf(TEXT("CUT EST: +%.2f KG (NEED +%.2f)"), EstSeveredKg, StillNeedKg);
+			Out.ReticleYieldColor = UiCyan;
+		}
+	}
+
+	// Continuous Active Capacitor Firing Heat-Surge Modulation (applied ON TOP of the 6-state aiming evaluation)
+	if (SafeCharge > 0.02f)
+	{
+		Out.bIsCapacitorSlicing = true;
+		const float ChargeAlpha = FMath::Clamp((SafeCharge - 0.02f) / 0.98f, 0.0f, 1.0f);
+		const float SurgeEmissiveBoost = 1.0f + (SafeCharge * 3.0f);
+		const int32 ChargePct = FMath::Clamp(FMath::RoundToInt(SafeCharge * 100.0f), 1, 100);
+
+		if (Out.AimState == ELaserSliceVisualState::FaultOrCriticalRed)
+		{
+			const FLinearColor HotCrimson(1.00f, 0.24f, 0.16f, 1.0f);
+			Out.LaserFinalEmissive = FMath::Lerp(Palette.DangerCrimsonColor, HotCrimson, ChargeAlpha * 0.65f) * SurgeEmissiveBoost;
+			Out.ReticleYieldLine += FString::Printf(TEXT(" [SLICING... %d%%]"), ChargePct);
+		}
+		else
+		{
+			const float ToAmberAlpha = FMath::Clamp(ChargeAlpha * 2.2f, 0.0f, 1.0f);
+			const float ToHotWhiteAlpha = FMath::Clamp((ChargeAlpha - 0.35f) / 0.65f, 0.0f, 1.0f);
+			const FLinearColor HeatedHue = FMath::Lerp(
+				FMath::Lerp(Out.LaserBaseHue, Palette.IsotopeProximityAmberColor, ToAmberAlpha),
+				Palette.CapacitorHotWhiteColor,
+				ToHotWhiteAlpha * 0.78f);
+			Out.LaserFinalEmissive = HeatedHue * SurgeEmissiveBoost;
+			Out.ReticleYieldLine += FString::Printf(TEXT(" [SLICING... %d%%]"), ChargePct);
+			Out.ReticleYieldColor = FMath::Lerp(Out.ReticleYieldColor, UiAmber, FMath::Clamp(ChargeAlpha * 1.4f, 0.35f, 1.0f));
+			Out.bOverrideReticleAccent = true;
+		}
+		Out.LaserFinalEmissive.A = 1.0f;
+	}
+	else
+	{
+		FLinearColor UnchargedEmissive = Out.LaserBaseHue * AimEmissiveGain;
+		const float MaxChannel = FMath::Max3(UnchargedEmissive.R, UnchargedEmissive.G, UnchargedEmissive.B);
+		if (MaxChannel > MaxUnchargedBloomSafeEmissive)
+		{
+			const float ClampScale = MaxUnchargedBloomSafeEmissive / MaxChannel;
+			UnchargedEmissive.R *= ClampScale;
+			UnchargedEmissive.G *= ClampScale;
+			UnchargedEmissive.B *= ClampScale;
+		}
+		UnchargedEmissive.A = 1.0f;
+		Out.LaserFinalEmissive = UnchargedEmissive;
+	}
+
+	return Out;
+}
 
 // Native C++ Telemetry Signatures (Zero UHT overhead, zero concrete coupling)
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnTelemetryStreamSignature, ETelemetryStreamId /*StreamId*/, float /*NormalizedValue*/);

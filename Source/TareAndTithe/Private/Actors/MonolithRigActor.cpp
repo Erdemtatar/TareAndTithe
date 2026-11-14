@@ -62,6 +62,12 @@ AMonolithRigActor::AMonolithRigActor()
 		ClampJawVisual->SetStaticMesh(FallbackCubeMesh);
 	}
 
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderMeshFinder(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	if (CylinderMeshFinder.Succeeded())
+	{
+		FallbackCylinderMesh = CylinderMeshFinder.Object;
+	}
+
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> FlattenMatFinder(
 		TEXT("/Engine/EngineMaterials/FlattenMaterial.FlattenMaterial"));
 	if (FlattenMatFinder.Succeeded())
@@ -69,6 +75,141 @@ AMonolithRigActor::AMonolithRigActor()
 		BaseGreyboxShapeMaterial = FlattenMatFinder.Object;
 		ClampJawVisual->SetMaterial(0, BaseGreyboxShapeMaterial);
 	}
+
+	auto ConfigureStationaryUpgradeVisual = [this](
+		UStaticMeshComponent* UpgradeComp,
+		UStaticMesh* MeshToUse,
+		const FVector& RelLocationCm,
+		const FRotator& RelRotationDeg,
+		const FVector& RelScale)
+	{
+		UpgradeComp->SetupAttachment(ClampPivotRoot);
+		UpgradeComp->PrimaryComponentTick.bCanEverTick = false;
+		UpgradeComp->PrimaryComponentTick.bStartWithTickEnabled = false;
+		UpgradeComp->SetSimulatePhysics(false);
+		UpgradeComp->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
+		UpgradeComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		UpgradeComp->SetGenerateOverlapEvents(false);
+		UpgradeComp->SetCanEverAffectNavigation(false);
+		UpgradeComp->SetCastShadow(false);
+		UpgradeComp->SetAffectDistanceFieldLighting(false);
+		UpgradeComp->SetAffectDynamicIndirectLighting(false);
+		UpgradeComp->SetVisibleInRayTracing(false);
+		UpgradeComp->bReceivesDecals = false;
+		if (IsValid(MeshToUse))
+		{
+			UpgradeComp->SetStaticMesh(MeshToUse);
+		}
+		if (IsValid(BaseGreyboxShapeMaterial))
+		{
+			UpgradeComp->SetMaterial(0, BaseGreyboxShapeMaterial);
+		}
+		UpgradeComp->SetRelativeLocation(RelLocationCm);
+		UpgradeComp->SetRelativeRotation(RelRotationDeg);
+		UpgradeComp->SetRelativeScale3D(RelScale);
+		UpgradeComp->SetVisibility(false, false);
+		UpgradeComp->SetHiddenInGame(true, false);
+	};
+
+	UStaticMesh* CylOrCubeMesh = IsValid(FallbackCylinderMesh) ? FallbackCylinderMesh.Get() : FallbackCubeMesh.Get();
+
+	// [1] HYD L1 & L2: Brushed-steel stabilization cylinders & outboard accumulator tanks flanking ClampSpringHousing (World Z >= 240.4 cm, |Y| >= 26.0 cm).
+	HydUpgradeCylinderLeftL1 = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("HydUpgradeCylinderLeftL1"));
+	ConfigureStationaryUpgradeVisual(
+		HydUpgradeCylinderLeftL1,
+		CylOrCubeMesh,
+		FVector(-10.0, -33.0, -8.5),
+		FRotator(0.0f, 0.0f, -20.0f),
+		FVector(0.072, 0.072, 0.210));
+
+	HydUpgradeCylinderRightL1 = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("HydUpgradeCylinderRightL1"));
+	ConfigureStationaryUpgradeVisual(
+		HydUpgradeCylinderRightL1,
+		CylOrCubeMesh,
+		FVector(-10.0, +33.0, -8.5),
+		FRotator(0.0f, 0.0f, +20.0f),
+		FVector(0.072, 0.072, 0.210));
+
+	HydUpgradeAccumulatorLeftL2 = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("HydUpgradeAccumulatorLeftL2"));
+	ConfigureStationaryUpgradeVisual(
+		HydUpgradeAccumulatorLeftL2,
+		CylOrCubeMesh,
+		FVector(-12.0, -40.5, -6.0),
+		FRotator::ZeroRotator,
+		FVector(0.088, 0.088, 0.200));
+
+	HydUpgradeAccumulatorRightL2 = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("HydUpgradeAccumulatorRightL2"));
+	ConfigureStationaryUpgradeVisual(
+		HydUpgradeAccumulatorRightL2,
+		CylOrCubeMesh,
+		FVector(-12.0, +40.5, -6.0),
+		FRotator::ZeroRotator,
+		FVector(0.088, 0.088, 0.200));
+
+	// [3] SCAN L1 & L2: Angled optical scanner pods + bloom-safe cyan sensor lenses & resonance damper arrays (World Z >= 238.2 cm, |Y| >= 27.6 cm).
+	ScanUpgradePodLeftL1 = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ScanUpgradePodLeftL1"));
+	ConfigureStationaryUpgradeVisual(
+		ScanUpgradePodLeftL1,
+		FallbackCubeMesh,
+		FVector(-15.0, -31.5, -18.0),
+		FRotator(0.0f, 0.0f, +16.0f),
+		FVector(0.090, 0.064, 0.060));
+
+	ScanUpgradePodRightL1 = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ScanUpgradePodRightL1"));
+	ConfigureStationaryUpgradeVisual(
+		ScanUpgradePodRightL1,
+		FallbackCubeMesh,
+		FVector(-15.0, +31.5, -18.0),
+		FRotator(0.0f, 0.0f, -16.0f),
+		FVector(0.090, 0.064, 0.060));
+
+	ScanUpgradeLensLeftL1 = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ScanUpgradeLensLeftL1"));
+	ConfigureStationaryUpgradeVisual(
+		ScanUpgradeLensLeftL1,
+		CylOrCubeMesh,
+		FVector(-19.8, -31.5, -18.0),
+		FRotator(90.0f, 0.0f, 0.0f),
+		FVector(0.044, 0.044, 0.018));
+
+	ScanUpgradeLensRightL1 = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ScanUpgradeLensRightL1"));
+	ConfigureStationaryUpgradeVisual(
+		ScanUpgradeLensRightL1,
+		CylOrCubeMesh,
+		FVector(-19.8, +31.5, -18.0),
+		FRotator(90.0f, 0.0f, 0.0f),
+		FVector(0.044, 0.044, 0.018));
+
+	ScanUpgradeArrayLeftL2 = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ScanUpgradeArrayLeftL2"));
+	ConfigureStationaryUpgradeVisual(
+		ScanUpgradeArrayLeftL2,
+		FallbackCubeMesh,
+		FVector(-16.0, -39.5, -16.5),
+		FRotator(0.0f, 0.0f, +12.0f),
+		FVector(0.082, 0.054, 0.092));
+
+	ScanUpgradeArrayRightL2 = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ScanUpgradeArrayRightL2"));
+	ConfigureStationaryUpgradeVisual(
+		ScanUpgradeArrayRightL2,
+		FallbackCubeMesh,
+		FVector(-16.0, +39.5, -16.5),
+		FRotator(0.0f, 0.0f, -12.0f),
+		FVector(0.082, 0.054, 0.092));
+
+	ScanUpgradeEmitterLeftL2 = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ScanUpgradeEmitterLeftL2"));
+	ConfigureStationaryUpgradeVisual(
+		ScanUpgradeEmitterLeftL2,
+		FallbackCubeMesh,
+		FVector(-20.4, -39.5, -16.5),
+		FRotator(0.0f, 0.0f, +12.0f),
+		FVector(0.018, 0.038, 0.074));
+
+	ScanUpgradeEmitterRightL2 = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ScanUpgradeEmitterRightL2"));
+	ConfigureStationaryUpgradeVisual(
+		ScanUpgradeEmitterRightL2,
+		FallbackCubeMesh,
+		FVector(-20.4, +39.5, -16.5),
+		FRotator(0.0f, 0.0f, -12.0f),
+		FVector(0.018, 0.038, 0.074));
 
 	RemainderMeshComponent = CreateDefaultSubobject<UDynamicMeshComponent>(TEXT("RemainderMeshComponent"));
 	RemainderMeshComponent->SetupAttachment(TiltingMountComponent);
@@ -106,6 +247,7 @@ void AMonolithRigActor::BeginPlay()
 	Super::BeginPlay();
 
 	EnsureGreyboxMaterialsInitialized();
+	ApplyUpgradeHardwareMaterials();
 
 	if (IsValid(MoltenThermalLightComponent))
 	{
@@ -586,6 +728,9 @@ void AMonolithRigActor::ApplyPresentationData(const UTareTithePresentationDataAs
 			ResolveEffectiveCutCapMaterial(CachedLoadedContract)
 		});
 	}
+
+	ApplyUpgradeHardwareMaterials();
+	UpdateRigUpgradeHardwareVisuals(CachedHydUpgradeLevel, CachedScanUpgradeLevel);
 }
 
 void AMonolithRigActor::EnsureGreyboxMaterialsInitialized()
@@ -657,6 +802,132 @@ void AMonolithRigActor::EnsureGreyboxMaterialsInitialized()
 			ClampJawVisual->SetMaterial(0, ClampJawMID);
 		}
 	}
+
+	if (!IsValid(FallbackUpgradeSteelMID))
+	{
+		FallbackUpgradeSteelMID = UMaterialInstanceDynamic::Create(BaseGreyboxShapeMaterial, this);
+		if (IsValid(FallbackUpgradeSteelMID))
+		{
+			const FLinearColor BrushedSteelColor(0.34f, 0.36f, 0.40f, 1.0f);
+			FallbackUpgradeSteelMID->SetVectorParameterValue(TEXT("BaseColorConst"), BrushedSteelColor);
+			FallbackUpgradeSteelMID->SetVectorParameterValue(TEXT("Color"), BrushedSteelColor);
+			FallbackUpgradeSteelMID->SetVectorParameterValue(TEXT("EmissiveColorConst"), FLinearColor::Black);
+			FallbackUpgradeSteelMID->SetScalarParameterValue(TEXT("EmissiveScale"), 0.0f);
+			FallbackUpgradeSteelMID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.36f);
+			FallbackUpgradeSteelMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.88f);
+		}
+	}
+
+	if (!IsValid(ScanOpticalSensorMID))
+	{
+		ScanOpticalSensorMID = UMaterialInstanceDynamic::Create(BaseGreyboxShapeMaterial, this);
+		if (IsValid(ScanOpticalSensorMID))
+		{
+			// Correction 4: Bloom-safe (< 1.65f BloomThreshold) optical cyan sensor MID (MaxChannel = 0.85f).
+			const FLinearColor SensorBaseColor(0.04f, 0.36f, 0.44f, 1.0f);
+			const FLinearColor SensorEmissiveColor(0.06f, 0.72f, 0.85f, 1.0f);
+			ScanOpticalSensorMID->SetVectorParameterValue(TEXT("BaseColorConst"), SensorBaseColor);
+			ScanOpticalSensorMID->SetVectorParameterValue(TEXT("Color"), SensorBaseColor);
+			ScanOpticalSensorMID->SetVectorParameterValue(TEXT("EmissiveColorConst"), SensorEmissiveColor);
+			ScanOpticalSensorMID->SetScalarParameterValue(TEXT("EmissiveScale"), 1.0f);
+			ScanOpticalSensorMID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.22f);
+			ScanOpticalSensorMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.15f);
+		}
+	}
+}
+
+void AMonolithRigActor::ApplyUpgradeHardwareMaterials()
+{
+	if (!IsValid(AutoResolvedUpgradeSteelMaterial))
+	{
+		if (FPackageName::DoesPackageExist(TEXT("/Game/Presentation/Materials/MI_Station_ClampSpringHousing")))
+		{
+			AutoResolvedUpgradeSteelMaterial = LoadObject<UMaterialInterface>(
+				nullptr,
+				TEXT("/Game/Presentation/Materials/MI_Station_ClampSpringHousing.MI_Station_ClampSpringHousing"));
+		}
+	}
+
+	UMaterialInterface* EffectiveSteelMat = AutoResolvedUpgradeSteelMaterial.Get();
+	if (!IsValid(EffectiveSteelMat) && IsValid(PresentationData))
+	{
+		if (PresentationData->ClampSpringHousingMeshSlot.MaterialOverrides.Num() > 0 &&
+			IsValid(PresentationData->ClampSpringHousingMeshSlot.MaterialOverrides[0]))
+		{
+			EffectiveSteelMat = PresentationData->ClampSpringHousingMeshSlot.MaterialOverrides[0].Get();
+		}
+		else if (IsValid(PresentationData->ClampSpringHousingMeshSlot.Mesh))
+		{
+			EffectiveSteelMat = PresentationData->ClampSpringHousingMeshSlot.Mesh->GetMaterial(0);
+		}
+	}
+	if (!IsValid(EffectiveSteelMat))
+	{
+		EffectiveSteelMat = FallbackUpgradeSteelMID.Get();
+	}
+
+	auto AssignUpgradeMat = [](UStaticMeshComponent* Comp, UMaterialInterface* Mat)
+	{
+		if (IsValid(Comp) && IsValid(Mat))
+		{
+			const int32 NumSlots = FMath::Max(1, Comp->GetNumMaterials());
+			for (int32 SlotIdx = 0; SlotIdx < NumSlots; ++SlotIdx)
+			{
+				Comp->SetMaterial(SlotIdx, Mat);
+			}
+		}
+	};
+
+	AssignUpgradeMat(HydUpgradeCylinderLeftL1, EffectiveSteelMat);
+	AssignUpgradeMat(HydUpgradeCylinderRightL1, EffectiveSteelMat);
+	AssignUpgradeMat(HydUpgradeAccumulatorLeftL2, EffectiveSteelMat);
+	AssignUpgradeMat(HydUpgradeAccumulatorRightL2, EffectiveSteelMat);
+
+	AssignUpgradeMat(ScanUpgradePodLeftL1, EffectiveSteelMat);
+	AssignUpgradeMat(ScanUpgradePodRightL1, EffectiveSteelMat);
+	AssignUpgradeMat(ScanUpgradeArrayLeftL2, EffectiveSteelMat);
+	AssignUpgradeMat(ScanUpgradeArrayRightL2, EffectiveSteelMat);
+
+	UMaterialInterface* EffectiveSensorMat = IsValid(ScanOpticalSensorMID)
+		? static_cast<UMaterialInterface*>(ScanOpticalSensorMID.Get())
+		: EffectiveSteelMat;
+	AssignUpgradeMat(ScanUpgradeLensLeftL1, EffectiveSensorMat);
+	AssignUpgradeMat(ScanUpgradeLensRightL1, EffectiveSensorMat);
+	AssignUpgradeMat(ScanUpgradeEmitterLeftL2, EffectiveSensorMat);
+	AssignUpgradeMat(ScanUpgradeEmitterRightL2, EffectiveSensorMat);
+}
+
+void AMonolithRigActor::UpdateRigUpgradeHardwareVisuals(uint8 HydLevel, uint8 ScanLevel)
+{
+	CachedHydUpgradeLevel = HydLevel;
+	CachedScanUpgradeLevel = ScanLevel;
+
+	auto SetUpgradeCompVisible = [](UStaticMeshComponent* Comp, bool bVisible)
+	{
+		if (IsValid(Comp))
+		{
+			Comp->SetVisibility(bVisible, false);
+			Comp->SetHiddenInGame(!bVisible, false);
+		}
+	};
+
+	const bool bHydL1 = (HydLevel >= 1);
+	const bool bHydL2 = (HydLevel >= 2);
+	SetUpgradeCompVisible(HydUpgradeCylinderLeftL1, bHydL1);
+	SetUpgradeCompVisible(HydUpgradeCylinderRightL1, bHydL1);
+	SetUpgradeCompVisible(HydUpgradeAccumulatorLeftL2, bHydL2);
+	SetUpgradeCompVisible(HydUpgradeAccumulatorRightL2, bHydL2);
+
+	const bool bScanL1 = (ScanLevel >= 1);
+	const bool bScanL2 = (ScanLevel >= 2);
+	SetUpgradeCompVisible(ScanUpgradePodLeftL1, bScanL1);
+	SetUpgradeCompVisible(ScanUpgradePodRightL1, bScanL1);
+	SetUpgradeCompVisible(ScanUpgradeLensLeftL1, bScanL1);
+	SetUpgradeCompVisible(ScanUpgradeLensRightL1, bScanL1);
+	SetUpgradeCompVisible(ScanUpgradeArrayLeftL2, bScanL2);
+	SetUpgradeCompVisible(ScanUpgradeArrayRightL2, bScanL2);
+	SetUpgradeCompVisible(ScanUpgradeEmitterLeftL2, bScanL2);
+	SetUpgradeCompVisible(ScanUpgradeEmitterRightL2, bScanL2);
 }
 
 UMaterialInterface* AMonolithRigActor::ResolveEffectiveOuterMaterial(const UMonolithContractDataAsset* Contract) const
@@ -879,6 +1150,7 @@ void AMonolithRigActor::HandleContractSnapshotUpdated(const FContractRuntimeSnap
 		const float ScanMultiplier = 1.0f + (0.30f * static_cast<float>(Snapshot.VeinScannerDamperLevel));
 		VeinScannerComponent->SetWarningRangeMultiplier(ScanMultiplier);
 	}
+	UpdateRigUpgradeHardwareVisuals(Snapshot.ClampHydraulicsLevel, Snapshot.VeinScannerDamperLevel);
 }
 
 void AMonolithRigActor::HandleChunkSpawnedFromSlice(ASeveredChunkActor* SpawnedChunk)

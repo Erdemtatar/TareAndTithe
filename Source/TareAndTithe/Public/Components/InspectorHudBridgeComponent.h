@@ -145,6 +145,45 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "InspectorHud|Diagnostics")
 	void OverrideCornerWidthForTest(float TestCornerWidthPx, bool bEnableOverride);
 
+	UFUNCTION(BlueprintCallable, Category = "InspectorHud|Controls")
+	void ToggleControlsCardVisibility();
+
+	UFUNCTION(BlueprintCallable, Category = "InspectorHud|Controls")
+	void SetControlsCardExpanded(bool bExpanded);
+
+	UFUNCTION(BlueprintPure, Category = "InspectorHud|Controls")
+	bool IsControlsCardExpanded() const { return bControlsCardExpanded; }
+
+	UFUNCTION(BlueprintPure, Category = "InspectorHud|Diagnostics")
+	FVector2D GetControlsCardBoundsMin() const;
+
+	UFUNCTION(BlueprintPure, Category = "InspectorHud|Diagnostics")
+	FVector2D GetControlsCardBoundsMax() const;
+
+	UFUNCTION(BlueprintPure, Category = "InspectorHud|Diagnostics")
+	float GetLastEffectiveControlsCardWidth() const;
+
+	UFUNCTION(BlueprintPure, Category = "InspectorHud|Diagnostics")
+	float GetBottomConsoleMassBottomLocalY() const;
+
+	UFUNCTION(BlueprintPure, Category = "InspectorHud|Diagnostics")
+	float GetBottomConsoleAnalogBarTopLocalY() const;
+
+	UFUNCTION(BlueprintPure, Category = "InspectorHud|Diagnostics")
+	ELaserSliceVisualState GetLastReticleVisualStateForTest() const { return LastEvaluatedReticleState; }
+
+	UFUNCTION(BlueprintPure, Category = "InspectorHud|Diagnostics")
+	FString GetLastReticleYieldTextForTest() const { return LastEvaluatedReticleYieldText; }
+
+	UFUNCTION(BlueprintPure, Category = "InspectorHud|Diagnostics")
+	FLinearColor GetLastReticleYieldColorForTest() const { return LastEvaluatedReticleYieldColor; }
+
+	UFUNCTION(BlueprintCallable, Category = "InspectorHud|Diagnostics")
+	void SetLaserChargeForTest(float NormalizedCharge);
+
+	UFUNCTION(BlueprintCallable, Category = "InspectorHud|Diagnostics")
+	void OverrideViewportSizeForTest(FVector2D TestLocalViewportSize, bool bEnableOverride);
+
 private:
 	void MountOverlayIfNeeded();
 	void UnmountOverlayDeterministic();
@@ -176,6 +215,7 @@ private:
 		int32 ContractIndex);
 	void HandlePreviewUpdated(const FSlicePreviewTelemetry& PreviewTelemetry);
 	void HandleFilteredTelemetryStream(ETelemetryStreamId StreamId, float NormalizedValue);
+	void HandleCapacitorTelemetryStream(ETelemetryStreamId StreamId, float NormalizedValue);
 	void HandleReticleProjectionUpdated(
 		const FVector2D& NormalizedViewportUV,
 		bool bReticleVisible,
@@ -217,9 +257,15 @@ private:
 
 	float CachedClampStrain = 0.0f;
 	float CachedClampFatigue = 0.0f;
+	float CachedLaserCharge = 0.0f;
 	double LastVeinInDropAutoClearTimeSec = -10.0;
 
+	ELaserSliceVisualState LastEvaluatedReticleState = ELaserSliceVisualState::IdleOrSafeCyan;
+	FString LastEvaluatedReticleYieldText;
+	FLinearColor LastEvaluatedReticleYieldColor = FLinearColor(0.82f, 0.94f, 1.00f, 1.0f);
+
 	bool bIsMountedToViewport = false;
+	bool bControlsCardExpanded = true;
 	bool bCachedReticleVisible = false;
 	bool bHasLatchedTerminalVerdict = false;
 

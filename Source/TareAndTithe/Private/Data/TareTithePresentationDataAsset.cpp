@@ -223,5 +223,6 @@ FLaserSheetPresentationConfig FLaserSheetPresentationConfig::GetSanitized() cons
 	Out.InteriorTroughEmissiveGain = FMath::Clamp(Out.InteriorTroughEmissiveGain, 0.02f, 0.60f);
 	Out.InteriorCrestEmissiveGain = FMath::Clamp(Out.InteriorCrestEmissiveGain, Out.InteriorTroughEmissiveGain, 1.20f);
 	Out.BorderEmissiveGain = FMath::Clamp(Out.BorderEmissiveGain, 1.00f, 5.00f);
+	Out.OvershootEmissiveGain = FMath::Clamp(Out.OvershootEmissiveGain, 1.00f, 1.65f);
 	return Out;
 }

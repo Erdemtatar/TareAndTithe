@@ -63,6 +63,15 @@ public:
 	void ReconcileScaleOverlaps();
 	void ApplyPresentationData(const UTareTithePresentationDataAsset* InPresentationData);
 
+	UFUNCTION(BlueprintPure, Category = "ScaleAssembly|Diagnostics")
+	float GetTareHopperEmberFillNormalizedForTest() const { return LastEvaluatedTareEmberFillNormalized; }
+
+	UFUNCTION(BlueprintPure, Category = "ScaleAssembly|Diagnostics")
+	FLinearColor GetTareHopperEmberCurrentEmissiveForTest() const { return LastEvaluatedTareEmberEmissive; }
+
+	UFUNCTION(BlueprintPure, Category = "ScaleAssembly|Diagnostics")
+	int32 GetActiveTareUpgradeTierForTest() const { return static_cast<int32>(CachedSnapshot.TareHopperLevel); }
+
 	FOnTelemetryStreamSignature OnTelemetryStream;
 	FOnTelemetryImpulseSignature OnTelemetryImpulse;
 
@@ -113,6 +122,27 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly")
 	TObjectPtr<UBoxComponent> DiverterPlateCollider;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly|DiverterHinge")
+	TObjectPtr<UStaticMeshComponent> DiverterHingeAxleVisual;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly|DiverterHinge")
+	TObjectPtr<UStaticMeshComponent> DiverterHingeBracketFrontVisual;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly|DiverterHinge")
+	TObjectPtr<UStaticMeshComponent> DiverterHingeBracketRearVisual;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly|Upgrades")
+	TObjectPtr<UStaticMeshComponent> TareUpgradeCollarFrontL1;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly|Upgrades")
+	TObjectPtr<UStaticMeshComponent> TareUpgradeCollarOuterL1;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly|Upgrades")
+	TObjectPtr<UStaticMeshComponent> TareUpgradeHeatShieldFrontL2;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly|Upgrades")
+	TObjectPtr<UStaticMeshComponent> TareUpgradeHeatShieldCornerL2;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ScaleAssembly")
 	TObjectPtr<UStaticMeshComponent> TareChuteVisual;
@@ -335,10 +365,13 @@ private:
 	void InitializeGreyboxVisualMaterials();
 	void RebuildTareHopperVisualInstances();
 	void ApplyTareHopperPresentationMaterials();
+	void UpdateTareHopperEmberFillVisual();
+	void UpdateTareHopperUpgradeVisuals();
 	void ApplyDarkGunmetalMaterial(UStaticMeshComponent* TargetMesh);
 	void ApplyDarkGunmetalMaterialToISM(UInstancedStaticMeshComponent* TargetISM);
 	UMaterialInterface* ResolveDarkGunmetalMaterial();
 	UMaterialInterface* ResolveRodinHopperCollarMaterial() const;
+	UMaterialInterface* ResolveUpgradeBrushedSteelMaterial();
 	FVector QueryScaleWorldLocation() const;
 
 	void HandleChildTelemetryStream(ETelemetryStreamId StreamId, float NormalizedValue);
@@ -354,6 +387,9 @@ private:
 	TObjectPtr<UStaticMesh> FallbackCubeMesh;
 
 	UPROPERTY()
+	TObjectPtr<UStaticMesh> FallbackCylinderMesh;
+
+	UPROPERTY()
 	TObjectPtr<UMaterialInterface> BaseGreyboxShapeMaterial;
 
 	UPROPERTY()
@@ -366,12 +402,17 @@ private:
 	TObjectPtr<UMaterialInterface> AutoResolvedHopperCollarMaterial;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> AutoResolvedUpgradeSteelMaterial;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> TareFurnaceBaffleMID;
 
 	UPROPERTY(Transient)
 	TObjectPtr<const UTareTithePresentationDataAsset> PresentationData;
 
 	FContractRuntimeSnapshot CachedSnapshot;
+	FLinearColor LastEvaluatedTareEmberEmissive = FLinearColor(0.32f, 0.055f, 0.008f, 1.0f);
+	float LastEvaluatedTareEmberFillNormalized = 0.0f;
 	int32 CachedContractIndex = 0;
 	int32 CachedTotalContracts = 6;
 	EShiftPhase CachedShiftPhase;

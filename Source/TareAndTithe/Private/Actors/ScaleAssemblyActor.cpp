@@ -53,8 +53,7 @@ namespace
 	constexpr double TareGuideChamferTiltDeg = 35.0;
 
 	// Deep basin visual & bloom-safe (< 1.65 BloomThreshold) unlit warm furnace ember baffle card.
-	constexpr double TareFurnaceCardOffsetZAboveBasinCm = 6.0;
-	constexpr float MaxBloomSafeFurnaceEmissiveChannel = 1.25f;
+	constexpr float MaxBloomSafeFurnaceEmissiveChannel = 1.58f;
 
 	// Tall multi-chunk stack retention ceiling above PanDeckTopLocalZCm.
 	constexpr float TallStackWellCeilingAboveDeckCm = 175.0f;
@@ -74,6 +73,12 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 	if (CubeMeshFinder.Succeeded())
 	{
 		FallbackCubeMesh = CubeMeshFinder.Object;
+	}
+
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderMeshFinder(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	if (CylinderMeshFinder.Succeeded())
+	{
+		FallbackCylinderMesh = CylinderMeshFinder.Object;
 	}
 
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> FlattenMatFinder(
@@ -229,6 +234,98 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 		DiverterPlateColliderOffsetCm,
 		DiverterPlateBoxExtentCm);
 
+	auto ConfigureStationaryHardwareVisual = [this, &ConfigureVisualOnlyMesh](
+		UStaticMeshComponent* MeshComp,
+		UStaticMesh* PreferredMesh,
+		const FVector& RelLocationCm,
+		const FRotator& RelRotation,
+		const FVector& RelScale,
+		bool bInitiallyVisible)
+	{
+		MeshComp->SetupAttachment(ScaleRoot);
+		ConfigureVisualOnlyMesh(MeshComp);
+		if (IsValid(PreferredMesh))
+		{
+			MeshComp->SetStaticMesh(PreferredMesh);
+		}
+		MeshComp->SetCastShadow(false);
+		MeshComp->SetAffectDistanceFieldLighting(false);
+		MeshComp->SetAffectDynamicIndirectLighting(false);
+		MeshComp->SetVisibleInRayTracing(false);
+		MeshComp->bReceivesDecals = false;
+		MeshComp->SetRelativeLocation(RelLocationCm);
+		MeshComp->SetRelativeRotation(RelRotation);
+		MeshComp->SetRelativeScale3D(RelScale);
+		MeshComp->SetVisibility(bInitiallyVisible, false);
+		MeshComp->SetHiddenInGame(!bInitiallyVisible, false);
+	};
+
+	// Sub-System 3 + Correction 4: Stationary hinge axle (5.0 cm shaft coaxial with DiverterFlapperPivot at ScaleRoot (0, 34, 50))
+	// and front/rear stanchions planted solidly into ScaleRoot Y in [31.8, 48.0], Z in [2.0, 53.5].
+	DiverterHingeAxleVisual = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("DiverterHingeAxleVisual"));
+	ConfigureStationaryHardwareVisual(
+		DiverterHingeAxleVisual,
+		FallbackCylinderMesh,
+		FVector(0.0, 34.0, 50.0),
+		FRotator(90.0f, 0.0f, 0.0f),
+		FVector(0.050, 0.050, 0.900),
+		true);
+
+	DiverterHingeBracketFrontVisual = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("DiverterHingeBracketFrontVisual"));
+	ConfigureStationaryHardwareVisual(
+		DiverterHingeBracketFrontVisual,
+		FallbackCubeMesh,
+		FVector(-44.2, 39.9, 27.75),
+		FRotator::ZeroRotator,
+		FVector(0.036, 0.162, 0.515),
+		true);
+
+	DiverterHingeBracketRearVisual = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("DiverterHingeBracketRearVisual"));
+	ConfigureStationaryHardwareVisual(
+		DiverterHingeBracketRearVisual,
+		FallbackCubeMesh,
+		FVector(+44.2, 39.9, 27.75),
+		FRotator::ZeroRotator,
+		FVector(0.036, 0.162, 0.515),
+		true);
+
+	// Sub-System 4 + Correction 4: [2] TARE L1/L2 brushed-steel reinforcement collar & cooling manifold (strictly ScaleRoot Z <= +14.6 cm).
+	TareUpgradeCollarFrontL1 = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("TareUpgradeCollarFrontL1"));
+	ConfigureStationaryHardwareVisual(
+		TareUpgradeCollarFrontL1,
+		FallbackCubeMesh,
+		FVector(-47.6, 90.0, 5.2),
+		FRotator::ZeroRotator,
+		FVector(0.032, 0.860, 0.052),
+		false);
+
+	TareUpgradeCollarOuterL1 = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("TareUpgradeCollarOuterL1"));
+	ConfigureStationaryHardwareVisual(
+		TareUpgradeCollarOuterL1,
+		FallbackCubeMesh,
+		FVector(0.0, 134.8, 11.2),
+		FRotator::ZeroRotator,
+		FVector(0.920, 0.036, 0.056),
+		false);
+
+	TareUpgradeHeatShieldFrontL2 = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("TareUpgradeHeatShieldFrontL2"));
+	ConfigureStationaryHardwareVisual(
+		TareUpgradeHeatShieldFrontL2,
+		FallbackCylinderMesh,
+		FVector(-50.2, 90.0, 2.2),
+		FRotator(0.0f, 0.0f, 90.0f),
+		FVector(0.042, 0.042, 0.880),
+		false);
+
+	TareUpgradeHeatShieldCornerL2 = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("TareUpgradeHeatShieldCornerL2"));
+	ConfigureStationaryHardwareVisual(
+		TareUpgradeHeatShieldCornerL2,
+		FallbackCubeMesh,
+		FVector(-48.2, 133.2, 7.6),
+		FRotator::ZeroRotator,
+		FVector(0.068, 0.068, 0.140),
+		false);
+
 	TareChuteVisual = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("TareChuteVisual"));
 	TareChuteVisual->SetupAttachment(ScaleRoot);
 	ConfigureVisualOnlyMesh(TareChuteVisual);
@@ -269,9 +366,9 @@ AScaleAssemblyActor::AScaleAssemblyActor()
 	TareHopperFurnaceGlowCard->SetAffectDynamicIndirectLighting(false);
 	TareHopperFurnaceGlowCard->SetVisibleInRayTracing(false);
 	TareHopperFurnaceGlowCard->bReceivesDecals = false;
-	TareHopperFurnaceGlowCard->SetRelativeLocation(
-		TareBasinVisualOffsetCm + FVector(0.0, 0.0, TareFurnaceCardOffsetZAboveBasinCm));
-	TareHopperFurnaceGlowCard->SetRelativeScale3D(FVector(0.78, 0.70, 0.015));
+	TareHopperFurnaceGlowCard->SetRelativeLocation(FVector(0.0, TareShaftCenterYCm, -38.0));
+	TareHopperFurnaceGlowCard->SetRelativeRotation(FRotator(10.0f, 0.0f, 0.0f));
+	TareHopperFurnaceGlowCard->SetRelativeScale3D(FVector(0.76, 0.68, 0.018));
 
 	auto ConfigureInvisibleGuideBox = [&](
 		UBoxComponent* GuideBox,
@@ -575,6 +672,8 @@ void AScaleAssemblyActor::BeginPlay()
 		}
 	}
 
+	UpdateTareHopperEmberFillVisual();
+	UpdateTareHopperUpgradeVisuals();
 	RefreshRouteReadout();
 	RefreshStatusBannerReadout();
 }
@@ -740,6 +839,8 @@ void AScaleAssemblyActor::ConfigureForContract(const UMonolithContractDataAsset*
 	bHasLatchedVerdictBanner = false;
 	LatchedFaultReason = EContractFaultReason::None;
 
+	UpdateTareHopperEmberFillVisual();
+	UpdateTareHopperUpgradeVisuals();
 	RefreshContractHeaderReadout();
 	RefreshRouteReadout();
 	RefreshStatusBannerReadout();
@@ -856,6 +957,8 @@ void AScaleAssemblyActor::HandleContractSnapshotUpdated(const FContractRuntimeSn
 {
 	CachedSnapshot = Snapshot;
 	CachedContractIndex = Snapshot.ContractIndex;
+	UpdateTareHopperEmberFillVisual();
+	UpdateTareHopperUpgradeVisuals();
 
 	if (IsValid(ScaleWeighingComponent))
 	{
@@ -991,6 +1094,8 @@ void AScaleAssemblyActor::HandleActiveContractLoaded(
 	bHasLatchedVerdictBanner = false;
 	LatchedFaultReason = EContractFaultReason::None;
 
+	UpdateTareHopperEmberFillVisual();
+	UpdateTareHopperUpgradeVisuals();
 	RefreshContractHeaderReadout();
 	RefreshRouteReadout();
 	RefreshStatusBannerReadout();
@@ -1048,11 +1153,18 @@ bool AScaleAssemblyActor::ShouldIgnorePayloadInPanForTareRamp(const AActor* Cand
 
 void AScaleAssemblyActor::EnforcePanTriggerGeometryAndCollision()
 {
-	UStaticMeshComponent* const PureVisualMeshes[7] = {
+	UStaticMeshComponent* const PureVisualMeshes[14] = {
 		ScaleBaseVisual,
 		LeftHopperGuideVisual,
 		PanPlatformVisual,
 		DiverterFlapperVisual,
+		DiverterHingeAxleVisual,
+		DiverterHingeBracketFrontVisual,
+		DiverterHingeBracketRearVisual,
+		TareUpgradeCollarFrontL1,
+		TareUpgradeCollarOuterL1,
+		TareUpgradeHeatShieldFrontL2,
+		TareUpgradeHeatShieldCornerL2,
 		TareChuteVisual,
 		TareHopperFurnaceGlowCard,
 		ReadoutBackingPlate
@@ -1085,11 +1197,10 @@ void AScaleAssemblyActor::EnforcePanTriggerGeometryAndCollision()
 	RebuildTareHopperVisualInstances();
 	if (IsValid(TareHopperFurnaceGlowCard))
 	{
-		TareHopperFurnaceGlowCard->SetRelativeLocation(
-			TareBasinVisualOffsetCm + FVector(0.0, 0.0, TareFurnaceCardOffsetZAboveBasinCm));
-		TareHopperFurnaceGlowCard->SetRelativeScale3D(FVector(0.78, 0.70, 0.015));
 		TareHopperFurnaceGlowCard->SetCastShadow(false);
 	}
+	UpdateTareHopperEmberFillVisual();
+	UpdateTareHopperUpgradeVisuals();
 
 	auto EnforceAuthoritativeCollider = [](
 		UBoxComponent* ColliderBox,
@@ -1777,6 +1888,51 @@ void AScaleAssemblyActor::ApplyTareHopperPresentationMaterials()
 
 	ApplyDarkGunmetalMaterialToISM(TareHopperThroatISM);
 
+	UStaticMeshComponent* const HingeParts[3] = {
+		DiverterHingeAxleVisual,
+		DiverterHingeBracketFrontVisual,
+		DiverterHingeBracketRearVisual
+	};
+	UMaterialInterface* HingeCollarMat = ResolveRodinHopperCollarMaterial();
+	for (UStaticMeshComponent* HingeComp : HingeParts)
+	{
+		if (!IsValid(HingeComp))
+		{
+			continue;
+		}
+		if (IsValid(HingeCollarMat))
+		{
+			HingeComp->SetMaterial(0, HingeCollarMat);
+		}
+		else
+		{
+			ApplyDarkGunmetalMaterial(HingeComp);
+		}
+	}
+
+	UMaterialInterface* UpgradeSteelMat = ResolveUpgradeBrushedSteelMaterial();
+	UStaticMeshComponent* const TareUpgradeParts[4] = {
+		TareUpgradeCollarFrontL1,
+		TareUpgradeCollarOuterL1,
+		TareUpgradeHeatShieldFrontL2,
+		TareUpgradeHeatShieldCornerL2
+	};
+	for (UStaticMeshComponent* UpgComp : TareUpgradeParts)
+	{
+		if (!IsValid(UpgComp))
+		{
+			continue;
+		}
+		if (IsValid(UpgradeSteelMat))
+		{
+			UpgComp->SetMaterial(0, UpgradeSteelMat);
+		}
+		else
+		{
+			ApplyDarkGunmetalMaterial(UpgComp);
+		}
+	}
+
 	if (IsValid(TareHopperFurnaceGlowCard) && IsValid(BaseGreyboxShapeMaterial))
 	{
 		if (!IsValid(TareFurnaceBaffleMID))
@@ -1785,23 +1941,110 @@ void AScaleAssemblyActor::ApplyTareHopperPresentationMaterials()
 		}
 		if (IsValid(TareFurnaceBaffleMID))
 		{
-			const FLinearColor ClampedEmissive(
-				FMath::Clamp(TareFurnaceBaffleEmissiveColor.R, 0.0f, MaxBloomSafeFurnaceEmissiveChannel),
-				FMath::Clamp(TareFurnaceBaffleEmissiveColor.G, 0.0f, MaxBloomSafeFurnaceEmissiveChannel),
-				FMath::Clamp(TareFurnaceBaffleEmissiveColor.B, 0.0f, MaxBloomSafeFurnaceEmissiveChannel),
-				1.0f);
-			const FLinearColor FurnaceBaseColor(0.24f, 0.055f, 0.012f, 1.0f);
-
 			TareFurnaceBaffleMID->SetScalarParameterValue(TEXT("RoughnessConst"), 0.94f);
 			TareFurnaceBaffleMID->SetScalarParameterValue(TEXT("MetallicConst"), 0.04f);
 			TareFurnaceBaffleMID->SetScalarParameterValue(TEXT("SpecularConst"), 0.02f);
-			TareFurnaceBaffleMID->SetVectorParameterValue(TEXT("BaseColorConst"), FurnaceBaseColor);
-			TareFurnaceBaffleMID->SetVectorParameterValue(TEXT("Color"), FurnaceBaseColor);
-			TareFurnaceBaffleMID->SetVectorParameterValue(TEXT("EmissiveColorConst"), ClampedEmissive);
 			TareFurnaceBaffleMID->SetScalarParameterValue(TEXT("EmissiveScale"), 1.0f);
 			TareHopperFurnaceGlowCard->SetMaterial(0, TareFurnaceBaffleMID);
 		}
 	}
+	UpdateTareHopperEmberFillVisual();
+	UpdateTareHopperUpgradeVisuals();
+}
+
+void AScaleAssemblyActor::UpdateTareHopperEmberFillVisual()
+{
+	const float MaxTareKg = FMath::Max(0.1f, CachedSnapshot.MaxAllowedTareWasteKg);
+	const float NormalizedFill = FMath::Clamp(CachedSnapshot.AccumulatedTareWasteKg / MaxTareKg, 0.0f, 1.0f);
+	LastEvaluatedTareEmberFillNormalized = NormalizedFill;
+
+	const FLinearColor EmptyEmber(0.32f, 0.055f, 0.008f, 1.0f);
+	const FLinearColor FullEmber(1.52f, 0.38f, 0.042f, 1.0f);
+	const FLinearColor RawEmissive = FMath::Lerp(EmptyEmber, FullEmber, NormalizedFill);
+	const FLinearColor ClampedEmissive(
+		FMath::Clamp(RawEmissive.R, 0.0f, MaxBloomSafeFurnaceEmissiveChannel),
+		FMath::Clamp(RawEmissive.G, 0.0f, MaxBloomSafeFurnaceEmissiveChannel),
+		FMath::Clamp(RawEmissive.B, 0.0f, MaxBloomSafeFurnaceEmissiveChannel),
+		1.0f);
+	LastEvaluatedTareEmberEmissive = ClampedEmissive;
+
+	if (IsValid(TareHopperFurnaceGlowCard))
+	{
+		// Correction 2: ScaleRoot Z = Lerp(-38.0f, -6.0f, NormalizedFill) (World Z: -24 -> +8 cm).
+		// In UE5 FRotationMatrix::Make(FRotator(Pitch, 0, 0)), XAxis.Z = +sin(Pitch) and ZAxis = (-sin(Pitch), 0, cos(Pitch)),
+		// so Pitch = +10.0f tilts the +Z slab face 10 deg toward the -X camera (-66, 0, 162), lifting the +X back edge (+0.7 cm at 100%)
+		// and lowering the -X front edge (-12.7 cm at 100%) strictly below all chute rims while unoccluded across 0%..100% fill.
+		const double RelZ = static_cast<double>(FMath::Lerp(-38.0f, -6.0f, NormalizedFill));
+		const double ScaleX = static_cast<double>(FMath::Lerp(0.76f, 0.80f, NormalizedFill));
+		const double ScaleY = static_cast<double>(FMath::Lerp(0.68f, 0.72f, NormalizedFill));
+		TareHopperFurnaceGlowCard->SetRelativeLocation(FVector(0.0, TareShaftCenterYCm, RelZ));
+		TareHopperFurnaceGlowCard->SetRelativeRotation(FRotator(10.0f, 0.0f, 0.0f));
+		TareHopperFurnaceGlowCard->SetRelativeScale3D(FVector(ScaleX, ScaleY, 0.018));
+	}
+
+	if (IsValid(TareFurnaceBaffleMID))
+	{
+		const FLinearColor FurnaceBaseColor = FMath::Lerp(
+			FLinearColor(0.10f, 0.020f, 0.004f, 1.0f),
+			FLinearColor(0.32f, 0.085f, 0.016f, 1.0f),
+			NormalizedFill);
+		TareFurnaceBaffleMID->SetVectorParameterValue(TEXT("BaseColorConst"), FurnaceBaseColor);
+		TareFurnaceBaffleMID->SetVectorParameterValue(TEXT("Color"), FurnaceBaseColor);
+		TareFurnaceBaffleMID->SetVectorParameterValue(TEXT("EmissiveColorConst"), ClampedEmissive);
+	}
+}
+
+void AScaleAssemblyActor::UpdateTareHopperUpgradeVisuals()
+{
+	const bool bShowL1 = (CachedSnapshot.TareHopperLevel >= 1);
+	const bool bShowL2 = (CachedSnapshot.TareHopperLevel >= 2);
+
+	auto SetUpgradeMeshVisible = [](UStaticMeshComponent* Comp, bool bVisible)
+	{
+		if (IsValid(Comp))
+		{
+			Comp->SetVisibility(bVisible, false);
+			Comp->SetHiddenInGame(!bVisible, false);
+		}
+	};
+
+	SetUpgradeMeshVisible(TareUpgradeCollarFrontL1, bShowL1);
+	SetUpgradeMeshVisible(TareUpgradeCollarOuterL1, bShowL1);
+	SetUpgradeMeshVisible(TareUpgradeHeatShieldFrontL2, bShowL2);
+	SetUpgradeMeshVisible(TareUpgradeHeatShieldCornerL2, bShowL2);
+}
+
+UMaterialInterface* AScaleAssemblyActor::ResolveUpgradeBrushedSteelMaterial()
+{
+	if (!IsValid(AutoResolvedUpgradeSteelMaterial))
+	{
+		if (FPackageName::DoesPackageExist(TEXT("/Game/Presentation/Materials/MI_Station_ClampSpringHousing")))
+		{
+			AutoResolvedUpgradeSteelMaterial = LoadObject<UMaterialInterface>(
+				nullptr,
+				TEXT("/Game/Presentation/Materials/MI_Station_ClampSpringHousing.MI_Station_ClampSpringHousing"));
+		}
+	}
+	if (IsValid(AutoResolvedUpgradeSteelMaterial))
+	{
+		return AutoResolvedUpgradeSteelMaterial.Get();
+	}
+	if (IsValid(PresentationData))
+	{
+		if (PresentationData->ClampSpringHousingMeshSlot.MaterialOverrides.Num() > 0 &&
+			IsValid(PresentationData->ClampSpringHousingMeshSlot.MaterialOverrides[0]))
+		{
+			return PresentationData->ClampSpringHousingMeshSlot.MaterialOverrides[0].Get();
+		}
+		if (IsValid(PresentationData->ClampSpringHousingMeshSlot.Mesh))
+		{
+			if (UMaterialInterface* HousingMat = PresentationData->ClampSpringHousingMeshSlot.Mesh->GetMaterial(0))
+			{
+				return HousingMat;
+			}
+		}
+	}
+	return nullptr;
 }
 
 UMaterialInterface* AScaleAssemblyActor::ResolveDarkGunmetalMaterial()

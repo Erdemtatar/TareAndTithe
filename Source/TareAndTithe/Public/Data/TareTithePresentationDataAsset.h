@@ -707,6 +707,14 @@ struct TAREANDTITHE_API FLaserSheetPresentationConfig
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials|LaserSheet|Palette")
 	FLinearColor IsotopeProximityAmberColor = FLinearColor(1.00f, 0.36f, 0.02f, 1.0f);
 
+	/** Phase 12-FIX4 Electric Magenta base chromaticity for Tithe Quota Overshoot [OVER!] (0 bytes diff to DA_Presentation.uasset). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials|LaserSheet|Palette")
+	FLinearColor OvershootMagentaColor = FLinearColor(0.94f, 0.04f, 0.78f, 1.0f);
+
+	/** Bloom-safe (< 1.65f BloomThreshold) sheet interior emissive gain (0.94 * 1.45 = 1.363) for OvershootMagenta. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials|LaserSheet|Palette", meta = (ClampMin = "1.00", ClampMax = "1.65"))
+	float OvershootEmissiveGain = 1.45f;
+
 	/** White-hot incandescent contact core (#FFF6D6 chromaticity, exceeds BloomThreshold=1.65f). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Materials|LaserSheet|Seam")
 	FLinearColor SeamCoreLinearColor = FLinearColor(6.20f, 5.10f, 2.90f, 1.0f);

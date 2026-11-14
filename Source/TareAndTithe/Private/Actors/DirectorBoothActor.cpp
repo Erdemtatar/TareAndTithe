@@ -1666,25 +1666,37 @@ void ADirectorBoothActor::RebuildPanopticonSurveillanceVisuals()
 		const float InwardTurnDeg = FMath::UnwindDegrees(SurvCfg.DirectorInwardYawDegrees - (-180.0f));
 		const FRotator FigRot(0.0f, InwardTurnDeg, 0.0f);
 		const double MidX = 0.5 * (SafeMinX + SafeMaxX);
-		const double WingStepX = 8.8 * S * FMath::Sin(FMath::DegreesToRadians(static_cast<double>(InwardTurnDeg))) * 0.5;
+		const double WingStepX = 7.6 * S * FMath::Sin(FMath::DegreesToRadians(static_cast<double>(InwardTurnDeg))) * 0.5;
 
-		// Overlook telemetry console plinth & sloped monitor hood along the lower Right-Bay sill.
-		AddClampedSilhouettePart(DirectorSilhouetteCubesISM, BasicCubeMesh, FVector(MidX, BaseY, -10.80), FVector(1.60, 58.0 * S, 5.00), FRotator::ZeroRotator);
-		AddClampedSilhouettePart(DirectorSilhouetteCubesISM, BasicCubeMesh, FVector(MidX - 0.10, BaseY + 22.0 * S, -6.90), FVector(1.60, 13.5 * S, 3.80), FRotator(12.0f, 0.0f, 0.0f));
+		// 1. Thin low window sill rail behind Slat 0 + separated -Y side telemetry desk (Y in [140.7, 153.3], leaving roi_right_glass Y in [215, 245] 100% clear).
+		AddClampedSilhouettePart(DirectorSilhouetteCubesISM, BasicCubeMesh, FVector(MidX, BaseY - 6.0 * S, -12.15), FVector(1.50, 44.0 * S, 2.20), FRotator::ZeroRotator);
+		AddClampedSilhouettePart(DirectorSilhouetteCubesISM, BasicCubeMesh, FVector(MidX - 0.10, BaseY - 29.0 * S, -8.80), FVector(1.60, 12.6 * S, 5.40), FRotator(8.0f, 0.0f, 0.0f));
 
-		// Surveillance optics stanchion & dual-barrel scope aimed toward the inspection rig.
-		AddClampedSilhouettePart(DirectorSilhouetteCylindersISM, BasicCylinderMesh, FVector(MidX, BaseY - 22.5 * S, -4.20), FVector(2.00, 2.40 * S, 9.20 * S), FRotator::ZeroRotator);
-		AddClampedSilhouettePart(DirectorSilhouetteCylindersISM, BasicCylinderMesh, FVector(MidX - 0.15, BaseY - 22.5 * S, 0.90 * S), FVector(3.60 * S, 4.40 * S, 3.00), FRotator(90.0f, 0.0f, 0.0f));
+		// 2. Slender 1.15-1.20 cm gooseneck intercom microphone on the -Y desk (> 19 cm clear of human neck).
+		AddClampedSilhouettePart(DirectorSilhouetteCylindersISM, BasicCylinderMesh, FVector(MidX - 0.15, BaseY - 24.5 * S, -3.10), FVector(1.15, 1.15 * S, 6.80 * S), FRotator(0.0f, 0.0f, 8.0f));
+		AddClampedSilhouettePart(DirectorSilhouetteCylindersISM, BasicCylinderMesh, FVector(MidX - 0.20, BaseY - 22.8 * S, 1.55 * S), FVector(1.20, 1.20 * S, 4.20 * S), FRotator(0.0f, 0.0f, 34.0f));
 
-		// Authoritative greatcoat torso, stepped broad shoulder wings (continuous -168 deg inward stance), upturned collar, cranium & visor cap.
-		AddClampedSilhouettePart(DirectorSilhouetteCubesISM, BasicCubeMesh, FVector(MidX, BaseY, -5.60 * S), FVector(1.25, 27.5 * S, 11.20 * S), FigRot);
-		AddClampedSilhouettePart(DirectorSilhouetteCubesISM, BasicCubeMesh, FVector(MidX + WingStepX, BaseY - 9.2 * S, 1.50 * S), FVector(1.25, 20.5 * S, 6.80 * S), FigRot);
-		AddClampedSilhouettePart(DirectorSilhouetteCubesISM, BasicCubeMesh, FVector(MidX - WingStepX, BaseY + 9.2 * S, 1.50 * S), FVector(1.25, 20.5 * S, 6.80 * S), FigRot);
-		AddClampedSilhouettePart(DirectorSilhouetteCubesISM, BasicCubeMesh, FVector(MidX + WingStepX, BaseY - 12.0 * S, 4.10 * S), FVector(1.20, 15.0 * S, 3.40 * S), FRotator(0.0f, InwardTurnDeg, 12.0f));
-		AddClampedSilhouettePart(DirectorSilhouetteCubesISM, BasicCubeMesh, FVector(MidX - WingStepX, BaseY + 12.0 * S, 4.10 * S), FVector(1.20, 15.0 * S, 3.40 * S), FRotator(0.0f, InwardTurnDeg, -12.0f));
-		AddClampedSilhouettePart(DirectorSilhouetteCubesISM, BasicCubeMesh, FVector(MidX, BaseY, 6.40 * S), FVector(1.30, 16.5 * S, 4.20 * S), FigRot);
-		AddClampedSilhouettePart(DirectorSilhouetteCylindersISM, BasicCylinderMesh, FVector(MidX, BaseY, 11.10 * S), FVector(2.50, 11.4 * S, 7.40 * S), FigRot);
-		AddClampedSilhouettePart(DirectorSilhouetteCubesISM, BasicCubeMesh, FVector(MidX - 0.20, BaseY, 14.70 * S), FVector(2.70, 13.8 * S, 2.30 * S), FRotator(-8.0f, InwardTurnDeg, 0.0f));
+		// 3. V-tapered greatcoat waist (Band 0-1) & broad chest torso (Band 1-2) + rounded upper sleeves.
+		AddClampedSilhouettePart(DirectorSilhouetteCubesISM, BasicCubeMesh, FVector(MidX, BaseY, -7.20 * S), FVector(1.35, 16.8 * S, 7.20 * S), FigRot);
+		AddClampedSilhouettePart(DirectorSilhouetteCubesISM, BasicCubeMesh, FVector(MidX, BaseY, -0.75 * S), FVector(1.40, 22.4 * S, 6.90 * S), FigRot);
+		AddClampedSilhouettePart(DirectorSilhouetteCylindersISM, BasicCylinderMesh, FVector(MidX + WingStepX, BaseY - 12.6 * S, -2.40 * S), FVector(1.40, 4.60 * S, 10.60 * S), FRotator(0.0f, InwardTurnDeg, -8.0f));
+		AddClampedSilhouettePart(DirectorSilhouetteCylindersISM, BasicCylinderMesh, FVector(MidX - WingStepX, BaseY + 12.6 * S, -2.40 * S), FVector(1.40, 4.60 * S, 10.60 * S), FRotator(0.0f, InwardTurnDeg, 8.0f));
+
+		// 4. Parallax-compensated (+1.10 cm Z shift for 5.99 cm depth) downward-sloping anatomical shoulders (Roll -17/+17 deg in lower Band 2-3),
+		//    tailored collar, and narrow 4.60 cm human neck with unmistakable frosted-glass negative space on both sides in upper Band 2-3.
+		AddClampedSilhouettePart(DirectorSilhouetteCubesISM, BasicCubeMesh, FVector(MidX + WingStepX, BaseY - 8.2 * S, 3.45 * S), FVector(1.35, 11.2 * S, 1.90 * S), FRotator(0.0f, InwardTurnDeg, -17.0f));
+		AddClampedSilhouettePart(DirectorSilhouetteCubesISM, BasicCubeMesh, FVector(MidX - WingStepX, BaseY + 8.2 * S, 3.45 * S), FVector(1.35, 11.2 * S, 1.90 * S), FRotator(0.0f, InwardTurnDeg, 17.0f));
+		AddClampedSilhouettePart(DirectorSilhouetteCubesISM, BasicCubeMesh, FVector(MidX, BaseY, 3.90 * S), FVector(1.40, 7.40 * S, 2.40 * S), FigRot);
+		AddClampedSilhouettePart(DirectorSilhouetteCylindersISM, BasicCylinderMesh, FVector(MidX, BaseY, 6.45 * S), FVector(1.80, 4.60 * S, 3.90 * S), FigRot);
+
+		// 5. Tapered jaw, rounded cranium & raked visor brim (Band 3-4) + flared 12.20 cm officer peaked cap crown rising into Band 4-5 (< +18.18 cm shutter).
+		AddClampedSilhouettePart(DirectorSilhouetteCylindersISM, BasicCylinderMesh, FVector(MidX - 0.10, BaseY, 9.75 * S), FVector(2.10, 7.60 * S, 3.30 * S), FigRot);
+		AddClampedSilhouettePart(DirectorSilhouetteCylindersISM, BasicCylinderMesh, FVector(MidX - 0.05, BaseY, 12.15 * S), FVector(2.30, 8.80 * S, 3.80 * S), FigRot);
+		AddClampedSilhouettePart(DirectorSilhouetteCubesISM, BasicCubeMesh, FVector(MidX - 0.45, BaseY - 0.35 * S, 13.30 * S), FVector(2.50, 9.60 * S, 1.10 * S), FRotator(10.0f, InwardTurnDeg, 0.0f));
+		AddClampedSilhouettePart(DirectorSilhouetteCubesISM, BasicCubeMesh, FVector(MidX - 0.15, BaseY, 15.65 * S), FVector(2.40, 12.20 * S, 3.20 * S), FRotator(5.0f, InwardTurnDeg, 0.0f));
+
+		DirectorSilhouetteCubesISM->MarkRenderStateDirty();
+		DirectorSilhouetteCylindersISM->MarkRenderStateDirty();
 	}
 
 	// 7. Re-synchronize bay lamp intensity & frosted window card state with current phase.
